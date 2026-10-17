@@ -517,6 +517,19 @@ Per series: `min`, `max`, `avg` over the visible window computed during decimati
 Tables may show window min/max columns sourced from here. LHM-provided `Min`/`Max` are displayed
 separately and labeled "LHM min/max" (since-boot or since-reset values).
 
+### 7.4 Design references & license hygiene
+
+- **nvtop** (<https://github.com/Syllo/nvtop>) is the visual reference for the multi-GPU realtime
+  charts: one column per GPU with stacked metric graphs (GPU/memory utilization, temperature,
+  power, clocks, PCIe throughput), per-graph legends carrying the live value, and user-selectable
+  metrics — the same information model as our `panels.gpu.show` config. Borrow *ideas*: per-GPU
+  grouping, consistent metric order across GPUs, dense legends, selectable series.
+- **License hygiene (hard rule):** nvtop is **GPL-3.0-or-later** — its code, assets or theme files
+  must never be copied into this MIT project (inspiration only). btop (already referenced for the
+  overall "btop-style" layout) is Apache-2.0 — permissive, but any reuse requires attribution and
+  license notice. Verify the license of any external reference before reusing anything from it;
+  the default is an original implementation from this spec.
+
 ---
 
 ## 8. Configuration

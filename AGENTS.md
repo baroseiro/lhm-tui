@@ -62,6 +62,9 @@ Precedence when things conflict: **executable config/scripts > `SPEC.md` > `PLAN
   SPEC §4.2. Don't restructure the threading model ad hoc.
 - The LHM host is Windows-only, but the TUI itself must build and run on Linux/macOS (remote
   monitoring is a feature, not an accident) — don't add Windows-only code paths outside detection.
+- **External TUI references are inspiration only** (nvtop for multi-GPU charts — SPEC §7.4).
+  nvtop is GPL-3.0-or-later: never copy its code, assets or theme files. btop is Apache-2.0
+  (attribution required if ever reused). Verify a project's license before using anything from it.
 
 ## Testing & CI expectations
 

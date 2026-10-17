@@ -16,3 +16,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `README.md` — public project overview: quick start, configuration, keybindings, troubleshooting.
 - `AGENTS.md` — repository instructions for AI agents, including mandatory `CHANGELOG.md` practice.
 - `CHANGELOG.md` — change tracking for all notable changes (this file).
+- Design reference recorded for the multi-GPU realtime charts: nvtop's per-GPU stacked metric
+  graphs (SPEC §7.4), with a license-hygiene rule — nvtop is GPL-3.0-or-later, inspiration only.

@@ -200,7 +200,8 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 #### T3.4 — Wire charts into presets + window cycling
 **Goal:** cpu/gpu/memory panels use graphs for their primary series (temp + load dual; VRAM; RAM used %); `g`/`G` cycles `charts.window_cycle` and re-renders instantly; charts append on each applied snapshot.
 **Files:** `src/ui/presets.rs`, `src/app.rs`.
-**Notes:** Chart window larger than `history.window_s` clamps (config validation + runtime).
+**Notes:** Chart window larger than `history.window_s` clamps (config validation + runtime). Layout
+reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, its code is GPL-3.0-or-later.
 **Done when:** Visual soak 15 min @ 1 s: smooth, no axis jitter, panes stable; window cycle updates all charts; CPU budget re-checked (< 1 %, SPEC §13).
 
 #### T3.5 — Marker fallback + capability detection
