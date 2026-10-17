@@ -1,0 +1,5 @@
+/target
+/lhm-tui.json
+*.log
+*.rs.bk
+.DS_Store

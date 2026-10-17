@@ -53,7 +53,7 @@ Precedence when things conflict: **executable config/scripts > `SPEC.md` > `PLAN
   *or* unit-suffixed strings (changed after LHM 0.9.6), and bare `NaN`/`Infinity` break strict
   parsers: see SPEC §3.4 quirks Q1–Q4 and keep the sanitizer + dual deserializer as specified.
 - **Never parse node `id` as identity** — it is request-scoped; use `SensorId`/`HardwareId` (Q3).
-- Hard rules from PLAN §1: `#![forbid(unsafe_code)]`, MSRV 1.83 / edition 2021, no `unwrap()`
+- Hard rules from PLAN §1: `#![forbid(unsafe_code)]`, MSRV 1.89 / edition 2021, no `unwrap()`
   outside tests, config validation collects all errors and exits 2 — never panics.
 - **Stdout belongs to the TUI.** Only `--probe`, `--once`, `--dump`, `--print-config`,
   `--init-config` may write to stdout; all logging goes to a file (SPEC §10.2). Exit codes are

@@ -207,7 +207,7 @@ cargo build --release        # binary in target/release/lhm-tui
 cargo test                   # unit + integration + TUI snapshot tests
 ```
 
-MSRV: Rust **1.83** (2021 edition). Cross-compiles cleanly to Linux/macOS for remote monitoring.
+MSRV: Rust **1.89** (2021 edition). Cross-compiles cleanly to Linux/macOS for remote monitoring.
 
 ## Contributing
 

@@ -1,0 +1,32 @@
+[package]
+name = "lhm-tui"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.89"
+description = "Terminal dashboard for LibreHardwareMonitor: live CPU/GPU temperatures, load, memory and charts over its web API."
+license = "MIT"
+repository = "https://github.com/baroseiro/lhm-tui"
+readme = "README.md"
+keywords = ["tui", "monitoring", "hardware", "temperatures", "librehardwaremonitor"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+directories = "6"
+humantime = "2"
+ratatui = "0.30"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_ignored = "0.1"
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-width = "0.2"
+
+[profile.release]
+lto = "thin"
+strip = true

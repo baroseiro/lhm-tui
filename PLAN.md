@@ -28,7 +28,7 @@
 
 | Area            | Rule                                                                                                        |
 | --------------- | ----------------------------------------------------------------------------------------------------------- |
-| Rust            | Edition 2021, MSRV **1.83**, `#![forbid(unsafe_code)]` in `main.rs`, no `unwrap()` in non-test code (`expect()` only with a message and only at startup) |
+| Rust            | Edition 2021, MSRV **1.89**, `#![forbid(unsafe_code)]` in `main.rs`, no `unwrap()` in non-test code (`expect()` only with a message and only at startup) |
 | Errors          | Library-ish modules return `thiserror` types; CLI/boundary code uses `anyhow`; user-facing errors must name the fix (see SPEC §10.1 wording) |
 | Stdout hygiene  | The TUI owns stdout. Only `--probe`, `--once`, `--dump`, `--print-config`, `--init-config` may write there (SPEC §9). Everything else → `tracing` file log |
 | Config          | Never panic on bad config: collect **all** validation errors, print them with their `serde_path_to_error` path, exit 2 (SPEC §8.1) |
