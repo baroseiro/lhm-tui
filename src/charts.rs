@@ -113,12 +113,24 @@ impl ChartsState {
 }
 
 /// Min/max envelope decimation (SPEC §7.1 step 3): one `(min, max)` span per
-/// pixel column; `None` marks a fully-gapped column so lines break.
+/// pixel column; `None` marks a fully-gapped column so lines break. Series
+/// shorter than the pixel width are right-aligned — real-time charts grow
+/// from the right instead of stretching one sample across the screen.
 pub fn decimate(points: &[Option<f32>], columns: usize) -> Vec<Option<(f64, f64)>> {
     if columns == 0 || points.is_empty() {
         return Vec::new();
     }
     let n = points.len();
+    if n < columns {
+        let mut out = vec![None; columns - n];
+        out.extend(points.iter().map(|point| {
+            point.map(|value| {
+                let value = f64::from(value);
+                (value, value)
+            })
+        }));
+        return out;
+    }
     let mut out = Vec::with_capacity(columns);
     for column in 0..columns {
         let start = column * n / columns;
@@ -460,10 +472,15 @@ mod tests {
     }
 
     #[test]
-    fn decimate_handles_short_series() {
+    fn decimate_right_aligns_short_series() {
         let spans = decimate(&[Some(1.0)], 5);
         assert_eq!(spans.len(), 5);
-        assert!(spans.iter().all(|span| span.is_some()));
+        assert_eq!(
+            spans[..4],
+            [None, None, None, None],
+            "line grows from the right"
+        );
+        assert_eq!(spans[4], Some((1.0, 1.0)));
     }
 
     #[test]

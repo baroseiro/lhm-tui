@@ -253,7 +253,16 @@ fn panel_list_expands_layout() {
     let reference = snapshot("lhm-0.9.6.json");
     let bindings = bindings::resolve(&reference, &cfg.panels);
 
-    let panels = presets::panel_list(&cfg, &bindings);
+    // Thermal is hidden by default (not in the default ui.layout).
+    let panels = presets::panel_list(&cfg, &bindings, Default::default());
+    let ids: Vec<&str> = panels.iter().map(|panel| panel.id.as_str()).collect();
+    assert_eq!(ids, vec!["cpu:0", "gpu:0", "memory"]);
+
+    // The `t` override reveals the temperatures table (appended last).
+    let overrides = presets::PanelOverrides {
+        thermal: Some(true),
+    };
+    let panels = presets::panel_list(&cfg, &bindings, overrides);
     let ids: Vec<&str> = panels.iter().map(|panel| panel.id.as_str()).collect();
     assert_eq!(ids, vec!["cpu:0", "gpu:0", "memory", "thermal"]);
     assert!(
@@ -270,24 +279,68 @@ fn panel_list_expands_layout() {
     cfg_fans.ui.layout.push("fans".to_string());
     let live = snapshot("lhm-live-5900xt.json");
     let live_bindings = bindings::resolve(&live, &cfg_fans.panels);
-    let ids: Vec<String> = presets::panel_list(&cfg_fans, &live_bindings)
+    let ids: Vec<String> = presets::panel_list(&cfg_fans, &live_bindings, Default::default())
         .into_iter()
         .map(|panel| panel.id)
         .collect();
-    assert_eq!(
-        ids,
-        vec!["cpu:0", "gpu:0", "gpu:1", "memory", "thermal", "fans"]
-    );
+    assert_eq!(ids, vec!["cpu:0", "gpu:0", "gpu:1", "memory", "fans"]);
 
-    // Heights: tables clamp to ui.max_height.
-    let thermal = presets::panel_list(&cfg, &live_bindings)
+    // Heights: tables clamp to ui.max_height; chart panels get chart + chrome.
+    let thermal = presets::panel_list(&cfg, &live_bindings, overrides)
         .into_iter()
         .find(|panel| panel.id == "thermal")
         .expect("thermal");
     assert_eq!(
-        presets::panel_height(&thermal, &live_bindings, &cfg),
+        presets::panel_height(&thermal, &live_bindings, &cfg, true),
         cfg.ui.max_height as u16
     );
+    let cpu = presets::panel_list(&cfg, &live_bindings, Default::default())
+        .into_iter()
+        .find(|panel| panel.id == "cpu:0")
+        .expect("cpu");
+    assert_eq!(
+        presets::panel_height(&cpu, &live_bindings, &cfg, true),
+        (cfg.charts.height + 5) as u16
+    );
+    assert_eq!(presets::panel_height(&cpu, &live_bindings, &cfg, false), 7);
+}
+
+#[test]
+fn layout_rows_and_auto_height() {
+    let cfg = Config::default();
+    let live = snapshot("lhm-live-5900xt.json");
+    let bindings = bindings::resolve(&live, &cfg.panels);
+    let panels = presets::panel_list(&cfg, &bindings, Default::default());
+    // Default layout: [cpu:0, gpu:0, gpu:1, memory].
+    let rows = presets::layout_rows(&panels, 2);
+    assert_eq!(rows, vec![vec![0], vec![1, 2], vec![3]]);
+    assert_eq!(
+        presets::layout_rows(&panels, 1),
+        vec![vec![0], vec![1], vec![2], vec![3]]
+    );
+
+    // Auto-height distributes spare rows to chart panels, and side-by-side
+    // GPUs share one row (never counted twice).
+    let rows = presets::layout_rows(&panels, 2);
+    let heights = presets::fit_heights(&panels, &bindings, &cfg, 50, true, &rows);
+    let base_total = cfg.charts.height + 5 + (cfg.charts.height + 4) + (cfg.charts.height + 4);
+    let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
+    assert_eq!(row_total, 50, "fills the available height: {heights:?}");
+    assert!(row_total > base_total);
+    assert_eq!(heights[1], heights[2], "row partners share the height");
+
+    // Overflow squeezes chart rows down to the minimum first.
+    let heights = presets::fit_heights(&panels, &bindings, &cfg, 20, true, &rows);
+    assert_eq!(heights[0], 5 + 4, "cpu at minimum chart height");
+    assert_eq!(heights[1], 4 + 4, "gpu at minimum chart height");
+    assert_eq!(heights[3], 4 + 4, "memory at minimum chart height");
+
+    // auto_height off keeps base heights.
+    let mut fixed = cfg.clone();
+    fixed.ui.auto_height = false;
+    let heights = presets::fit_heights(&panels, &bindings, &fixed, 50, true, &rows);
+    let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
+    assert_eq!(row_total, base_total);
 }
 
 #[test]

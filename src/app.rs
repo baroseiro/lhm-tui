@@ -78,6 +78,10 @@ pub struct AppState {
     pub window_override: Option<usize>,
     /// `a` key override for `ui.ascii`.
     pub ascii_override: Option<bool>,
+    /// `t` key override for the temperatures table visibility.
+    pub thermal_override: Option<bool>,
+    /// `c` key override for `charts.enabled`.
+    pub charts_override: Option<bool>,
     /// Chart autoscale state (hysteresis per graph).
     pub charts: ChartsState,
 }
@@ -104,6 +108,8 @@ impl AppState {
             history: None,
             window_override: None,
             ascii_override: None,
+            thermal_override: None,
+            charts_override: None,
             charts: ChartsState::new(),
         }
     }
@@ -151,6 +157,25 @@ impl AppState {
         self.ascii_override.unwrap_or(cfg.ui.ascii)
     }
 
+    /// Effective temperatures-table visibility: `t` override, else whether
+    /// `thermal` is listed in `ui.layout` (hidden by default).
+    pub fn effective_thermal(&self, cfg: &Config) -> bool {
+        self.thermal_override
+            .unwrap_or_else(|| cfg.ui.layout.iter().any(|key| key == "thermal"))
+    }
+
+    /// Effective charts mode: `c` override, else `charts.enabled` from config.
+    pub fn effective_charts(&self, cfg: &Config) -> bool {
+        self.charts_override.unwrap_or(cfg.charts.enabled)
+    }
+
+    /// Panel-visibility overrides for `presets::panel_list`.
+    pub fn panel_overrides(&self, cfg: &Config) -> crate::ui::presets::PanelOverrides {
+        crate::ui::presets::PanelOverrides {
+            thermal: Some(self.effective_thermal(cfg)),
+        }
+    }
+
     /// Fold a poller event into the UI state (SPEC §10.1 failure matrix).
     pub fn apply_poll_event(&mut self, event: PollEvent, cfg: &Config) {
         match event {
@@ -161,16 +186,16 @@ impl AppState {
                     self.bindings = Some(bindings::resolve(&fetched.snapshot, &cfg.panels));
                     self.bindings_fingerprint = fingerprint;
                 }
-                if cfg.charts.enabled {
-                    let history = self.history.get_or_insert_with(|| {
-                        History::new(
-                            cfg.history.window_s,
-                            cfg.server.poll_interval_ms,
-                            cfg.history.max_points_per_series,
-                        )
-                    });
-                    history.append_snapshot(&fetched.snapshot);
-                }
+                // History is always collected: it is cheap (~1 MB for 500
+                // series) and lets the `c` key switch to charts instantly.
+                let history = self.history.get_or_insert_with(|| {
+                    History::new(
+                        cfg.history.window_s,
+                        cfg.server.poll_interval_ms,
+                        cfg.history.max_points_per_series,
+                    )
+                });
+                history.append_snapshot(&fetched.snapshot);
                 self.last_live_at = Some(Instant::now());
                 self.last_fetch = Some(fetched);
                 self.failed_attempts = 0;
@@ -409,6 +434,14 @@ pub fn handle_event(app: &mut AppState, event: Event, cfg: &Config) {
                 let current = app.effective_ascii(cfg);
                 app.ascii_override = Some(!current);
                 app.dirty = true;
+            } else if action_matches(cfg, "toggle_thermal", &key) {
+                let current = app.effective_thermal(cfg);
+                app.thermal_override = Some(!current);
+                app.dirty = true;
+            } else if action_matches(cfg, "toggle_charts", &key) {
+                let current = app.effective_charts(cfg);
+                app.charts_override = Some(!current);
+                app.dirty = true;
             } else if key_matches(&key, "down") || key_matches(&key, "j") {
                 scroll_focused(app, cfg, 1);
             } else if key_matches(&key, "up") || key_matches(&key, "k") {
@@ -434,7 +467,9 @@ fn next_sort(current: Option<TableSort>) -> Option<TableSort> {
 fn panel_count(app: &AppState, cfg: &Config) -> usize {
     app.bindings
         .as_ref()
-        .map(|bindings| crate::ui::presets::panel_list(cfg, bindings).len())
+        .map(|bindings| {
+            crate::ui::presets::panel_list(cfg, bindings, app.panel_overrides(cfg)).len()
+        })
         .unwrap_or(0)
 }
 
@@ -451,7 +486,7 @@ fn focus_delta(app: &mut AppState, cfg: &Config, delta: i32) {
 fn scroll_focused(app: &mut AppState, cfg: &Config, delta: i32) {
     // Resolve the focused panel id first; the borrow ends before mutation.
     let target = app.bindings.as_ref().and_then(|bindings| {
-        let panels = crate::ui::presets::panel_list(cfg, bindings);
+        let panels = crate::ui::presets::panel_list(cfg, bindings, app.panel_overrides(cfg));
         if panels.is_empty() {
             return None;
         }
@@ -739,17 +774,38 @@ mod tests {
     }
 
     #[test]
-    fn history_populated_only_when_charts_enabled() {
+    fn history_always_collected_for_instant_toggle() {
         let cfg = Config::default();
         let mut app = AppState::new();
         app.apply_poll_event(PollEvent::Snapshot(empty_fetched()), &cfg);
-        assert!(app.history.is_some(), "charts on by default");
+        assert!(app.history.is_some());
 
         let mut disabled = Config::default();
         disabled.charts.enabled = false;
         let mut app = AppState::new();
         app.apply_poll_event(PollEvent::Snapshot(empty_fetched()), &disabled);
-        assert!(app.history.is_none(), "charts disabled → no history kept");
+        assert!(app.history.is_some(), "collected even with charts disabled");
+    }
+
+    #[test]
+    fn thermal_and_charts_overrides() {
+        let cfg = Config::default();
+        let mut app = AppState::new();
+        assert!(!app.effective_thermal(&cfg), "thermal hidden by default");
+        app.thermal_override = Some(true);
+        assert!(app.effective_thermal(&cfg));
+
+        assert!(app.effective_charts(&cfg));
+        app.charts_override = Some(false);
+        assert!(!app.effective_charts(&cfg));
+
+        let mut shown = Config::default();
+        shown.ui.layout.push("thermal".to_string());
+        let app = AppState::new();
+        assert!(
+            app.effective_thermal(&shown),
+            "layout membership wins without override"
+        );
     }
 
     #[test]

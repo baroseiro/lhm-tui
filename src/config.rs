@@ -128,15 +128,16 @@ pub struct UiConfig {
     pub ascii: bool,
     pub no_color: bool,
     pub pause_position: bool,
+    /// Stretch panels (charts first, then tables up to `max_height`) to fill
+    /// the terminal height instead of leaving blank space at the bottom.
+    pub auto_height: bool,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             fps: 30,
-            layout: ["cpu", "gpu", "memory", "thermal"]
-                .map(String::from)
-                .to_vec(),
+            layout: ["cpu", "gpu", "memory"].map(String::from).to_vec(),
             show_header: true,
             show_footer: true,
             max_height: 12,
@@ -144,6 +145,7 @@ impl Default for UiConfig {
             ascii: false,
             no_color: false,
             pause_position: false,
+            auto_height: true,
         }
     }
 }
@@ -427,7 +429,7 @@ pub enum WidgetKind {
 }
 
 fn default_keys() -> BTreeMap<String, Vec<String>> {
-    let entries: [(&str, &[&str]); 14] = [
+    let entries: [(&str, &[&str]); 16] = [
         ("quit", &["q", "esc", "ctrl+c"]),
         ("help", &["?"]),
         ("pause", &["p", "space"]),
@@ -442,6 +444,8 @@ fn default_keys() -> BTreeMap<String, Vec<String>> {
         ("reset_minmax", &["m"]),
         ("ascii", &["a"]),
         ("debug", &["d"]),
+        ("toggle_thermal", &["t"]),
+        ("toggle_charts", &["c"]),
     ];
     entries
         .iter()
@@ -871,7 +875,8 @@ mod tests {
         assert_eq!(config.history.window_s, 900);
         assert_eq!(config.history.max_points_per_series, 3600);
         assert_eq!(config.ui.fps, 30);
-        assert_eq!(config.ui.layout, vec!["cpu", "gpu", "memory", "thermal"]);
+        assert_eq!(config.ui.layout, vec!["cpu", "gpu", "memory"]);
+        assert!(config.ui.auto_height);
         assert_eq!(config.ui.table_sort, TableSort::ValueDesc);
         assert_eq!(config.charts.marker, Marker::Braille);
         assert!(config.charts.enabled, "charts on by default");
@@ -896,7 +901,9 @@ mod tests {
         assert!(!config.panels.storage.enabled);
         assert_eq!(config.keys["quit"], vec!["q", "esc", "ctrl+c"]);
         assert_eq!(config.keys["pause"], vec!["p", "space"]);
-        assert_eq!(config.keys.len(), 14);
+        assert_eq!(config.keys["toggle_thermal"], vec!["t"]);
+        assert_eq!(config.keys["toggle_charts"], vec!["c"]);
+        assert_eq!(config.keys.len(), 16);
     }
 
     #[test]

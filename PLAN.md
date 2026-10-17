@@ -201,8 +201,9 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 **Goal:** cpu/gpu/memory panels use graphs for their primary series (temp + load dual; VRAM; RAM used %); `g`/`G` cycles `charts.window_cycle` and re-renders instantly; charts append on each applied snapshot.
 **Files:** `src/ui/presets.rs`, `src/app.rs`.
 **Notes:** Chart window larger than `history.window_s` clamps (config validation + runtime). Chart
-blocks render only when `charts.enabled` is set (config or `--charts`/`--no-charts`); with charts
-disabled the P2 gauges/bars layouts remain and history is skipped. Layout
+blocks render only when charts are enabled (config, CLI or the runtime `c` toggle); with charts
+disabled the P2 gauges/bars layouts remain. `ui.auto_height` makes chart rows the layout's flex
+element (grow with spare space, shrink to `MIN_CHART_HEIGHT` first on overflow). Layout
 reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, its code is GPL-3.0-or-later.
 **Done when:** Visual soak 15 min @ 1 s: smooth, no axis jitter, panes stable; window cycle updates all charts; CPU budget re-checked (< 1 %, SPEC §13).
 

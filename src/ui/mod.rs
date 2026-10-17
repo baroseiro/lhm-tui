@@ -21,7 +21,7 @@ use crate::app::{AppState, LinkStatus};
 use crate::bindings::Bindings;
 use crate::config::Config;
 use crate::theme::Theme;
-use crate::ui::presets::{PanelCtx, PanelKind};
+use crate::ui::presets::PanelCtx;
 use crate::util::human_bytes;
 
 pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
@@ -142,11 +142,13 @@ fn footer_line(app: &AppState, cfg: &Config) -> Paragraph<'static> {
         Span::styled("quit", Style::new().fg(Color::DarkGray)),
         Span::styled(
             format!(
-                "   ·   {} pause   ·   {} focus   ·   {} sort   ·   j/k scroll   ·   {} window({window})",
+                "   ·   {} pause   ·   {} focus   ·   {} sort   ·   j/k scroll   ·   {} window({window})   ·   {} temps   ·   {} charts",
                 first("pause"),
                 first("focus_next"),
                 first("sort"),
                 first("window_next"),
+                first("toggle_thermal"),
+                first("toggle_charts"),
             ),
             Style::new().fg(Color::DarkGray),
         ),
@@ -267,6 +269,10 @@ fn render_panels(
     // Values that only need `&AppState` are read before the split borrows.
     let sort = app.effective_sort(cfg);
     let ascii = app.effective_ascii(cfg);
+    let charts_on = app.effective_charts(cfg);
+    let overrides = presets::PanelOverrides {
+        thermal: Some(app.effective_thermal(cfg)),
+    };
     let (window, window_label) = app.effective_window(cfg);
     let now = Instant::now();
 
@@ -288,41 +294,19 @@ fn render_panels(
         return;
     }
 
-    let panels = presets::panel_list(cfg, bindings);
+    let panels = presets::panel_list(cfg, bindings, overrides);
     if panels.is_empty() {
         return;
     }
-    let heights = presets::fit_heights(&panels, bindings, cfg, area.height);
 
     let per_row = if area.width >= 120 {
         cfg.panels.gpu.per_row.max(1) as usize
     } else {
         1
     };
-    let mut rows: Vec<Vec<&presets::PanelSpec>> = Vec::new();
-    let mut row_heights: Vec<u16> = Vec::new();
-    let mut index = 0;
-    while index < panels.len() {
-        let spec = &panels[index];
-        if matches!(spec.kind, PanelKind::Gpu(_)) {
-            let mut group = vec![spec];
-            let mut next = index + 1;
-            while group.len() < per_row
-                && next < panels.len()
-                && matches!(panels[next].kind, PanelKind::Gpu(_))
-            {
-                group.push(&panels[next]);
-                next += 1;
-            }
-            row_heights.push(heights[index]);
-            rows.push(group);
-            index = next;
-        } else {
-            row_heights.push(heights[index]);
-            rows.push(vec![spec]);
-            index += 1;
-        }
-    }
+    let rows = presets::layout_rows(&panels, per_row);
+    let heights = presets::fit_heights(&panels, bindings, cfg, area.height, charts_on, &rows);
+    let row_heights: Vec<u16> = rows.iter().map(|row| heights[row[0]]).collect();
 
     let constraints: Vec<Constraint> = row_heights
         .iter()
@@ -339,11 +323,8 @@ fn render_panels(
                 .split(*row_area)
                 .to_vec()
         };
-        for (spec, column) in row.iter().zip(columns) {
-            let panel_index = panels
-                .iter()
-                .position(|panel| panel.id == spec.id)
-                .unwrap_or(0);
+        for (panel_index, column) in row.iter().zip(columns) {
+            let spec = &panels[*panel_index];
             let scroll = scrolls.get(&spec.id).copied().unwrap_or(0);
             let mut ctx = PanelCtx {
                 snapshot,
@@ -352,9 +333,10 @@ fn render_panels(
                 theme,
                 history: history.as_ref(),
                 charts: &mut *charts,
+                charts_enabled: charts_on,
                 stale,
                 ascii,
-                focused: panel_index == focused_index,
+                focused: *panel_index == focused_index,
                 sort,
                 scroll,
                 window,

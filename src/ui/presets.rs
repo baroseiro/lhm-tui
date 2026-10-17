@@ -53,6 +53,8 @@ pub struct PanelCtx<'a> {
     pub theme: &'a Theme,
     pub history: Option<&'a History>,
     pub charts: &'a mut ChartsState,
+    /// Effective charts flag (`charts.enabled` with the runtime `c` override).
+    pub charts_enabled: bool,
     pub stale: bool,
     pub ascii: bool,
     pub focused: bool,
@@ -65,7 +67,7 @@ pub struct PanelCtx<'a> {
 
 impl PanelCtx<'_> {
     fn charts_on(&self) -> bool {
-        self.cfg.charts.enabled && self.history.is_some()
+        self.charts_enabled && self.history.is_some()
     }
 
     fn marker(&self) -> Marker {
@@ -82,8 +84,21 @@ impl PanelCtx<'_> {
     }
 }
 
+/// Runtime panel-visibility overrides (the `t` key today).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PanelOverrides {
+    /// `t` override for the temperatures table; `None` → membership in
+    /// `ui.layout` decides.
+    pub thermal: Option<bool>,
+}
+
 /// Expand `ui.layout` into the concrete panel list for the current bindings.
-pub fn panel_list(cfg: &Config, bindings: &Bindings) -> Vec<PanelSpec> {
+pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) -> Vec<PanelSpec> {
+    let layout_has_thermal = cfg.ui.layout.iter().any(|key| key == "thermal");
+    let thermal_visible = overrides.thermal.unwrap_or(layout_has_thermal)
+        && cfg.panels.thermal.enabled
+        && !bindings.thermal.is_empty();
+
     let mut panels = Vec::new();
     for key in &cfg.ui.layout {
         match key.as_str() {
@@ -112,7 +127,7 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings) -> Vec<PanelSpec> {
                     scrollable: false,
                 });
             }
-            "thermal" if cfg.panels.thermal.enabled && !bindings.thermal.is_empty() => {
+            "thermal" if thermal_visible => {
                 panels.push(PanelSpec {
                     id: "thermal".to_string(),
                     kind: PanelKind::Thermal,
@@ -158,34 +173,71 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings) -> Vec<PanelSpec> {
             }
         }
     }
+
+    // `t` can reveal the temperatures table even when it is not in ui.layout.
+    if thermal_visible && !layout_has_thermal {
+        panels.push(PanelSpec {
+            id: "thermal".to_string(),
+            kind: PanelKind::Thermal,
+            scrollable: true,
+        });
+    }
     panels
 }
 
+/// Group panel indices into layout rows: consecutive GPU panels share one row
+/// while `per_row` allows it (SPEC §6.1). Shared by height fitting and
+/// rendering so the two can never disagree.
+pub fn layout_rows(panels: &[PanelSpec], per_row: usize) -> Vec<Vec<usize>> {
+    let per_row = per_row.max(1);
+    let mut rows: Vec<Vec<usize>> = Vec::new();
+    let mut index = 0;
+    while index < panels.len() {
+        if matches!(panels[index].kind, PanelKind::Gpu(_)) {
+            let mut group = vec![index];
+            let mut next = index + 1;
+            while group.len() < per_row
+                && next < panels.len()
+                && matches!(panels[next].kind, PanelKind::Gpu(_))
+            {
+                group.push(next);
+                next += 1;
+            }
+            rows.push(group);
+            index = next;
+        } else {
+            rows.push(vec![index]);
+            index += 1;
+        }
+    }
+    rows
+}
+
 /// Height budget for a panel (SPEC §6.1, `ui.max_height` caps tables).
-pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config) -> u16 {
+pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config, charts_on: bool) -> u16 {
     let max = cfg.ui.max_height.clamp(4, 40) as usize;
-    let chart = if cfg.charts.enabled {
+    let chart = if charts_on {
         cfg.charts.height as u16
     } else {
         0
     };
     match &spec.kind {
         PanelKind::Cpu(_) => {
-            if cfg.charts.enabled {
+            if charts_on {
                 chart + 5 // chart + core bars (2) + info (1) + borders
             } else {
                 7
             }
         }
         PanelKind::Gpu(_) => {
-            if cfg.charts.enabled {
+            if charts_on {
                 chart + 4 // chart + VRAM gauge + info + borders
             } else {
                 8 // temp, hotspot, mem temp, load, VRAM, info
             }
         }
         PanelKind::Memory => {
-            if cfg.charts.enabled {
+            if charts_on {
                 chart + 4 // chart + used gauge + virtual line + borders
             } else {
                 6
@@ -200,39 +252,96 @@ pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config) -> u16 
     }
 }
 
-/// Shrink chart heights first when the terminal is too short, down to a
-/// minimum of 3 chart rows; remaining overflow clips naturally.
+/// Fit panel heights to the available space.
+///
+/// Charts are the flex element: on overflow they shrink first (down to
+/// `MIN_CHART_HEIGHT` chart rows); with `ui.auto_height` and spare room they
+/// grow to absorb the leftover space, so charts stay crisp and no blank band
+/// is left at the bottom. Rows (not panels) are the unit of accounting —
+/// side-by-side GPUs share one row and must never be counted twice.
 pub fn fit_heights(
     panels: &[PanelSpec],
     bindings: &Bindings,
     cfg: &Config,
     available: u16,
+    charts_on: bool,
+    rows: &[Vec<usize>],
 ) -> Vec<u16> {
     let mut heights: Vec<u16> = panels
         .iter()
-        .map(|panel| panel_height(panel, bindings, cfg))
+        .map(|panel| panel_height(panel, bindings, cfg, charts_on))
         .collect();
-    let total: u32 = heights.iter().map(|height| u32::from(*height)).sum();
-    if total <= u32::from(available) || !cfg.charts.enabled {
-        return heights;
-    }
-    let mut overflow = total - u32::from(available);
-    for (index, spec) in panels.iter().enumerate() {
-        if overflow == 0 {
-            break;
-        }
-        if !matches!(
-            spec.kind,
+    let mut row_heights: Vec<u16> = rows.iter().map(|row| heights[row[0]]).collect();
+    let total: u32 = row_heights.iter().map(|height| u32::from(*height)).sum();
+    let available = u32::from(available);
+
+    let is_chart_row = |row: usize| {
+        matches!(
+            panels[rows[row][0]].kind,
             PanelKind::Cpu(_) | PanelKind::Gpu(_) | PanelKind::Memory
-        ) {
-            continue;
+        )
+    };
+
+    if total > available {
+        let mut overflow = total - available;
+        if charts_on {
+            for (row, row_height) in row_heights.iter_mut().enumerate() {
+                if overflow == 0 {
+                    break;
+                }
+                if !is_chart_row(row) {
+                    continue;
+                }
+                let fixed = row_height.saturating_sub(cfg.charts.height as u16);
+                let minimum = fixed + MIN_CHART_HEIGHT;
+                let reducible = u32::from(row_height.saturating_sub(minimum));
+                let cut = reducible.min(overflow);
+                *row_height -= cut as u16;
+                overflow -= cut;
+            }
         }
-        let fixed = heights[index].saturating_sub(cfg.charts.height as u16);
-        let minimum = fixed + MIN_CHART_HEIGHT;
-        let reducible = u32::from(heights[index].saturating_sub(minimum));
-        let cut = reducible.min(overflow);
-        heights[index] -= cut as u16;
-        overflow -= cut;
+    } else if cfg.ui.auto_height && total < available {
+        let mut leftover = available - total;
+        // Charts absorb spare space first (bigger graphs = better looking).
+        if charts_on {
+            let chart_rows: Vec<usize> = (0..rows.len()).filter(|row| is_chart_row(*row)).collect();
+            if !chart_rows.is_empty() {
+                let mut cursor = 0usize;
+                while leftover > 0 {
+                    row_heights[chart_rows[cursor % chart_rows.len()]] += 1;
+                    leftover -= 1;
+                    cursor += 1;
+                }
+            }
+        }
+        // Anything left grows tables up to `ui.max_height`.
+        if leftover > 0 {
+            let max = cfg.ui.max_height.clamp(4, 40) as u16;
+            let table_rows: Vec<usize> =
+                (0..rows.len()).filter(|row| !is_chart_row(*row)).collect();
+            loop {
+                let mut progressed = false;
+                for &row in &table_rows {
+                    if leftover == 0 {
+                        break;
+                    }
+                    if row_heights[row] < max {
+                        row_heights[row] += 1;
+                        leftover -= 1;
+                        progressed = true;
+                    }
+                }
+                if !progressed {
+                    break;
+                }
+            }
+        }
+    }
+
+    for (row, indices) in rows.iter().enumerate() {
+        for index in indices {
+            heights[*index] = row_heights[row];
+        }
     }
     heights
 }

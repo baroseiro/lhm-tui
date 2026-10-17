@@ -26,8 +26,7 @@
     "layout": [
       "cpu",
       "gpu",
-      "memory",
-      "thermal"
+      "memory"
     ],
     "show_header": true,
     "show_footer": true,
@@ -35,7 +34,8 @@
     "table_sort": "value_desc",
     "ascii": false,
     "no_color": false,
-    "pause_position": false
+    "pause_position": false,
+    "auto_height": true
   },
   "charts": {
     "enabled": true,
@@ -172,6 +172,12 @@
     ],
     "sort": [
       "s"
+    ],
+    "toggle_charts": [
+      "c"
+    ],
+    "toggle_thermal": [
+      "t"
     ],
     "window_next": [
       "g"

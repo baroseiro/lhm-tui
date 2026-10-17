@@ -54,7 +54,7 @@ fn pause_key_toggles_pause_and_shared_flag() {
 #[test]
 fn tab_cycles_focus_over_panel_list() {
     let (mut app, cfg) = live_app();
-    // Live layout: cpu:0, gpu:0, gpu:1, memory, thermal → 5 panels.
+    // Default layout with thermal hidden: cpu:0, gpu:0, gpu:1, memory → 4 panels.
     assert_eq!(app.focus, 0);
 
     handle_event(&mut app, key(KeyCode::Tab), &cfg);
@@ -71,7 +71,7 @@ fn tab_cycles_focus_over_panel_list() {
     assert_eq!(app.focus, 1);
 
     // Wraps at the end.
-    for _ in 0..4 {
+    for _ in 0..3 {
         handle_event(&mut app, key(KeyCode::Tab), &cfg);
     }
     assert_eq!(app.focus, 0);
@@ -80,8 +80,9 @@ fn tab_cycles_focus_over_panel_list() {
 #[test]
 fn scroll_applies_to_focused_scrollable_panel_only() {
     let (mut app, cfg) = live_app();
-
-    // Focus the thermal table (index 4) and scroll down.
+    // Reveal the temperatures table with the `t` override, then focus it
+    // (cpu:0, gpu:0, gpu:1, memory, thermal → index 4).
+    app.thermal_override = Some(true);
     app.focus = 4;
     handle_event(&mut app, key(KeyCode::Char('j')), &cfg);
     handle_event(&mut app, key(KeyCode::Char('j')), &cfg);
@@ -99,6 +100,22 @@ fn scroll_applies_to_focused_scrollable_panel_only() {
     app.focus = 0;
     handle_event(&mut app, key(KeyCode::Char('j')), &cfg);
     assert!(!app.scrolls.contains_key("cpu:0"));
+}
+
+#[test]
+fn t_and_c_keys_toggle_thermal_and_charts() {
+    let (mut app, cfg) = live_app();
+    assert!(!app.effective_thermal(&cfg), "hidden by default");
+    handle_event(&mut app, key(KeyCode::Char('t')), &cfg);
+    assert!(app.effective_thermal(&cfg));
+    handle_event(&mut app, key(KeyCode::Char('t')), &cfg);
+    assert!(!app.effective_thermal(&cfg));
+
+    assert!(app.effective_charts(&cfg));
+    handle_event(&mut app, key(KeyCode::Char('c')), &cfg);
+    assert!(!app.effective_charts(&cfg));
+    handle_event(&mut app, key(KeyCode::Char('c')), &cfg);
+    assert!(app.effective_charts(&cfg));
 }
 
 #[test]

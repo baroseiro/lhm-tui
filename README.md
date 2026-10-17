@@ -109,6 +109,7 @@ lhm-tui --help
 | `r`                   | Reload config from disk                 |
 | `m`                   | Reset LHM min/max counters              |
 | `a` / `d`             | ASCII mode / debug overlay              |
+| `t` / `c`             | Toggle temperatures table / charts      |
 
 All keys are remappable in the config file.
 
@@ -159,7 +160,8 @@ Common things people change:
 | Build a custom panel                | `panels.custom` with `graph` / `gauge` / `table` widgets                |
 | Change colors or warning thresholds | `theme`                                                                 |
 | Remap keys                          | `keys`                                                                  |
-| Turn charts off                     | `charts.enabled: false` (or run with `--no-charts`)                     |
+| Turn charts off                     | `charts.enabled: false` (or run with `--no-charts`, or press `c`)       |
+| Show the temperatures table         | Press `t`, or add `"thermal"` to `ui.layout`                            |
 
 CLI flags beat environment variables, which beat the config file.
 

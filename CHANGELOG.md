@@ -69,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   core/hotspot/memory-junction temps) and memory (usage %, synthesized from used/available
   history when no load sensor exists) (`T3.1`–`T3.4`).
 - Charts are optional: `charts.enabled` in the config or `--charts`/`--no-charts` on the CLI;
-  disabled keeps the compact gauges/bars layout and skips history collection entirely.
+  disabled keeps the compact gauges/bars layout. History is always collected (≈1 MB) so toggling
+  is instant.
 - Chart window cycling (`g`/`G`) through `charts.window_cycle`, window label in the footer;
   `a` toggles ASCII rendering at runtime; chart panels shrink first (down to a 4-row chart) when
   the terminal is short.
@@ -77,7 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   headers align with right-aligned numeric columns, and the GPU **memory temperature** is now
   bound and shown (NVIDIA "GPU Memory Junction", AMD "GPU Memory") with exact-name matching so
   hotspot/mem-temp never silently duplicate the core temperature.
-- Tests: history and chart unit suites, chart/squeezed-layout snapshots — 109 tests total.
+- Tests: history and chart unit suites, chart/squeezed-layout snapshots.
+- Temperatures table hidden by default (`ui.layout` no longer lists `thermal`); `t` toggles it at
+  runtime and `c` toggles charts between graphs and gauges (both remappable via `keys`).
+- `ui.auto_height` (default true): charts grow into spare vertical space and shrink first on
+  overflow — also fixing a row double-counting bug that needlessly squeezed side-by-side GPUs.
+- Chart polish: series shorter than the pixel width right-align, so live charts grow from the
+  right edge instead of stretching one sample across the screen.
+- Tests: 112 total, including layout-row grouping, auto-height distribution, right-aligned
+  decimation, and the `t`/`c` toggle keys.
 
 ### Changed
 

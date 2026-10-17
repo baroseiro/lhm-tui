@@ -403,7 +403,10 @@ sensor returns. `--probe` prints a binding report (slot → SensorId) to make mi
 
 ### 6.1 Default layout
 
-Panels flow vertically in the order of `ui.layout` (default `["cpu", "gpu", "memory", "thermal"]`).
+Panels flow vertically in the order of `ui.layout` (default `["cpu", "gpu", "memory"]`;
+the temperatures table is hidden by default — add `thermal` to the layout or press `t`). With
+`ui.auto_height` (default true) charts absorb spare vertical space first, then tables grow up to
+`ui.max_height`, so no blank band is left at the bottom.
 CPU, memory and each GPU occupy the full width; two GPUs (or GPU + thermal) sit side-by-side when
 `width ≥ 120`; thermal/fans/power tables are full-width and grow to fit content up to `ui.max_height`.
 
@@ -448,7 +451,7 @@ Responsive rules:
 | `cpu`         | temp graph + total-load graph (dual series), per-core bars, clock/power gauges   |
 | `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + power/clock/fan gauges |
 | `memory`      | used/available gauge + used-load graph + optional page file/virtual gauges       |
-| `thermal`     | table of all temperature sensors, sorted desc                                     |
+| `thermal`     | table of all temperature sensors, sorted desc (hidden by default; `t` or list it in `ui.layout`) |
 | `fans`        | table of fans (+control % column)                                                 |
 | `power`       | table of power sensors with total row                                             |
 | `storage`     | table: temperature/activity/used/free per drive                                  |
@@ -471,6 +474,8 @@ Responsive rules:
 | `r`                      | Reload config from disk (keeps history)                          |
 | `m`                      | `GET /ResetAllMinMax` on LHM (with 2 s toast confirmation)       |
 | `a`                      | Toggle ASCII rendering (overrides config)                        |
+| `t`                      | Toggle the temperatures table visibility                         |
+| `c`                      | Toggle charts (metric graphs ↔ gauges/bars)                      |
 | `d`                      | Debug overlay: poll latency, payload size, sensor/hw counts, last error, LHM version |
 | `y`                      | Copy current snapshot summary to clipboard (OSC 52) — optional v0.1.1 |
 
@@ -491,7 +496,9 @@ Key conflicts after remapping → config validation error listing offending acti
 Custom widget built on `ratatui::widgets::canvas::Canvas` (or direct braille writes) rather than the
 stock `Chart` widget, because we need multi-series braille lines, min/max envelopes, autoscale
 hysteresis and legends. Charts are optional: `charts.enabled` (or `--no-charts`) keeps the
-gauges/bars-only layouts from P2 and skips history collection entirely.
+gauges/bars-only layouts from P2, and the `c` key toggles at runtime; history is always collected
+(cheap, about 1 MB for 500 series) so switching is instant. Series shorter than the pixel width
+are right-aligned so live charts grow from the right edge.
 
 ### 7.1 Data pipeline per series
 
@@ -591,10 +598,11 @@ path (e.g. `charts.window: invalid duration "5x"`).
 
   "ui": {
     "fps": 30,                        // render tick 1..60 (redraw-on-change still applies)
-    "layout": ["cpu", "gpu", "memory", "thermal"],
+    "layout": ["cpu", "gpu", "memory"],  // thermal hidden by default — t toggles it
     "show_header": true,
     "show_footer": true,
     "max_height": 12,                 // max rows a table panel may grow to
+    "auto_height": true,              // stretch panels (charts first) to fill the terminal
     "table_sort": "value_desc",       // value_desc | value_asc | name | none
     "ascii": false,
     "no_color": false,
@@ -681,7 +689,8 @@ path (e.g. `charts.window: invalid duration "5x"`).
 | `server.request_timeout_ms`       | int             | `2000`           | Per request                                  |
 | `server.username`/`password*`     | string/null     | `null`           | Exactly one password source may be set       |
 | `history.window_s`                | int             | `900`            | 60–86400                                     |
-| `ui.layout`                       | string[]        | see §6.1         | Valid panel keys enforced                    |
+| `ui.layout`                       | string[]        | `["cpu","gpu","memory"]` | Valid panel keys enforced; `thermal` hidden by default |
+| `ui.auto_height`                  | bool            | `true`           | Charts absorb spare space, then tables to `max_height` |
 | `charts.enabled`                  | bool            | `true`           | `false`/`--no-charts` keeps gauges/bars only |
 | `charts.marker`                   | enum            | `braille`        | Fallback automatically if glyph unsupported  |
 | `charts.window(_cycle)`           | duration/string | `"5m"`/`[1m,5m,15m]` | Window > `history.window_s` clamps       |
@@ -1018,6 +1027,7 @@ both covered in fixtures):
         "show_header": { "type": "boolean", "default": true },
         "show_footer": { "type": "boolean", "default": true },
         "max_height": { "type": "integer", "minimum": 4, "default": 12 },
+        "auto_height": { "type": "boolean", "default": true },
         "table_sort": { "enum": ["value_desc", "value_asc", "name", "none"], "default": "value_desc" },
         "ascii": { "type": "boolean", "default": false },
         "no_color": { "type": "boolean", "default": false },

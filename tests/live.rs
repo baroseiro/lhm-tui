@@ -6,9 +6,10 @@
 use std::sync::Arc;
 
 use ratatui::backend::TestBackend;
+use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::Terminal;
 
-use lhm_tui::app::{AppState, PollEvent};
+use lhm_tui::app::{handle_event, AppState, PollEvent};
 use lhm_tui::bindings;
 use lhm_tui::config::Config;
 use lhm_tui::lhm::client::{Fetched, LhmClient};
@@ -19,6 +20,29 @@ async fn live_fetch(cfg: &Config) -> Fetched {
         .fetch_data_json()
         .await
         .expect("LibreHardwareMonitor must be running on localhost:8085")
+}
+
+fn render_to_string(
+    terminal: &mut Terminal<TestBackend>,
+    app: &mut AppState,
+    cfg: &Config,
+) -> String {
+    terminal
+        .draw(|frame| lhm_tui::ui::draw(frame, app, cfg))
+        .expect("draw");
+    let buffer = terminal.backend().buffer();
+    let mut text = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            text.push_str(buffer.cell((x, y)).map(|cell| cell.symbol()).unwrap_or(" "));
+        }
+        text.push('\n');
+    }
+    text
+}
+
+fn key(character: char) -> Event {
+    Event::Key(KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE))
 }
 
 #[tokio::test]
@@ -51,12 +75,12 @@ async fn live_probe_and_bindings() {
     }
     for (index, gpu) in bindings.gpus.iter().enumerate() {
         println!(
-            "  gpu {index} {}: load={:?} temp={:?} vram={:?} total={:?}",
+            "  gpu {index} {}: load={:?} temp={:?} mem_temp={:?} vram={:?}",
             gpu.name,
             gpu.load.as_ref().map(|slot| slot.sensor_id.as_str()),
             gpu.temp.as_ref().map(|slot| slot.sensor_id.as_str()),
+            gpu.mem_temp.as_ref().map(|slot| slot.sensor_id.as_str()),
             gpu.mem_used.as_ref().map(|slot| slot.sensor_id.as_str()),
-            gpu.mem_total.as_ref().map(|slot| slot.sensor_id.as_str()),
         );
     }
     if let Some(memory) = &bindings.memory {
@@ -97,23 +121,28 @@ async fn live_full_dashboard_render() {
 
     let backend = TestBackend::new(140, 44);
     let mut terminal = Terminal::new(backend).expect("terminal");
-    terminal
-        .draw(|frame| lhm_tui::ui::draw(frame, &mut app, &cfg))
-        .expect("draw");
-    let buffer = terminal.backend().buffer();
-    let mut text = String::new();
-    for y in 0..buffer.area.height {
-        for x in 0..buffer.area.width {
-            text.push_str(buffer.cell((x, y)).map(|cell| cell.symbol()).unwrap_or(" "));
-        }
-        text.push('\n');
-    }
+    let text = render_to_string(&mut terminal, &mut app, &cfg);
     println!("{text}");
 
     assert!(text.contains("CPU"), "cpu panel rendered");
     assert!(text.contains("GPU 0"), "first gpu panel rendered");
     assert!(text.contains("GPU 1"), "second gpu panel rendered");
     assert!(text.contains("Memory"), "memory panel rendered");
-    assert!(text.contains("Temperatures"), "thermal panel rendered");
     assert!(text.contains("live"), "status header rendered");
+    assert!(
+        !text.contains("Temperatures"),
+        "thermal table hidden by default"
+    );
+
+    // `t` reveals the temperatures table.
+    handle_event(&mut app, key('t'), &cfg);
+    let text = render_to_string(&mut terminal, &mut app, &cfg);
+    println!("{text}");
+    assert!(text.contains("Temperatures"), "t shows the thermal table");
+
+    // `c` switches to the gauges layout (which has a Mem Temp row).
+    handle_event(&mut app, key('c'), &cfg);
+    let text = render_to_string(&mut terminal, &mut app, &cfg);
+    println!("{text}");
+    assert!(text.contains("Mem Temp"), "c switches to gauge panels");
 }

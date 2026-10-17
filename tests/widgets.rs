@@ -65,6 +65,7 @@ fn draw_preset(
         theme,
         history,
         charts,
+        charts_enabled: cfg.charts.enabled,
         stale: false,
         ascii,
         focused: false,
