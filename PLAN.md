@@ -68,7 +68,7 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 #### T0.2 — CLI surface (SPEC §9)
 **Goal:** Full clap v4 derive definition for every flag in SPEC §9, env-var bindings (`LHM_TUI_*`), `-v` repeatable verbosity, exit-code constants.
 **Files:** `src/cli.rs`, `src/main.rs`.
-**Notes:** No behavior yet beyond parsing + dispatch to `--help`/`--version`; un-implemented modes exit 2 with "not implemented yet" until their phases land.
+**Notes:** No behavior yet beyond parsing + dispatch to `--help`/`--version`; un-implemented modes exit 1 (runtime failure, per SPEC §9) with a "not implemented yet" milestone hint until their phases land.
 **Done when:** `--help` output matches SPEC §9 (manual diff); unit test asserts precedence skeleton (CLI beats env).
 
 #### T0.3 — Config core (SPEC §8.1, §8.3)
@@ -86,7 +86,7 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 #### T0.5 — Logging
 **Goal:** `tracing` to file only (SPEC §10.2): default path per platform, `--log` override, `-v` levels, 10 MB rotation keeping 3 files.
 **Files:** `src/util.rs` (log init), `src/main.rs`.
-**Notes:** Use `tracing-appender` + `tracing-subscriber` `EnvFilter` string built from verbosity.
+**Notes:** Use `tracing-subscriber` with an `EnvFilter` built from verbosity (`RUST_LOG` overrides). 10 MB × 3 rotation needs a small hand-rolled writer — `tracing-appender` only rotates by time.
 **Done when:** Log file appears with startup lines; no output leaks to the TUI.
 
 **Exit checklist P0:** placeholder app runs; `--print-config`/`--init-config` implemented; CI green; log file written.

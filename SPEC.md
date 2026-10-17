@@ -92,7 +92,7 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 
 | ID  | Requirement                                                                                              | Priority |
 | --- | -------------------------------------------------------------------------------------------------------- | -------- |
-| F1  | Poll `GET {base}/data.json` on an interval (default 1000 ms, configurable 200–60000 ms)                   | must     |
+| F1  | Poll `GET {base}/data.json` on an interval (default 1000 ms, configurable 250–60000 ms)                   | must     |
 | F2  | Tolerate HTTP Basic auth (username/password from config/env), gzip responses, and transient failures      | must     |
 | F3  | Parse the full LHM tree: hardware → sensor-type groups → sensors, with `SensorId`, `Type`, min/max/values | must     |
 | F4  | Maintain in-memory rolling history per sensor (≥ 15 min at default interval)                              | must     |
@@ -254,7 +254,7 @@ lhm-tui/
 └──────┬───────────────────────────────────────────────────────────────────────┘
        │ terminal.draw() on tick / dirty flag
        ▼
-┌─────────────┐    crossterm EventStream (keys, resize)
+┌─────────────┐    crossterm input thread (keys, resize)
 │  ratatui    │ ◀──────────────────────────────────────┐
 │  renderer   │                                        │
 └─────────────┘                              tokio::select! { tick, poll-event, key }
@@ -266,7 +266,7 @@ lhm-tui/
 | ------------- | ------------------------------------------------------------------------------------------------- |
 | Runtime       | `tokio` (multi-thread, 2 workers), `ratatui::init()/restore()` helpers                             |
 | Poller        | Dedicated task owning the `reqwest::Client`; loop `interval.tick()` → fetch → sanitize/parse → `watch::Sender<PollEvent>` (latest-value-wins; UI never blocks on the network) |
-| UI loop       | `tokio::select!` over: render tick (`ui.fps`, default 30), `EventStream` key/resize events, `watch::Receiver` change → update `AppState` |
+| UI loop       | `tokio::select!` over: render tick (`ui.fps`, default 30), key/resize events from the crossterm input thread (`mpsc`), `watch::Receiver` change → update `AppState` |
 | History       | Lives on the UI side; on each applied snapshot append raw values to ring buffers. Paused (`p`) suspends polling, not time |
 | Backoff       | On error: retry after `initial_ms * factor^n` capped at `max_ms` + ±10 % jitter; success resets, status back to Live; UI keeps rendering last snapshot as `Stale{age}` |
 | Redraw policy | Request a redraw when: new snapshot applied, key handled, resize, or every 1 s while Stale (age ticker). Not a busy 30 fps loop |
@@ -276,11 +276,12 @@ lhm-tui/
 
 | Crate                       | Version | Purpose                                                    |
 | --------------------------- | ------- | ---------------------------------------------------------- |
-| `ratatui`                   | 0.30    | TUI framework, `Canvas`/`Marker::Braille`, `EventStream`   |
-| `crossterm`                 | 0.29    | Backend events (via ratatui re-export where possible)      |
+| `ratatui`                   | 0.30    | TUI framework, `Canvas`/`Marker::Braille`, layout/widgets  |
+| `crossterm`                 | 0.29    | Backend events (via ratatui re-export; input read thread)  |
 | `tokio`                     | 1       | Async runtime, `sync::watch`, `time`                       |
 | `reqwest`                   | 0.12    | HTTP client, `features = ["json","gzip","rustls-tls"]`     |
 | `serde` / `serde_json`      | 1       | Config + wire types, `preserve_order` for stable node order |
+| `serde_ignored`             | 0.1     | Unknown config keys → warnings / `--strict-config` errors  |
 | `clap`                      | 4       | CLI (`derive`)                                             |
 | `anyhow` / `thiserror`      | 1/2     | Error plumbing / typed errors                              |
 | `regex`                     | 1       | Sensor match rules (`name_regex`)                           |
@@ -556,7 +557,8 @@ path (e.g. `charts.window: invalid duration "5x"`).
 ### 8.2 Annotated example
 
 > Comments are **not** valid JSON — shown here for documentation only. The shipped
-> `lhm-tui.example.json` is comment-free.
+> `lhm-tui.example.json` is comment-free and reflects the full built-in defaults (every key
+> action and the storage/network panels included — a superset of the fields shown here).
 
 ```jsonc
 {
@@ -568,7 +570,7 @@ path (e.g. `charts.window: invalid duration "5x"`).
     "password": null,            // prefer password_env / password_file over inline passwords
     "password_env": null,        // e.g. "LHM_PASSWORD" — read from environment
     "password_file": null,       // read password from first line of this file
-    "poll_interval_ms": 1000,    // 200..60000
+    "poll_interval_ms": 1000,    // 250..60000
     "request_timeout_ms": 2000,
     "gzip": true,
     "verify_version": true,      // warn if LHM < 0.9.5
@@ -664,7 +666,7 @@ path (e.g. `charts.window: invalid duration "5x"`).
 | Path                              | Type            | Default          | Notes                                        |
 | --------------------------------- | --------------- | ---------------- | -------------------------------------------- |
 | `server.url`                      | string (url)    | `http://127.0.0.1:8085` | Without trailing slash                |
-| `server.poll_interval_ms`         | int             | `1000`           | 200–60000; values < 250 rejected             |
+| `server.poll_interval_ms`         | int             | `1000`           | 250–60000                                    |
 | `server.request_timeout_ms`       | int             | `2000`           | Per request                                  |
 | `server.username`/`password*`     | string/null     | `null`           | Exactly one password source may be set       |
 | `history.window_s`                | int             | `900`            | 60–86400                                     |
@@ -969,7 +971,7 @@ both covered in fixtures):
         "password": { "type": ["string", "null"] },
         "password_env": { "type": ["string", "null"] },
         "password_file": { "type": ["string", "null"] },
-        "poll_interval_ms": { "type": "integer", "minimum": 200, "maximum": 60000, "default": 1000 },
+        "poll_interval_ms": { "type": "integer", "minimum": 250, "maximum": 60000, "default": 1000 },
         "request_timeout_ms": { "type": "integer", "minimum": 100, "default": 2000 },
         "gzip": { "type": "boolean", "default": true },
         "verify_version": { "type": "boolean", "default": true },
