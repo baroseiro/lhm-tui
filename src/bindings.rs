@@ -42,6 +42,8 @@ pub struct GpuBindings {
     pub mem_total: Option<Slot>,
     pub temp: Option<Slot>,
     pub hotspot: Option<Slot>,
+    /// GPU memory temperature: NVIDIA "GPU Memory Junction", AMD "GPU Memory".
+    pub mem_temp: Option<Slot>,
     pub power: Option<Slot>,
     pub clock: Option<Slot>,
     pub fan: Option<Slot>,
@@ -345,10 +347,17 @@ fn gpu_bindings(
         )
     });
     let hotspot = find_slot(snapshot, hardware, overrides, &key("hotspot"), || {
-        find_named(
+        find_exact(
             hardware,
             &SensorKind::Temperature,
             &["GPU Hot Spot", "Hot Spot"],
+        )
+    });
+    let mem_temp = find_slot(snapshot, hardware, overrides, &key("mem_temp"), || {
+        find_exact(
+            hardware,
+            &SensorKind::Temperature,
+            &["GPU Memory Junction", "GPU Memory", "Memory Junction"],
         )
     });
     let power = find_slot(snapshot, hardware, overrides, &key("power"), || {
@@ -370,6 +379,7 @@ fn gpu_bindings(
         mem_total,
         temp,
         hotspot,
+        mem_temp,
         power,
         clock,
         fan,
@@ -503,6 +513,14 @@ fn network_bindings(hardware: &Hardware) -> NetworkBindings {
 // ---------------------------------------------------------------- helpers
 
 fn find_named<'a>(hardware: &'a Hardware, kind: &SensorKind, names: &[&str]) -> Option<&'a Sensor> {
+    find_exact(hardware, kind, names)
+        .or_else(|| hardware.sensors().find(|sensor| &sensor.kind == kind))
+}
+
+/// Exact-name-only search (no "first of kind" fallback): for secondary slots
+/// like hotspot / memory temperature, where a fallback would silently show
+/// the wrong sensor twice.
+fn find_exact<'a>(hardware: &'a Hardware, kind: &SensorKind, names: &[&str]) -> Option<&'a Sensor> {
     for name in names {
         if let Some(sensor) = hardware
             .sensors()
@@ -511,7 +529,7 @@ fn find_named<'a>(hardware: &'a Hardware, kind: &SensorKind, names: &[&str]) -> 
             return Some(sensor);
         }
     }
-    hardware.sensors().find(|sensor| &sensor.kind == kind)
+    None
 }
 
 fn find_named_multi<'a>(

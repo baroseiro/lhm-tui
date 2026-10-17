@@ -53,6 +53,14 @@ pub struct Cli {
     #[arg(long, value_name = "KEYS")]
     pub layout: Option<String>,
 
+    /// Enable charts (overrides `charts.enabled` in the config file).
+    #[arg(long = "charts", overrides_with = "no_charts")]
+    pub charts: bool,
+
+    /// Disable charts; panels render gauges and bars only.
+    #[arg(long = "no-charts", overrides_with = "charts")]
+    pub no_charts: bool,
+
     /// Debug log file (default: platform temp/state dir).
     #[arg(long, value_name = "PATH")]
     pub log: Option<PathBuf>,

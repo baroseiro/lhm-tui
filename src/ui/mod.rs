@@ -2,11 +2,14 @@
 //!
 //! Panels come from `ui.layout` expanded over the current bindings (preset
 //! panel list); consecutive GPU panels share a row when the terminal is wide
-//! enough. Below 60×20 a dedicated too-small screen is shown (SPEC N8).
+//! enough. Chart panels shrink first when space runs out, and below 60×20 a
+//! dedicated too-small screen is shown (SPEC N8).
 
 pub mod format;
 pub mod presets;
 pub mod widgets;
+
+use std::time::Instant;
 
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
@@ -17,12 +20,11 @@ use ratatui::Frame;
 use crate::app::{AppState, LinkStatus};
 use crate::bindings::Bindings;
 use crate::config::Config;
-use crate::lhm::model::Snapshot;
 use crate::theme::Theme;
-use crate::ui::presets::PanelKind;
+use crate::ui::presets::{PanelCtx, PanelKind};
 use crate::util::human_bytes;
 
-pub fn draw(frame: &mut Frame, app: &AppState, cfg: &Config) {
+pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
     let theme = Theme::from_config(&cfg.theme);
     let area = frame.area();
 
@@ -44,15 +46,16 @@ pub fn draw(frame: &mut Frame, app: &AppState, cfg: &Config) {
 
     let stale = matches!(app.link, LinkStatus::Stale | LinkStatus::Reconnecting)
         && app.last_fetch.is_some();
-    match (app.snapshot(), app.bindings.as_ref()) {
-        (Some(snapshot), Some(bindings)) if bindings.has_any() => {
-            render_panels(frame, body, app, snapshot, bindings, cfg, &theme, stale);
-        }
-        _ => render_status(frame, body, app, cfg, &theme),
+    let has_panels =
+        app.snapshot().is_some() && app.bindings.as_ref().is_some_and(Bindings::has_any);
+    if has_panels {
+        render_panels(frame, body, app, cfg, &theme, stale);
+    } else {
+        frame.render_widget(status_paragraph(app, cfg, &theme), body);
     }
 
     if cfg.ui.show_footer {
-        frame.render_widget(footer_line(cfg), footer);
+        frame.render_widget(footer_line(app, cfg), footer);
     }
 }
 
@@ -125,7 +128,7 @@ fn header_line(app: &AppState, cfg: &Config, size: Rect) -> Paragraph<'static> {
     Paragraph::new(line)
 }
 
-fn footer_line(cfg: &Config) -> Paragraph<'static> {
+fn footer_line(app: &AppState, cfg: &Config) -> Paragraph<'static> {
     let first = |action: &str| {
         cfg.keys
             .get(action)
@@ -133,18 +136,17 @@ fn footer_line(cfg: &Config) -> Paragraph<'static> {
             .cloned()
             .unwrap_or_else(|| "?".to_string())
     };
+    let window = app.effective_window(cfg).1;
     let line = Line::from(vec![
-        Span::styled(
-            format!(" {} ", first("quit")),
-            Style::new().bold().fg(Color::Cyan),
-        ),
+        Span::styled(format!(" {} ", first("quit")), Style::new().bold().fg(Color::Cyan)),
         Span::styled("quit", Style::new().fg(Color::DarkGray)),
         Span::styled(
             format!(
-                "   ·   {} pause   ·   {} focus   ·   {} sort   ·   j/k scroll",
+                "   ·   {} pause   ·   {} focus   ·   {} sort   ·   j/k scroll   ·   {} window({window})",
                 first("pause"),
                 first("focus_next"),
                 first("sort"),
+                first("window_next"),
             ),
             Style::new().fg(Color::DarkGray),
         ),
@@ -152,8 +154,8 @@ fn footer_line(cfg: &Config) -> Paragraph<'static> {
     Paragraph::new(line)
 }
 
-/// STATUS screen shown before the first snapshot (or without bindings).
-fn render_status(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, theme: &Theme) {
+/// Status screen shown before the first snapshot (or without bindings).
+fn status_paragraph(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'static> {
     let url = cfg.server.url.trim_end_matches('/').to_string();
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
@@ -247,41 +249,58 @@ fn render_status(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, th
         Style::new().fg(theme.muted),
     )));
 
-    frame.render_widget(
-        Paragraph::new(Text::from(lines))
-            .block(block)
-            .alignment(Alignment::Center),
-        area,
-    );
+    Paragraph::new(Text::from(lines))
+        .block(block)
+        .alignment(Alignment::Center)
 }
 
 /// Compose the preset panels into rows; consecutive GPUs share a row when
 /// width ≥ 120 and `panels.gpu.per_row` allows it (SPEC §6.1).
-#[allow(clippy::too_many_arguments)]
 fn render_panels(
     frame: &mut Frame,
     area: Rect,
-    app: &AppState,
-    snapshot: &Snapshot,
-    bindings: &Bindings,
+    app: &mut AppState,
     cfg: &Config,
     theme: &Theme,
     stale: bool,
 ) {
-    let panels = presets::panel_list(cfg, bindings);
-    if panels.is_empty() {
-        render_status(frame, area, app, cfg, theme);
+    // Values that only need `&AppState` are read before the split borrows.
+    let sort = app.effective_sort(cfg);
+    let ascii = app.effective_ascii(cfg);
+    let (window, window_label) = app.effective_window(cfg);
+    let now = Instant::now();
+
+    // Disjoint field borrows so history/data and chart state coexist.
+    let AppState {
+        last_fetch,
+        bindings,
+        history,
+        charts,
+        scrolls,
+        focus,
+        ..
+    } = app;
+    let (Some(fetched), Some(bindings)) = (last_fetch.as_deref(), bindings.as_ref()) else {
+        return;
+    };
+    let snapshot = &fetched.snapshot;
+    if !bindings.has_any() {
         return;
     }
+
+    let panels = presets::panel_list(cfg, bindings);
+    if panels.is_empty() {
+        return;
+    }
+    let heights = presets::fit_heights(&panels, bindings, cfg, area.height);
 
     let per_row = if area.width >= 120 {
         cfg.panels.gpu.per_row.max(1) as usize
     } else {
         1
     };
-
     let mut rows: Vec<Vec<&presets::PanelSpec>> = Vec::new();
-    let mut heights: Vec<u16> = Vec::new();
+    let mut row_heights: Vec<u16> = Vec::new();
     let mut index = 0;
     while index < panels.len() {
         let spec = &panels[index];
@@ -295,20 +314,22 @@ fn render_panels(
                 group.push(&panels[next]);
                 next += 1;
             }
-            heights.push(presets::panel_height(spec, bindings, cfg));
+            row_heights.push(heights[index]);
             rows.push(group);
             index = next;
         } else {
-            heights.push(presets::panel_height(spec, bindings, cfg));
+            row_heights.push(heights[index]);
             rows.push(vec![spec]);
             index += 1;
         }
     }
 
-    let constraints: Vec<Constraint> = heights.iter().map(|h| Constraint::Length(*h)).collect();
+    let constraints: Vec<Constraint> = row_heights
+        .iter()
+        .map(|height| Constraint::Length(*height))
+        .collect();
     let row_areas = Layout::vertical(constraints).split(area);
-    let focused_index = app.focus % panels.len();
-    let sort = app.effective_sort(cfg);
+    let focused_index = *focus % panels.len();
 
     for (row, row_area) in rows.iter().zip(row_areas.iter()) {
         let columns: Vec<Rect> = if row.len() == 1 {
@@ -319,24 +340,28 @@ fn render_panels(
                 .to_vec()
         };
         for (spec, column) in row.iter().zip(columns) {
-            let index = panels
+            let panel_index = panels
                 .iter()
                 .position(|panel| panel.id == spec.id)
                 .unwrap_or(0);
-            let scroll = app.scrolls.get(&spec.id).copied().unwrap_or(0);
-            presets::draw_panel(
-                frame,
-                column,
-                spec,
+            let scroll = scrolls.get(&spec.id).copied().unwrap_or(0);
+            let mut ctx = PanelCtx {
                 snapshot,
                 bindings,
                 cfg,
                 theme,
+                history: history.as_ref(),
+                charts: &mut *charts,
                 stale,
-                index == focused_index,
+                ascii,
+                focused: panel_index == focused_index,
                 sort,
                 scroll,
-            );
+                window,
+                window_label: window_label.clone(),
+                now,
+            };
+            presets::draw_panel(frame, column, spec, &mut ctx);
         }
     }
 }

@@ -86,15 +86,19 @@ async fn live_probe_and_bindings() {
 #[ignore = "requires LibreHardwareMonitor on localhost:8085"]
 async fn live_full_dashboard_render() {
     let cfg = Config::default();
-    let fetched = live_fetch(&cfg).await;
-
     let mut app = AppState::new();
-    app.apply_poll_event(PollEvent::Snapshot(Arc::new(fetched)), &cfg);
 
-    let backend = TestBackend::new(120, 40);
+    // A few real polls so the charts have a small trend to draw.
+    for _ in 0..4 {
+        let fetched = live_fetch(&cfg).await;
+        app.apply_poll_event(PollEvent::Snapshot(Arc::new(fetched)), &cfg);
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    let backend = TestBackend::new(140, 44);
     let mut terminal = Terminal::new(backend).expect("terminal");
     terminal
-        .draw(|frame| lhm_tui::ui::draw(frame, &app, &cfg))
+        .draw(|frame| lhm_tui::ui::draw(frame, &mut app, &cfg))
         .expect("draw");
     let buffer = terminal.backend().buffer();
     let mut text = String::new();

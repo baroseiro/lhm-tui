@@ -52,6 +52,11 @@ fn reference_fixture_slots() {
     assert_eq!(slot_id(&gpu.mem_total), Some("/nvidiagpu/0/smalldata/0"));
     assert_eq!(slot_id(&gpu.temp), Some("/nvidiagpu/0/temperature/0"));
     assert_eq!(slot_id(&gpu.hotspot), Some("/nvidiagpu/0/temperature/2"));
+    assert_eq!(
+        slot_id(&gpu.mem_temp),
+        None,
+        "no memory junction in this fixture"
+    );
     assert_eq!(slot_id(&gpu.power), Some("/nvidiagpu/0/power/1"));
     assert_eq!(slot_id(&gpu.fan), Some("/nvidiagpu/0/fan/0"));
 
@@ -112,6 +117,16 @@ fn live_fixture_dual_gpu_machine() {
     assert_eq!(
         slot_label(&snapshot, &nvidia.fan).as_deref(),
         Some("GPU Fan 1")
+    );
+    assert_eq!(
+        slot_label(&snapshot, &nvidia.mem_temp).as_deref(),
+        Some("GPU Memory Junction"),
+        "NVIDIA names the VRAM temperature 'GPU Memory Junction'"
+    );
+    assert_eq!(
+        slot_label(&snapshot, &amd.mem_temp).as_deref(),
+        Some("GPU Memory"),
+        "AMD names the VRAM temperature 'GPU Memory'"
     );
     assert_eq!(
         slot_label(&snapshot, &amd.hotspot).as_deref(),

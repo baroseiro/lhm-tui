@@ -1,0 +1,6 @@
+---
+source: tests/widgets.rs
+expression: out
+---
+ Temp     ████████████░░░░░░░░░░░░░ 46.9 °C
+ Hot Spot ███████████████░░░░░░░░░░ 61.5 °C

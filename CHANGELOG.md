@@ -63,6 +63,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real-world fixture `lhm-live-5900xt.json` (scrubbed capture of a 32-core dual-GPU machine) and
   ignored live tests: `cargo test --test live -- --ignored --nocapture` renders the full dashboard
   from a locally running LHM.
+- Live charts (P3): per-sensor ring-buffer history, min/max envelope decimation, nice-step
+  autoscale with 5 s shrink hysteresis, and a braille/halfblock/ascii graph widget with legends,
+  grid and axis row — CPU (load + temp graphs), per-GPU (load + VRAM usage over
+  core/hotspot/memory-junction temps) and memory (usage %, synthesized from used/available
+  history when no load sensor exists) (`T3.1`–`T3.4`).
+- Charts are optional: `charts.enabled` in the config or `--charts`/`--no-charts` on the CLI;
+  disabled keeps the compact gauges/bars layout and skips history collection entirely.
+- Chart window cycling (`g`/`G`) through `charts.window_cycle`, window label in the footer;
+  `a` toggles ASCII rendering at runtime; chart panels shrink first (down to a 4-row chart) when
+  the terminal is short.
+- UI fixes from live feedback: fixed-width label column aligns gauges and info rows, table
+  headers align with right-aligned numeric columns, and the GPU **memory temperature** is now
+  bound and shown (NVIDIA "GPU Memory Junction", AMD "GPU Memory") with exact-name matching so
+  hotspot/mem-temp never silently duplicate the core temperature.
+- Tests: history and chart unit suites, chart/squeezed-layout snapshots — 109 tests total.
 
 ### Changed
 
@@ -77,3 +92,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Planned layout updated: the binding engine lives in `src/bindings.rs` (SPEC §4.1, PLAN T2.2);
   default `keys.focus_prev` also accepts `backtab` (legacy terminals report Shift+Tab that way)
   and `lhm-tui.example.json` was regenerated.
+- SPEC/PLAN sync for P3: `charts.enabled` documented everywhere (§7, §8.2/§8.3, §9, Appendix C),
+  GPU `mem_temp` slot row added to §5.2, PLAN T3.5 glyph note corrected to the implemented
+  `_ - =` ASCII set.

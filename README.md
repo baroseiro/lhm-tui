@@ -159,6 +159,7 @@ Common things people change:
 | Build a custom panel                | `panels.custom` with `graph` / `gauge` / `table` widgets                |
 | Change colors or warning thresholds | `theme`                                                                 |
 | Remap keys                          | `keys`                                                                  |
+| Turn charts off                     | `charts.enabled: false` (or run with `--no-charts`)                     |
 
 CLI flags beat environment variables, which beat the config file.
 

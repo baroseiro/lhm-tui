@@ -11,8 +11,10 @@
 
 pub mod app;
 pub mod bindings;
+pub mod charts;
 pub mod cli;
 pub mod config;
+pub mod history;
 pub mod lhm;
 pub mod theme;
 pub mod ui;

@@ -15,7 +15,9 @@ use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModif
 use ratatui::DefaultTerminal;
 
 use crate::bindings::{self, Bindings};
+use crate::charts::ChartsState;
 use crate::config::{Config, RetryConfig, ServerConfig, TableSort};
+use crate::history::History;
 use crate::lhm::client::{Fetched, LhmClient};
 use crate::lhm::model::Snapshot;
 use crate::ui;
@@ -68,6 +70,16 @@ pub struct AppState {
     pub scrolls: BTreeMap<String, u16>,
     /// `s` key sort override; `None` → `ui.table_sort` from config.
     pub sort_override: Option<TableSort>,
+    /// Rolling per-sensor history for charts (`None` until the first
+    /// snapshot; only populated when `charts.enabled`).
+    pub history: Option<History>,
+    /// `g`/`G` override: index into `charts.window_cycle`;
+    /// `None` → `charts.window` from config.
+    pub window_override: Option<usize>,
+    /// `a` key override for `ui.ascii`.
+    pub ascii_override: Option<bool>,
+    /// Chart autoscale state (hysteresis per graph).
+    pub charts: ChartsState,
 }
 
 impl AppState {
@@ -89,6 +101,10 @@ impl AppState {
             focus: 0,
             scrolls: BTreeMap::new(),
             sort_override: None,
+            history: None,
+            window_override: None,
+            ascii_override: None,
+            charts: ChartsState::new(),
         }
     }
 
@@ -102,6 +118,39 @@ impl AppState {
         self.sort_override.unwrap_or(cfg.ui.table_sort)
     }
 
+    /// Effective chart window (`g`/`G` override, else `charts.window`).
+    pub fn effective_window(&self, cfg: &Config) -> (Duration, String) {
+        let label = match self.window_override {
+            Some(index) if !cfg.charts.window_cycle.is_empty() => {
+                cfg.charts.window_cycle[index % cfg.charts.window_cycle.len()].clone()
+            }
+            _ => cfg.charts.window.clone(),
+        };
+        let duration = humantime::parse_duration(&label).unwrap_or(Duration::from_secs(300));
+        (duration, label)
+    }
+
+    /// Cycle the chart window through `charts.window_cycle` (SPEC §6.4).
+    pub fn window_next(&mut self, cfg: &Config, delta: i32) {
+        let cycle = &cfg.charts.window_cycle;
+        if cycle.is_empty() {
+            return;
+        }
+        let (_, current) = self.effective_window(cfg);
+        let position = cycle
+            .iter()
+            .position(|label| *label == current)
+            .unwrap_or(0) as i32;
+        let next = (position + delta).rem_euclid(cycle.len() as i32) as usize;
+        self.window_override = Some(next);
+        self.dirty = true;
+    }
+
+    /// Effective ASCII rendering: `a` override, else `ui.ascii` from config.
+    pub fn effective_ascii(&self, cfg: &Config) -> bool {
+        self.ascii_override.unwrap_or(cfg.ui.ascii)
+    }
+
     /// Fold a poller event into the UI state (SPEC §10.1 failure matrix).
     pub fn apply_poll_event(&mut self, event: PollEvent, cfg: &Config) {
         match event {
@@ -111,6 +160,16 @@ impl AppState {
                 if self.bindings.is_none() || fingerprint != self.bindings_fingerprint {
                     self.bindings = Some(bindings::resolve(&fetched.snapshot, &cfg.panels));
                     self.bindings_fingerprint = fingerprint;
+                }
+                if cfg.charts.enabled {
+                    let history = self.history.get_or_insert_with(|| {
+                        History::new(
+                            cfg.history.window_s,
+                            cfg.server.poll_interval_ms,
+                            cfg.history.max_points_per_series,
+                        )
+                    });
+                    history.append_snapshot(&fetched.snapshot);
                 }
                 self.last_live_at = Some(Instant::now());
                 self.last_fetch = Some(fetched);
@@ -186,7 +245,7 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
                     last_status_redraw = Instant::now();
                 }
                 if app.dirty {
-                    terminal.draw(|frame| ui::draw(frame, &app, cfg))?;
+                    terminal.draw(|frame| ui::draw(frame, &mut app, cfg))?;
                     app.dirty = false;
                 }
             }
@@ -341,6 +400,14 @@ pub fn handle_event(app: &mut AppState, event: Event, cfg: &Config) {
                 focus_delta(app, cfg, -1);
             } else if action_matches(cfg, "sort", &key) {
                 app.sort_override = next_sort(app.sort_override);
+                app.dirty = true;
+            } else if action_matches(cfg, "window_next", &key) {
+                app.window_next(cfg, 1);
+            } else if action_matches(cfg, "window_prev", &key) {
+                app.window_next(cfg, -1);
+            } else if action_matches(cfg, "ascii", &key) {
+                let current = app.effective_ascii(cfg);
+                app.ascii_override = Some(!current);
                 app.dirty = true;
             } else if key_matches(&key, "down") || key_matches(&key, "j") {
                 scroll_focused(app, cfg, 1);
@@ -655,5 +722,47 @@ mod tests {
             Some(TableSort::Unspecified)
         );
         assert_eq!(next_sort(Some(TableSort::Unspecified)), None);
+    }
+
+    #[test]
+    fn window_cycle_follows_config() {
+        let cfg = Config::default();
+        let mut app = AppState::new();
+        assert_eq!(app.effective_window(&cfg).1, "5m");
+
+        app.window_next(&cfg, 1);
+        assert_eq!(app.effective_window(&cfg).1, "15m");
+        app.window_next(&cfg, 1);
+        assert_eq!(app.effective_window(&cfg).1, "1m", "wraps");
+        app.window_next(&cfg, -1);
+        assert_eq!(app.effective_window(&cfg).1, "15m", "backwards wraps");
+    }
+
+    #[test]
+    fn history_populated_only_when_charts_enabled() {
+        let cfg = Config::default();
+        let mut app = AppState::new();
+        app.apply_poll_event(PollEvent::Snapshot(empty_fetched()), &cfg);
+        assert!(app.history.is_some(), "charts on by default");
+
+        let mut disabled = Config::default();
+        disabled.charts.enabled = false;
+        let mut app = AppState::new();
+        app.apply_poll_event(PollEvent::Snapshot(empty_fetched()), &disabled);
+        assert!(app.history.is_none(), "charts disabled → no history kept");
+    }
+
+    #[test]
+    fn ascii_override_beats_config() {
+        let cfg = Config::default();
+        let mut app = AppState::new();
+        assert!(!app.effective_ascii(&cfg));
+        app.ascii_override = Some(true);
+        assert!(app.effective_ascii(&cfg));
+
+        let mut ascii_cfg = Config::default();
+        ascii_cfg.ui.ascii = true;
+        let app = AppState::new();
+        assert!(app.effective_ascii(&ascii_cfg));
     }
 }

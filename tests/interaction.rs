@@ -125,3 +125,17 @@ fn sort_key_cycles_modes() {
         "wraps to config default"
     );
 }
+
+#[test]
+fn g_and_a_keys_cycle_window_and_ascii() {
+    let (mut app, cfg) = live_app();
+    assert_eq!(app.effective_window(&cfg).1, "5m");
+    handle_event(&mut app, key(KeyCode::Char('g')), &cfg);
+    assert_eq!(app.effective_window(&cfg).1, "15m");
+    handle_event(&mut app, key(KeyCode::Char('G')), &cfg);
+    assert_eq!(app.effective_window(&cfg).1, "5m");
+
+    assert!(!app.effective_ascii(&cfg));
+    handle_event(&mut app, key(KeyCode::Char('a')), &cfg);
+    assert!(app.effective_ascii(&cfg));
+}

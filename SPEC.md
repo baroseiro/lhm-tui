@@ -364,6 +364,7 @@ hardware order in the tree (stable within a session). Slots:
 | `mem_total`   | SmallData/Data | `GPU Memory Total`, `D3D Dedicated Memory Total`             |
 | `temp`        | Temperature | `GPU Core`, `GPU Hot Spot` (drawn as second series when preset) |
 | `hotspot`     | Temperature | `GPU Hot Spot`, `Hot Spot`                                      |
+| `mem_temp`    | Temperature | `GPU Memory Junction`, `GPU Memory` (VRAM temp; exact names only — never falls back to the core temp) |
 | `power`       | Power       | `GPU Package`, `GPU Power`, first `Power`                       |
 | `clock_gfx`   | Clock       | `GPU Core`, `GFX Core`                                          |
 | `clock_mem`   | Clock       | `GPU Memory`, `Mem Core`                                        |
@@ -445,7 +446,7 @@ Responsive rules:
 | Key           | Contents                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
 | `cpu`         | temp graph + total-load graph (dual series), per-core bars, clock/power gauges   |
-| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph + power/clock/fan gauges |
+| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + power/clock/fan gauges |
 | `memory`      | used/available gauge + used-load graph + optional page file/virtual gauges       |
 | `thermal`     | table of all temperature sensors, sorted desc                                     |
 | `fans`        | table of fans (+control % column)                                                 |
@@ -489,7 +490,8 @@ Key conflicts after remapping → config validation error listing offending acti
 
 Custom widget built on `ratatui::widgets::canvas::Canvas` (or direct braille writes) rather than the
 stock `Chart` widget, because we need multi-series braille lines, min/max envelopes, autoscale
-hysteresis and legends.
+hysteresis and legends. Charts are optional: `charts.enabled` (or `--no-charts`) keeps the
+gauges/bars-only layouts from P2 and skips history collection entirely.
 
 ### 7.1 Data pipeline per series
 
@@ -600,6 +602,7 @@ path (e.g. `charts.window: invalid duration "5x"`).
   },
 
   "charts": {
+    "enabled": true,                  // false (or --no-charts) → gauges/bars-only panels
     "marker": "braille",              // braille | halfblock | ascii
     "height": 8,
     "window": "5m",                   // initial window
@@ -679,6 +682,7 @@ path (e.g. `charts.window: invalid duration "5x"`).
 | `server.username`/`password*`     | string/null     | `null`           | Exactly one password source may be set       |
 | `history.window_s`                | int             | `900`            | 60–86400                                     |
 | `ui.layout`                       | string[]        | see §6.1         | Valid panel keys enforced                    |
+| `charts.enabled`                  | bool            | `true`           | `false`/`--no-charts` keeps gauges/bars only |
 | `charts.marker`                   | enum            | `braille`        | Fallback automatically if glyph unsupported  |
 | `charts.window(_cycle)`           | duration/string | `"5m"`/`[1m,5m,15m]` | Window > `history.window_s` clamps       |
 | `theme.*`                         | color/float     | see example      | Names or `#RRGGBB`; downgraded for 256/16 colors |
@@ -710,6 +714,8 @@ lhm-tui [OPTIONS]
       --ascii                 ASCII rendering
       --no-color              Disable colors (also honors NO_COLOR)
       --layout <KEYS>         Override ui.layout, e.g. "cpu,gpu,memory,fans"
+      --charts                Enable charts (overrides charts.enabled)
+      --no-charts             Disable charts; gauges and bars only
       --log <PATH>            Debug log file (never written to the TUI)
   -v, --verbose               Raise log level (repeatable)
       --probe                 Check connectivity/auth, print URL, LHM version, hardware/sensor
@@ -1022,6 +1028,7 @@ both covered in fixtures):
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "enabled": { "type": "boolean", "default": true },
         "marker": { "enum": ["braille", "halfblock", "ascii"], "default": "braille" },
         "height": { "type": "integer", "minimum": 3, "default": 8 },
         "window": { "type": "string", "default": "5m" },

@@ -200,14 +200,16 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 #### T3.4 — Wire charts into presets + window cycling
 **Goal:** cpu/gpu/memory panels use graphs for their primary series (temp + load dual; VRAM; RAM used %); `g`/`G` cycles `charts.window_cycle` and re-renders instantly; charts append on each applied snapshot.
 **Files:** `src/ui/presets.rs`, `src/app.rs`.
-**Notes:** Chart window larger than `history.window_s` clamps (config validation + runtime). Layout
+**Notes:** Chart window larger than `history.window_s` clamps (config validation + runtime). Chart
+blocks render only when `charts.enabled` is set (config or `--charts`/`--no-charts`); with charts
+disabled the P2 gauges/bars layouts remain and history is skipped. Layout
 reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, its code is GPL-3.0-or-later.
 **Done when:** Visual soak 15 min @ 1 s: smooth, no axis jitter, panes stable; window cycle updates all charts; CPU budget re-checked (< 1 %, SPEC §13).
 
 #### T3.5 — Marker fallback + capability detection
 **Goal:** `charts.marker = braille|halfblock|ascii`; auto-downgrade when the environment can't render braille (legacy conhost detection via `WT_SESSION`/`TERM` heuristics documented in code); `a` key overrides globally.
 **Files:** `src/charts.rs`, `src/theme.rs` (env detection), `src/app.rs`.
-**Notes:** ASCII mode swaps to `+ - | *` glyph set and disables sparkline sub-cell resolution (SPEC F14).
+**Notes:** ASCII mode uses the `_ - =` glyph set; braille and halfblock are implemented, forced modes are snapshot-tested, legacy-conhost sniffing is not (the `a` toggle and `charts.marker` cover it — manual QA matrix pending).
 **Done when:** Manual QA on conhost and tmux; forced modes snapshot-tested.
 
 **Exit checklist P3:** charts live on real hardware (incl. 2 GPUs); bench + CPU budget met; no allocations in steady-state render path beyond scratch reuse.

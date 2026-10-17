@@ -38,6 +38,7 @@
     "pause_position": false
   },
   "charts": {
+    "enabled": true,
     "marker": "braille",
     "height": 8,
     "window": "5m",

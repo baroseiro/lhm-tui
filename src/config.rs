@@ -162,6 +162,9 @@ pub enum TableSort {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChartsConfig {
+    /// Charts are optional: `false` (config or `--no-charts`) keeps the
+    /// gauges/bars-only panel layout.
+    pub enabled: bool,
     pub marker: Marker,
     pub height: u32,
     pub window: String,
@@ -178,6 +181,7 @@ pub struct ChartsConfig {
 impl Default for ChartsConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             marker: Marker::Braille,
             height: 8,
             window: "5m".to_string(),
@@ -646,6 +650,12 @@ fn apply_cli_overrides(config: &mut Config, cli: &Cli, errors: &mut Vec<String>)
             .filter(|entry| !entry.is_empty())
             .collect();
     }
+    if cli.charts {
+        config.charts.enabled = true;
+    }
+    if cli.no_charts {
+        config.charts.enabled = false;
+    }
 }
 
 /// Parse a duration for `--poll`: bare numbers are milliseconds, otherwise humantime.
@@ -864,6 +874,7 @@ mod tests {
         assert_eq!(config.ui.layout, vec!["cpu", "gpu", "memory", "thermal"]);
         assert_eq!(config.ui.table_sort, TableSort::ValueDesc);
         assert_eq!(config.charts.marker, Marker::Braille);
+        assert!(config.charts.enabled, "charts on by default");
         assert_eq!(config.charts.height, 8);
         assert_eq!(config.charts.window, "5m");
         assert_eq!(config.charts.window_cycle, vec!["1m", "5m", "15m"]);
@@ -1040,6 +1051,19 @@ mod tests {
         let mut errors = Vec::new();
         apply_cli_overrides(&mut config, &cli, &mut errors);
         assert_eq!(errors.len(), 2, "errors: {errors:?}");
+    }
+
+    #[test]
+    fn charts_can_be_toggled_via_cli() {
+        let mut config = Config::default();
+        let mut errors = Vec::new();
+        let cli = cli_from(&["lhm-tui", "--no-charts"]);
+        apply_cli_overrides(&mut config, &cli, &mut errors);
+        assert!(!config.charts.enabled, "--no-charts disables charts");
+        let cli = cli_from(&["lhm-tui", "--charts"]);
+        apply_cli_overrides(&mut config, &cli, &mut errors);
+        assert!(config.charts.enabled, "--charts re-enables them");
+        assert!(errors.is_empty());
     }
 
     #[test]

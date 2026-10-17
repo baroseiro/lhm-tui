@@ -19,6 +19,18 @@ fn display_width(text: &str) -> u16 {
     unicode_width::UnicodeWidthStr::width(text) as u16
 }
 
+/// Truncate to `width` display columns and pad with spaces to exactly that
+/// width, so mixed-length labels/bars line up.
+pub fn pad_display(text: &str, width: u16) -> String {
+    let truncated = truncate(text, width);
+    let used = display_width(&truncated);
+    let mut out = truncated;
+    for _ in used..width {
+        out.push(' ');
+    }
+    out
+}
+
 fn truncate(text: &str, width: u16) -> String {
     let mut out = String::new();
     let mut used = 0u16;
@@ -33,7 +45,11 @@ fn truncate(text: &str, width: u16) -> String {
     out
 }
 
-/// One-line gauge: `label  ███████░░░  display`.
+/// Fixed label column shared by gauges and info rows (SPEC §6.5).
+const LABEL_WIDTH: u16 = 8;
+
+/// One-line gauge: ` label ███████░░░ display` with a fixed label column and
+/// the value right-aligned at the inner edge.
 #[allow(clippy::too_many_arguments)]
 pub fn gauge(
     frame: &mut Frame,
@@ -45,15 +61,14 @@ pub fn gauge(
     theme: &Theme,
     dim: bool,
 ) {
-    if area.height == 0 || area.width < 10 {
+    if area.height == 0 || area.width < 14 {
         return;
     }
-    let label_width = 14u16.min(area.width / 4);
-    let value_width = display_width(display).clamp(3, area.width - 6);
-    let bar_width = area.width.saturating_sub(label_width + value_width + 2);
+    let value_width = display_width(display).clamp(3, area.width.saturating_sub(LABEL_WIDTH + 6));
+    let bar_width = area.width.saturating_sub(LABEL_WIDTH + value_width + 4);
 
     let mut spans = vec![Span::styled(
-        format!(" {} ", truncate(label, label_width.saturating_sub(2))),
+        format!(" {} ", pad_display(label, LABEL_WIDTH)),
         with_dim(Style::new().fg(theme.muted), dim),
     )];
     if bar_width > 0 {
@@ -69,9 +84,38 @@ pub fn gauge(
         ));
     }
     spans.push(Span::styled(
-        format!(" {display}"),
+        format!(" {display} "),
         with_dim(value_style.bold(), dim),
     ));
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// Fixed-width `label value` pairs for info rows, so columns stay aligned
+/// across panels and frames (SPEC §6.5).
+pub fn info_line(
+    frame: &mut Frame,
+    area: Rect,
+    pairs: &[(&str, String)],
+    theme: &Theme,
+    dim: bool,
+) {
+    if area.height == 0 {
+        return;
+    }
+    let mut spans: Vec<Span> = vec![Span::raw(" ")];
+    for (index, (label, value)) in pairs.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::styled(
+            format!("{} ", pad_display(label, 5)),
+            with_dim(Style::new().fg(theme.muted), dim),
+        ));
+        spans.push(Span::styled(
+            pad_display(value, 10),
+            with_dim(Style::new().fg(theme.text).bold(), dim),
+        ));
+    }
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
@@ -80,7 +124,7 @@ pub fn bars(frame: &mut Frame, area: Rect, values: &[Option<f64>], theme: &Theme
     if area.width == 0 || area.height == 0 || values.is_empty() {
         return;
     }
-    let per_row = area.width as usize;
+    let per_row = (area.width as usize).saturating_sub(1).max(1);
     let rows = values.len().div_ceil(per_row).min(area.height as usize);
     let mut lines: Vec<Line> = Vec::new();
     for row in 0..rows {
@@ -117,8 +161,16 @@ pub fn table(
     theme: &Theme,
     dim: bool,
 ) {
-    let header = Row::new(headers.iter().map(|header| Cell::from(*header)))
-        .style(with_dim(Style::new().fg(theme.muted), dim));
+    let header = Row::new(headers.iter().enumerate().map(|(index, header)| {
+        // Numeric columns are right-aligned, so their headers must follow.
+        let alignment = if index == 0 {
+            Alignment::Left
+        } else {
+            Alignment::Right
+        };
+        Cell::from(Text::from(*header).alignment(alignment))
+    }))
+    .style(with_dim(Style::new().fg(theme.muted), dim));
     let table = Table::new(rows, widths).header(header).block(block);
     let mut state = TableState::default().with_offset(scroll as usize);
     frame.render_stateful_widget(table, area, &mut state);
