@@ -145,7 +145,7 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 
 #### T2.2 — Binding engine (SPEC §5.2–5.3)
 **Goal:** Evaluate panel slots → sensor ids using the documented candidate lists (CPU/GPU/memory/thermal/fans/power/storage/network); support `panels.sensor_overrides` (`{"sensor": "/id"}` or `{"match": {...}}`); recalc only when the hardware-id set changes; slots go `missing` → `n/a` → auto re-bind.
-**Files:** `src/app.rs` (bindings), `src/lhm/model.rs` (lookup helpers), `tests/bindings.rs`.
+**Files:** `src/bindings.rs` (engine), `src/lhm/model.rs` (lookup helpers), `tests/bindings.rs`.
 **Notes:** Binding report struct is shared with `--probe` (T1.4). Heuristics are the single source of truth in SPEC §5.2 — add each candidate list as a table-driven test.
 **Done when:** Fixture tests assert slot→SensorId for cpu/gpu/mem/thermal per fixture, including a pinned-override case and a name-regex case.
 

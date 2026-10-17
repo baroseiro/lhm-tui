@@ -27,6 +27,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-width = "0.2"
 
+[dev-dependencies]
+insta = "1"
+
 [profile.release]
 lto = "thin"
 strip = true

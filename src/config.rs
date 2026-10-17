@@ -430,7 +430,7 @@ fn default_keys() -> BTreeMap<String, Vec<String>> {
         ("window_next", &["g"]),
         ("window_prev", &["G"]),
         ("focus_next", &["tab"]),
-        ("focus_prev", &["shift+tab"]),
+        ("focus_prev", &["shift+tab", "backtab"]),
         ("zoom", &["enter"]),
         ("browser", &["b"]),
         ("sort", &["s"]),

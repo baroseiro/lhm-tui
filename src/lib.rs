@@ -10,8 +10,10 @@
 //! same code the binary runs; `main.rs` is a thin entrypoint on top of it.
 
 pub mod app;
+pub mod bindings;
 pub mod cli;
 pub mod config;
 pub mod lhm;
+pub mod theme;
 pub mod ui;
 pub mod util;

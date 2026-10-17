@@ -148,7 +148,8 @@
       "tab"
     ],
     "focus_prev": [
-      "shift+tab"
+      "shift+tab",
+      "backtab"
     ],
     "help": [
       "?"

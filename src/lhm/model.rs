@@ -91,11 +91,18 @@ impl Snapshot {
             .map(|hardware| hardware.sensors().count())
             .sum()
     }
+
+    /// Look up a hardware item by exact id, including sub-hardware.
+    pub fn hardware(&self, id: &str) -> Option<&Hardware> {
+        self.all_hardware()
+            .into_iter()
+            .find(|hardware| hardware.id == id)
+    }
 }
 
 /// Hardware classification, derived from the icon and the id prefix
 /// because `data.json` has no hardware-type field (SPEC Q5).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HardwareKind {
     Cpu,
     GpuNvidia,

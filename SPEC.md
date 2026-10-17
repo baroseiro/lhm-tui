@@ -232,6 +232,7 @@ lhm-tui/
 │  │  ├─ parse.rs           # RawNodeDoc -> Snapshot (normalization, classification)
 │  │  └─ model.rs           # Snapshot, Hardware, Sensor, SensorKind, HardwareKind
 │  ├─ history.rs            # RingBuffer, SeriesDb (SensorId -> ring), stats (min/max/avg)
+│  ├─ bindings.rs           # Panel slot -> SensorId resolution (SPEC §5.2 heuristics)
 │  ├─ app.rs                # AppState, events, focus, panels registry, backoff/stale logic
 │  ├─ theme.rs              # Theme, color parsing/downgrade, thresholds, NO_COLOR
 │  ├─ charts.rs             # braille canvas, decimation, autoscale, graph widget

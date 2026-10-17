@@ -5,6 +5,8 @@
 //! `watch` channel from the poller task (latest-value-wins), and redraws happen
 //! on a frame tick only when the screen is dirty (redraw-on-change policy).
 
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -12,8 +14,10 @@ use anyhow::Result;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::DefaultTerminal;
 
-use crate::config::{Config, RetryConfig, ServerConfig};
+use crate::bindings::{self, Bindings};
+use crate::config::{Config, RetryConfig, ServerConfig, TableSort};
 use crate::lhm::client::{Fetched, LhmClient};
+use crate::lhm::model::Snapshot;
 use crate::ui;
 
 /// Latest poller state delivered over a `watch` channel (SPEC §4.2).
@@ -52,6 +56,18 @@ pub struct AppState {
     pub last_error: Option<String>,
     pub last_retry_in: Option<Duration>,
     pub failed_attempts: u32,
+    /// Polling suspended via the `pause` key; shared with the poller task.
+    pub paused: bool,
+    pub pause_flag: Arc<AtomicBool>,
+    /// Panel bindings, recomputed only when the hardware set changes (T2.2).
+    pub bindings: Option<Bindings>,
+    pub bindings_fingerprint: u64,
+    /// Focused panel index into the current panel list (wraps at draw time).
+    pub focus: usize,
+    /// Per-panel scroll offsets, keyed by panel id.
+    pub scrolls: BTreeMap<String, u16>,
+    /// `s` key sort override; `None` → `ui.table_sort` from config.
+    pub sort_override: Option<TableSort>,
 }
 
 impl AppState {
@@ -66,14 +82,36 @@ impl AppState {
             last_error: None,
             last_retry_in: None,
             failed_attempts: 0,
+            paused: false,
+            pause_flag: Arc::new(AtomicBool::new(false)),
+            bindings: None,
+            bindings_fingerprint: 0,
+            focus: 0,
+            scrolls: BTreeMap::new(),
+            sort_override: None,
         }
     }
 
+    /// Latest snapshot, when one has been received.
+    pub fn snapshot(&self) -> Option<&Snapshot> {
+        self.last_fetch.as_deref().map(|fetched| &fetched.snapshot)
+    }
+
+    /// Effective table sort: `s` override when set, else the configured default.
+    pub fn effective_sort(&self, cfg: &Config) -> TableSort {
+        self.sort_override.unwrap_or(cfg.ui.table_sort)
+    }
+
     /// Fold a poller event into the UI state (SPEC §10.1 failure matrix).
-    pub fn apply_poll_event(&mut self, event: PollEvent) {
+    pub fn apply_poll_event(&mut self, event: PollEvent, cfg: &Config) {
         match event {
             PollEvent::Starting => self.link = LinkStatus::Connecting,
             PollEvent::Snapshot(fetched) => {
+                let fingerprint = bindings::fingerprint(&fetched.snapshot);
+                if self.bindings.is_none() || fingerprint != self.bindings_fingerprint {
+                    self.bindings = Some(bindings::resolve(&fetched.snapshot, &cfg.panels));
+                    self.bindings_fingerprint = fingerprint;
+                }
                 self.last_live_at = Some(Instant::now());
                 self.last_fetch = Some(fetched);
                 self.failed_attempts = 0;
@@ -134,12 +172,19 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     spawn_input_thread(tx);
 
-    let mut poll_events = spawn_poller(&cfg.server);
+    let mut poll_events = spawn_poller(&cfg.server, Arc::clone(&app.pause_flag));
     let mut poller_alive = true;
+    let mut last_status_redraw = Instant::now();
 
     while !app.should_quit {
         tokio::select! {
             _ = tick.tick() => {
+                // Age ticker: refresh stale/paused status once a second.
+                let unstable = app.link != LinkStatus::Live || app.paused;
+                if !app.dirty && unstable && last_status_redraw.elapsed() >= Duration::from_secs(1) {
+                    app.dirty = true;
+                    last_status_redraw = Instant::now();
+                }
                 if app.dirty {
                     terminal.draw(|frame| ui::draw(frame, &app, cfg))?;
                     app.dirty = false;
@@ -153,7 +198,7 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
             changed = poll_events.changed(), if poller_alive => {
                 if changed.is_ok() {
                     let event = poll_events.borrow_and_update().clone();
-                    app.apply_poll_event(event);
+                    app.apply_poll_event(event, cfg);
                 } else {
                     // The poller task ended unexpectedly; keep the UI usable.
                     poller_alive = false;
@@ -161,7 +206,7 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
                         message: "internal poller task stopped".to_string(),
                         retry_in: Duration::ZERO,
                         attempt: 0,
-                    });
+                    }, cfg);
                 }
             }
         }
@@ -170,16 +215,24 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
 }
 
 /// Spawn the background poller task (SPEC §4.2) and return its event stream.
-pub fn spawn_poller(server: &ServerConfig) -> tokio::sync::watch::Receiver<PollEvent> {
+/// `pause` freezes polling without dropping the last snapshot.
+pub fn spawn_poller(
+    server: &ServerConfig,
+    pause: Arc<AtomicBool>,
+) -> tokio::sync::watch::Receiver<PollEvent> {
     let (sender, receiver) = tokio::sync::watch::channel(PollEvent::Starting);
     let server = server.clone();
     tokio::spawn(async move {
-        poll_loop(server, sender).await;
+        poll_loop(server, sender, pause).await;
     });
     receiver
 }
 
-async fn poll_loop(server: ServerConfig, sender: tokio::sync::watch::Sender<PollEvent>) {
+async fn poll_loop(
+    server: ServerConfig,
+    sender: tokio::sync::watch::Sender<PollEvent>,
+    pause: Arc<AtomicBool>,
+) {
     let client = match LhmClient::new(&server) {
         Ok(client) => client,
         Err(err) => {
@@ -199,7 +252,10 @@ async fn poll_loop(server: ServerConfig, sender: tokio::sync::watch::Sender<Poll
     loop {
         ticker.tick().await;
         if sender.is_closed() {
-            return; // UI is gone
+            return; // the UI is gone
+        }
+        if pause.load(Ordering::Relaxed) {
+            continue; // paused: keep the last snapshot, skip polling
         }
         match client.fetch_data_json().await {
             Ok(fetched) => {
@@ -268,19 +324,83 @@ fn spawn_input_thread(tx: tokio::sync::mpsc::UnboundedSender<Event>) {
     });
 }
 
-fn handle_event(app: &mut AppState, event: Event, cfg: &Config) {
+/// Handle a UI event: quit, pause, focus cycling, sort cycling and scrolling.
+pub fn handle_event(app: &mut AppState, event: Event, cfg: &Config) {
     match event {
         Event::Resize(_, _) => app.dirty = true,
         Event::Key(key) if key.kind != KeyEventKind::Release => {
             if action_matches(cfg, "quit", &key) {
                 app.should_quit = true;
+            } else if action_matches(cfg, "pause", &key) {
+                app.paused = !app.paused;
+                app.pause_flag.store(app.paused, Ordering::Relaxed);
+                app.dirty = true;
+            } else if action_matches(cfg, "focus_next", &key) {
+                focus_delta(app, cfg, 1);
+            } else if action_matches(cfg, "focus_prev", &key) {
+                focus_delta(app, cfg, -1);
+            } else if action_matches(cfg, "sort", &key) {
+                app.sort_override = next_sort(app.sort_override);
+                app.dirty = true;
+            } else if key_matches(&key, "down") || key_matches(&key, "j") {
+                scroll_focused(app, cfg, 1);
+            } else if key_matches(&key, "up") || key_matches(&key, "k") {
+                scroll_focused(app, cfg, -1);
             } else {
-                // Other actions (pause, window cycling, …) land in later milestones.
                 app.dirty = true;
             }
         }
         _ => {}
     }
+}
+
+fn next_sort(current: Option<TableSort>) -> Option<TableSort> {
+    match current {
+        None => Some(TableSort::ValueDesc),
+        Some(TableSort::ValueDesc) => Some(TableSort::ValueAsc),
+        Some(TableSort::ValueAsc) => Some(TableSort::Name),
+        Some(TableSort::Name) => Some(TableSort::Unspecified),
+        Some(TableSort::Unspecified) => None,
+    }
+}
+
+fn panel_count(app: &AppState, cfg: &Config) -> usize {
+    app.bindings
+        .as_ref()
+        .map(|bindings| crate::ui::presets::panel_list(cfg, bindings).len())
+        .unwrap_or(0)
+}
+
+fn focus_delta(app: &mut AppState, cfg: &Config, delta: i32) {
+    let count = panel_count(app, cfg);
+    if count == 0 {
+        return;
+    }
+    let current = (app.focus % count) as i32;
+    app.focus = (current + delta).rem_euclid(count as i32) as usize;
+    app.dirty = true;
+}
+
+fn scroll_focused(app: &mut AppState, cfg: &Config, delta: i32) {
+    // Resolve the focused panel id first; the borrow ends before mutation.
+    let target = app.bindings.as_ref().and_then(|bindings| {
+        let panels = crate::ui::presets::panel_list(cfg, bindings);
+        if panels.is_empty() {
+            return None;
+        }
+        let focused = &panels[app.focus % panels.len()];
+        focused.scrollable.then(|| focused.id.clone())
+    });
+    let Some(id) = target else {
+        return;
+    };
+    let scroll = app.scrolls.entry(id).or_insert(0);
+    *scroll = if delta >= 0 {
+        scroll.saturating_add(delta as u16)
+    } else {
+        scroll.saturating_sub((-delta) as u16)
+    };
+    app.dirty = true;
 }
 
 /// True when `key` matches any key spec configured for `action` (SPEC §6.4).
@@ -295,13 +415,29 @@ pub fn key_matches(key: &KeyEvent, spec: &str) -> bool {
     let Some(expected) = parse_key_spec(spec) else {
         return false;
     };
-    if key.code != expected.code {
+    let (mut expected_code, mut expected_mods) = (expected.code, expected.modifiers);
+    let (mut actual_code, mut actual_mods) = (key.code, key.modifiers);
+
+    // Shift+Tab arrives as Tab+SHIFT (kitty protocol) or BackTab (legacy
+    // terminals); normalize both spellings before comparing.
+    if expected_code == KeyCode::Tab && expected_mods.contains(KeyModifiers::SHIFT) {
+        expected_code = KeyCode::BackTab;
+    }
+    if actual_code == KeyCode::Tab && actual_mods.contains(KeyModifiers::SHIFT) {
+        actual_code = KeyCode::BackTab;
+    }
+    if expected_code == KeyCode::BackTab {
+        expected_mods.remove(KeyModifiers::SHIFT);
+    }
+    if actual_code == KeyCode::BackTab {
+        actual_mods.remove(KeyModifiers::SHIFT);
+    }
+    if actual_code != expected_code {
         return false;
     }
-    let mut expected_mods = expected.modifiers;
-    let mut actual_mods = key.modifiers;
+
     // Terminals are inconsistent about reporting Shift for uppercase letters.
-    if let KeyCode::Char(c) = key.code {
+    if let KeyCode::Char(c) = actual_code {
         if c.is_ascii_uppercase() {
             expected_mods.remove(KeyModifiers::SHIFT);
             actual_mods.remove(KeyModifiers::SHIFT);
@@ -456,23 +592,9 @@ mod tests {
         assert_eq!(jittered(delay, 0.0, 0.7), delay);
     }
 
-    #[test]
-    fn link_status_transitions() {
-        let mut app = AppState::new();
-        assert_eq!(app.link, LinkStatus::Connecting);
-
-        // Failure before any data → Reconnecting.
-        app.apply_poll_event(PollEvent::Failure {
-            message: "refused".to_string(),
-            retry_in: Duration::from_millis(500),
-            attempt: 0,
-        });
-        assert_eq!(app.link, LinkStatus::Reconnecting);
-        assert_eq!(app.failed_attempts, 1);
-
-        // Data → Live.
-        app.apply_poll_event(PollEvent::Snapshot(Arc::new(crate::lhm::client::Fetched {
-            snapshot: crate::lhm::model::Snapshot {
+    fn empty_fetched() -> Arc<Fetched> {
+        Arc::new(Fetched {
+            snapshot: Snapshot {
                 fetched_at: std::time::SystemTime::now(),
                 lhm_version: Some("0.9.6".to_string()),
                 hardware: Vec::new(),
@@ -480,18 +602,58 @@ mod tests {
             },
             latency: Duration::from_millis(12),
             bytes: 1024,
-        })));
+        })
+    }
+
+    #[test]
+    fn link_status_transitions() {
+        let cfg = Config::default();
+        let mut app = AppState::new();
+        assert_eq!(app.link, LinkStatus::Connecting);
+
+        // Failure before any data → Reconnecting.
+        app.apply_poll_event(
+            PollEvent::Failure {
+                message: "refused".to_string(),
+                retry_in: Duration::from_millis(500),
+                attempt: 0,
+            },
+            &cfg,
+        );
+        assert_eq!(app.link, LinkStatus::Reconnecting);
+        assert_eq!(app.failed_attempts, 1);
+
+        // Data → Live.
+        app.apply_poll_event(PollEvent::Snapshot(empty_fetched()), &cfg);
         assert_eq!(app.link, LinkStatus::Live);
         assert_eq!(app.failed_attempts, 0);
 
         // Failure after data → Stale, keeps the last fetch.
-        app.apply_poll_event(PollEvent::Failure {
-            message: "timeout".to_string(),
-            retry_in: Duration::from_secs(1),
-            attempt: 0,
-        });
+        app.apply_poll_event(
+            PollEvent::Failure {
+                message: "timeout".to_string(),
+                retry_in: Duration::from_secs(1),
+                attempt: 0,
+            },
+            &cfg,
+        );
         assert_eq!(app.link, LinkStatus::Stale);
         assert!(app.last_fetch.is_some());
         assert_eq!(app.last_error.as_deref(), Some("timeout"));
+    }
+
+    #[test]
+    fn sort_cycle_matches_spec() {
+        assert_eq!(next_sort(None), Some(TableSort::ValueDesc));
+        assert_eq!(
+            next_sort(Some(TableSort::ValueDesc)),
+            Some(TableSort::ValueAsc)
+        );
+        assert_eq!(next_sort(Some(TableSort::ValueAsc)), Some(TableSort::Name));
+        assert_eq!(
+            next_sort(Some(TableSort::Name)),
+            Some(TableSort::Unspecified)
+        );
+        assert_eq!(next_sort(Some(TableSort::Unspecified)), None);
     }
 }

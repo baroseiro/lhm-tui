@@ -46,6 +46,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Test suite growth: 7-fixture version matrix (incl. the machine-node shape and NaN quirks), a
   scripted mock LHM server, poller recovery/backoff integration tests — 56 tests total (`T1.6`).
 - `src/lib.rs` + thin `main.rs` split so integration tests exercise the same code the binary runs.
+- Preset panels with live values (P2): CPU (temp/load gauges, per-core bars, clock, power), one
+  panel per GPU (temp, hotspot, load, VRAM ratio, power/fan/clock), memory (used/total + virtual),
+  plus sortable, scrollable tables for temperatures, fans (+control %), power (CPU+GPU total),
+  storage and network (`T2.1`, `T2.5`, `T2.6`).
+- Binding engine: SPEC §5.2 candidate heuristics over `SensorId`s, `panels.sensor_overrides`
+  (exact pins, kind/name/name_regex matchers), fingerprint-based rebinding only when the hardware
+  set changes (`T2.2`).
+- Value formatting helpers (units, ratios, rates) with threshold-aware styling and a real theme
+  implementation (color names/hex, warn/crit buckets, stale dimming) (`T2.3`).
+- Widgets: gauge, core bars, sortable scrollable table, sparkline — locked in by `insta`
+  snapshots (`T2.4`).
+- Interaction: pause (`p`, freezes polling), focus cycling (`tab`/`shift+tab`), sort cycling
+  (`s`), table scrolling (`j/k`/arrows), once-a-second stale/paused age ticker, and the
+  terminal-too-small screen (SPEC N8).
+- Real-world fixture `lhm-live-5900xt.json` (scrubbed capture of a 32-core dual-GPU machine) and
+  ignored live tests: `cargo test --test live -- --ignored --nocapture` renders the full dashboard
+  from a locally running LHM.
 
 ### Changed
 
@@ -57,3 +74,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SPEC §3.3/§3.4 corrected from live-instance verification: hardware nodes are wrapped in a
   machine container node; `Version` is absent on 0.9.6-era servers; id prefixes include the
   hyphenated `gpu-nvidia`/`gpu-amd`/`gpu-intel` and `vram`/`memory` styles.
+- Planned layout updated: the binding engine lives in `src/bindings.rs` (SPEC §4.1, PLAN T2.2);
+  default `keys.focus_prev` also accepts `backtab` (legacy terminals report Shift+Tab that way)
+  and `lhm-tui.example.json` was regenerated.

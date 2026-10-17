@@ -2,6 +2,9 @@
 
 mod support;
 
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
 use lhm_tui::app::{spawn_poller, PollEvent};
 use lhm_tui::config::{RetryConfig, ServerConfig};
 use support::{MockLhm, Step};
@@ -28,7 +31,7 @@ async fn recovers_after_failures_with_backoff() {
         ..ServerConfig::default()
     };
 
-    let mut events = spawn_poller(&server);
+    let mut events = spawn_poller(&server, Arc::new(AtomicBool::new(false)));
     let mut attempts: Vec<u32> = Vec::new();
     let mut delays_ms: Vec<u128> = Vec::new();
     let mut saw_snapshot = false;
@@ -79,7 +82,7 @@ async fn backoff_delay_caps_at_max() {
         ..ServerConfig::default()
     };
 
-    let mut events = spawn_poller(&server);
+    let mut events = spawn_poller(&server, Arc::new(AtomicBool::new(false)));
     let mut delays_ms: Vec<u128> = Vec::new();
     for _ in 0..4 {
         if events.changed().await.is_err() {
