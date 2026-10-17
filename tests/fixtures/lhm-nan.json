@@ -1,0 +1,50 @@
+{
+  "Version": "0.9.6",
+  "Text": "Sensor",
+  "Min": "Min", "Value": "Value", "Max": "Max",
+  "ImageURL": "",
+  "Children": [
+    {
+      "Text": "AMD Ryzen 9 7950X",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/amdcpu/0",
+      "ImageURL": "images_icon/cpu.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "Core Average",
+              "Min": "NaN °C", "Value": "NaN °C", "Max": "NaN °C",
+              "SensorId": "/amdcpu/0/temperature/4",
+              "Type": "Temperature",
+              "RawMin": NaN, "RawValue": NaN, "RawMax": NaN,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "CCD1 (Tdie)",
+              "Min": -Infinity, "Value": Infinity, "Max": null,
+              "SensorId": "/amdcpu/0/temperature/3",
+              "Type": "Temperature",
+              "RawMin": -Infinity, "RawValue": Infinity, "RawMax": null,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "NaN test sensor",
+              "Min": "", "Value": "", "Max": "",
+              "SensorId": "/amdcpu/0/temperature/9",
+              "Type": "Temperature",
+              "RawMin": NaN, "RawValue": NaN, "RawMax": NaN,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

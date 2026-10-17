@@ -1,0 +1,120 @@
+{
+  "Version": "0.9.6",
+  "Text": "Sensor",
+  "Min": "Min", "Value": "Value", "Max": "Max",
+  "ImageURL": "",
+  "Children": [
+    {
+      "Text": "Intel Core i7-13700K",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/intelcpu/0",
+      "ImageURL": "images_icon/cpu.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "CPU Package",
+              "Min": "35.0 °C", "Value": "45.0 °C", "Max": "92.0 °C",
+              "SensorId": "/intelcpu/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "35.0 °C", "RawValue": "45.0 °C", "RawMax": "92.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "CPU Total",
+              "Min": "0.5 %", "Value": "12.0 %", "Max": "100.0 %",
+              "SensorId": "/intelcpu/0/load/0",
+              "Type": "Load",
+              "RawMin": "0.5 %", "RawValue": "12.0 %", "RawMax": "100.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Clocks",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/clock.png",
+          "Children": [
+            {
+              "Text": "P-Core #0",
+              "Min": "800.0 MHz", "Value": "4200.0 MHz", "Max": "5300.0 MHz",
+              "SensorId": "/intelcpu/0/clock/8",
+              "Type": "Clock",
+              "RawMin": "800.0 MHz", "RawValue": "4200.0 MHz", "RawMax": "5300.0 MHz",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Text": "Intel UHD Graphics 770",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/gpuintel/0",
+      "ImageURL": "images_icon/intel.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "38.0 °C", "Value": "41.0 °C", "Max": "58.0 °C",
+              "SensorId": "/gpuintel/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "38.0 °C", "RawValue": "41.0 °C", "RawMax": "58.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "0.0 %", "Value": "3.0 %", "Max": "64.0 %",
+              "SensorId": "/gpuintel/0/load/0",
+              "Type": "Load",
+              "RawMin": "0.0 %", "RawValue": "3.0 %", "RawMax": "64.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Clocks",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/clock.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "300.0 MHz", "Value": "300.0 MHz", "Max": "1550.0 MHz",
+              "SensorId": "/gpuintel/0/clock/0",
+              "Type": "Clock",
+              "RawMin": "300.0 MHz", "RawValue": "300.0 MHz", "RawMax": "1550.0 MHz",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

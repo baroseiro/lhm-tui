@@ -1,23 +1,57 @@
-//! Application state and the async event loop (SPEC §4.2).
+//! Application state, poller integration and the async event loop (SPEC §4.2).
 //!
 //! The UI loop never blocks on input or network: crossterm events arrive over
-//! an `mpsc` channel from a dedicated input thread, redraws happen on a frame
-//! tick only when the screen is dirty (redraw-on-change policy).
+//! an `mpsc` channel from a dedicated input thread, poll results arrive over a
+//! `watch` channel from the poller task (latest-value-wins), and redraws happen
+//! on a frame tick only when the screen is dirty (redraw-on-change policy).
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::DefaultTerminal;
 
-use crate::config::Config;
+use crate::config::{Config, RetryConfig, ServerConfig};
+use crate::lhm::client::{Fetched, LhmClient};
 use crate::ui;
+
+/// Latest poller state delivered over a `watch` channel (SPEC §4.2).
+#[derive(Debug, Clone)]
+pub enum PollEvent {
+    /// Before the first poll attempt.
+    Starting,
+    /// A successful poll.
+    Snapshot(Arc<Fetched>),
+    /// A failed poll; `retry_in` is the computed backoff, `attempt` counts
+    /// consecutive failures starting at 0.
+    Failure {
+        message: String,
+        retry_in: Duration,
+        attempt: u32,
+    },
+}
+
+/// Connection status shown in the header (SPEC §10.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkStatus {
+    Connecting,
+    Live,
+    Stale,
+    Reconnecting,
+}
 
 pub struct AppState {
     pub should_quit: bool,
     /// Set when the screen needs a redraw (SPEC §4.2 redraw policy).
     pub dirty: bool,
     pub started_at: Instant,
+    pub link: LinkStatus,
+    pub last_fetch: Option<Arc<Fetched>>,
+    pub last_live_at: Option<Instant>,
+    pub last_error: Option<String>,
+    pub last_retry_in: Option<Duration>,
+    pub failed_attempts: u32,
 }
 
 impl AppState {
@@ -26,7 +60,54 @@ impl AppState {
             should_quit: false,
             dirty: true,
             started_at: Instant::now(),
+            link: LinkStatus::Connecting,
+            last_fetch: None,
+            last_live_at: None,
+            last_error: None,
+            last_retry_in: None,
+            failed_attempts: 0,
         }
+    }
+
+    /// Fold a poller event into the UI state (SPEC §10.1 failure matrix).
+    pub fn apply_poll_event(&mut self, event: PollEvent) {
+        match event {
+            PollEvent::Starting => self.link = LinkStatus::Connecting,
+            PollEvent::Snapshot(fetched) => {
+                self.last_live_at = Some(Instant::now());
+                self.last_fetch = Some(fetched);
+                self.failed_attempts = 0;
+                self.last_retry_in = None;
+                self.link = LinkStatus::Live;
+            }
+            PollEvent::Failure {
+                message,
+                retry_in,
+                attempt,
+            } => {
+                self.last_error = Some(message);
+                self.failed_attempts = attempt.saturating_add(1);
+                self.last_retry_in = Some(retry_in);
+                self.link = if self.last_fetch.is_some() {
+                    LinkStatus::Stale
+                } else {
+                    LinkStatus::Reconnecting
+                };
+            }
+        }
+        self.dirty = true;
+    }
+
+    pub fn seconds_since_live(&self) -> u64 {
+        self.last_live_at
+            .map(|at| at.elapsed().as_secs())
+            .unwrap_or(0)
+    }
+
+    pub fn retry_seconds(&self) -> u64 {
+        self.last_retry_in
+            .map(|delay| delay.as_secs().max(1))
+            .unwrap_or(0)
     }
 }
 
@@ -49,8 +130,12 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
     let mut app = AppState::new();
     let frame_ms = u64::from(1000 / cfg.ui.fps.max(1)).max(1);
     let mut tick = tokio::time::interval(Duration::from_millis(frame_ms));
+
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     spawn_input_thread(tx);
+
+    let mut poll_events = spawn_poller(&cfg.server);
+    let mut poller_alive = true;
 
     while !app.should_quit {
         tokio::select! {
@@ -65,9 +150,111 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
                 // The input thread ended (stdin closed): do not hang forever.
                 None => app.should_quit = true,
             },
+            changed = poll_events.changed(), if poller_alive => {
+                if changed.is_ok() {
+                    let event = poll_events.borrow_and_update().clone();
+                    app.apply_poll_event(event);
+                } else {
+                    // The poller task ended unexpectedly; keep the UI usable.
+                    poller_alive = false;
+                    app.apply_poll_event(PollEvent::Failure {
+                        message: "internal poller task stopped".to_string(),
+                        retry_in: Duration::ZERO,
+                        attempt: 0,
+                    });
+                }
+            }
         }
     }
     Ok(())
+}
+
+/// Spawn the background poller task (SPEC §4.2) and return its event stream.
+pub fn spawn_poller(server: &ServerConfig) -> tokio::sync::watch::Receiver<PollEvent> {
+    let (sender, receiver) = tokio::sync::watch::channel(PollEvent::Starting);
+    let server = server.clone();
+    tokio::spawn(async move {
+        poll_loop(server, sender).await;
+    });
+    receiver
+}
+
+async fn poll_loop(server: ServerConfig, sender: tokio::sync::watch::Sender<PollEvent>) {
+    let client = match LhmClient::new(&server) {
+        Ok(client) => client,
+        Err(err) => {
+            let _ = sender.send(PollEvent::Failure {
+                message: format!("{err:#}"),
+                retry_in: Duration::ZERO,
+                attempt: 0,
+            });
+            return;
+        }
+    };
+
+    let mut ticker = tokio::time::interval(Duration::from_millis(server.poll_interval_ms.max(1)));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut attempt: u32 = 0;
+
+    loop {
+        ticker.tick().await;
+        if sender.is_closed() {
+            return; // UI is gone
+        }
+        match client.fetch_data_json().await {
+            Ok(fetched) => {
+                attempt = 0;
+                if sender.send(PollEvent::Snapshot(Arc::new(fetched))).is_err() {
+                    return;
+                }
+            }
+            Err(err) => {
+                let delay = jittered(
+                    backoff_delay(&server.retry, attempt),
+                    server.retry.jitter,
+                    rand01(),
+                );
+                let event = PollEvent::Failure {
+                    message: err.to_string(),
+                    retry_in: delay,
+                    attempt,
+                };
+                if sender.send(event).is_err() {
+                    return;
+                }
+                attempt = attempt.saturating_add(1);
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
+}
+
+/// Deterministic exponential backoff: `initial × factor^attempt` capped at
+/// `max_ms` (SPEC §4.2).
+pub fn backoff_delay(retry: &RetryConfig, attempt: u32) -> Duration {
+    let base = retry.initial_ms as f64 * retry.factor.powi(attempt.min(16) as i32);
+    let capped = base.min(retry.max_ms as f64).max(1.0);
+    Duration::from_millis(capped as u64)
+}
+
+/// Apply ±`jitter` around `delay`; `rand01` is a sample in `[0, 1)`
+/// (injectable for tests).
+pub fn jittered(delay: Duration, jitter: f64, rand01: f64) -> Duration {
+    if jitter <= 0.0 {
+        return delay;
+    }
+    let jitter = jitter.clamp(0.0, 0.5);
+    let factor = 1.0 - jitter + 2.0 * jitter * rand01.clamp(0.0, 1.0);
+    Duration::from_millis((delay.as_secs_f64() * factor * 1000.0).round().max(1.0) as u64)
+}
+
+/// No RNG dependency: entropy from the clock's sub-second nanos.
+pub fn rand01() -> f64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.subsec_nanos())
+        .unwrap_or(0);
+    f64::from(nanos % 1_000_000) / 1_000_000.0
 }
 
 /// crossterm event reads are blocking, so they live on their own thread.
@@ -244,5 +431,67 @@ mod tests {
         assert!(action_matches(&cfg, "quit", &ctrl_c));
         let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
         assert!(action_matches(&cfg, "quit", &esc));
+    }
+
+    #[test]
+    fn backoff_schedule_matches_spec() {
+        let retry = RetryConfig::default(); // 500 ms × 2, cap 30 s
+        let ms = |attempt: u32| backoff_delay(&retry, attempt).as_millis() as u64;
+        assert_eq!(ms(0), 500);
+        assert_eq!(ms(1), 1000);
+        assert_eq!(ms(2), 2000);
+        assert_eq!(ms(3), 4000);
+        assert_eq!(ms(4), 8000);
+        assert_eq!(ms(5), 16_000);
+        assert_eq!(ms(6), 30_000, "capped");
+        assert_eq!(ms(20), 30_000, "stays capped");
+    }
+
+    #[test]
+    fn jitter_stays_within_bounds() {
+        let delay = Duration::from_millis(1000);
+        assert_eq!(jittered(delay, 0.1, 0.0).as_millis(), 900);
+        assert_eq!(jittered(delay, 0.1, 1.0).as_millis(), 1100);
+        assert_eq!(jittered(delay, 0.1, 0.5).as_millis(), 1000);
+        assert_eq!(jittered(delay, 0.0, 0.7), delay);
+    }
+
+    #[test]
+    fn link_status_transitions() {
+        let mut app = AppState::new();
+        assert_eq!(app.link, LinkStatus::Connecting);
+
+        // Failure before any data → Reconnecting.
+        app.apply_poll_event(PollEvent::Failure {
+            message: "refused".to_string(),
+            retry_in: Duration::from_millis(500),
+            attempt: 0,
+        });
+        assert_eq!(app.link, LinkStatus::Reconnecting);
+        assert_eq!(app.failed_attempts, 1);
+
+        // Data → Live.
+        app.apply_poll_event(PollEvent::Snapshot(Arc::new(crate::lhm::client::Fetched {
+            snapshot: crate::lhm::model::Snapshot {
+                fetched_at: std::time::SystemTime::now(),
+                lhm_version: Some("0.9.6".to_string()),
+                hardware: Vec::new(),
+                skipped_nodes: 0,
+            },
+            latency: Duration::from_millis(12),
+            bytes: 1024,
+        })));
+        assert_eq!(app.link, LinkStatus::Live);
+        assert_eq!(app.failed_attempts, 0);
+
+        // Failure after data → Stale, keeps the last fetch.
+        app.apply_poll_event(PollEvent::Failure {
+            message: "timeout".to_string(),
+            retry_in: Duration::from_secs(1),
+            attempt: 0,
+        });
+        assert_eq!(app.link, LinkStatus::Stale);
+        assert!(app.last_fetch.is_some());
+        assert_eq!(app.last_error.as_deref(), Some("timeout"));
     }
 }

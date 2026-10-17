@@ -110,7 +110,7 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 #### T1.3 — Normalization (SPEC §3.4 Q5–Q6, §5.1)
 **Goal:** `parse.rs`: raw tree → `Snapshot`; hardware classification (icon → kind, prefix fallback), sensor flattening from TypeNodes, `HardwareKind::Other`, `SensorKind::Other(String)`, preserve tree order (`serde_json` `preserve_order`).
 **Files:** `src/lhm/model.rs`, `src/lhm/parse.rs`, `tests/parse.rs`.
-**Notes:** Stable identity: `HardwareId`/`SensorId` only (never node `id`, SPEC Q3). Count skipped/unknown nodes for the debug overlay.
+**Notes:** Stable identity: `HardwareId`/`SensorId` only (never node `id`, SPEC Q3). Descend the machine container node above hardware (confirmed in live captures). Count skipped/unknown nodes for the debug overlay.
 **Done when:** Fixtures: AMD CPU + NVIDIA GPU, Intel CPU + iGPU, 2 mixed GPUs, memory-only, 1000-sensor synthetic → expected hardware/sensor counts, kinds, ids.
 
 #### T1.4 — HTTP client + `--probe` (SPEC §3.5, §9)

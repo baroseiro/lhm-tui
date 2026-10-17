@@ -1,0 +1,348 @@
+{
+  "id": 0,
+  "Version": "0.9.6",
+  "Text": "Sensor",
+  "Min": "Min", "Value": "Value", "Max": "Max",
+  "ImageURL": "",
+  "Children": [
+    {
+      "Text": "TESTBOX",
+      "Min": "", "Value": "", "Max": "",
+      "ImageURL": "images_icon/computer.png",
+      "Children": [
+    {
+      "id": 7,
+      "Text": "AMD Ryzen 7 7800X3D",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/amdcpu/0",
+      "ImageURL": "images_icon/cpu.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "Core (Tctl/Tdie)",
+              "Min": "43.5 °C", "Value": "46.9 °C", "Max": "77.3 °C",
+              "SensorId": "/amdcpu/0/temperature/2",
+              "Type": "Temperature",
+              "RawMin": "43.5 °C", "RawValue": "46.9 °C", "RawMax": "77.3 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "Core Max",
+              "Min": "", "Value": "", "Max": "",
+              "SensorId": "/amdcpu/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "", "RawValue": "", "RawMax": "",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "CPU Total",
+              "Min": "2.0 %", "Value": "41.2 %", "Max": "100.0 %",
+              "SensorId": "/amdcpu/0/load/0",
+              "Type": "Load",
+              "RawMin": "2.0 %", "RawValue": "41.2 %", "RawMax": "100.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "CPU Core #1",
+              "Min": "3.0 %", "Value": "58.4 %", "Max": "100.0 %",
+              "SensorId": "/amdcpu/0/load/1",
+              "Type": "Load",
+              "RawMin": "3.0 %", "RawValue": "58.4 %", "RawMax": "100.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "CPU Core #2",
+              "Min": "1.0 %", "Value": "12.5 %", "Max": "98.0 %",
+              "SensorId": "/amdcpu/0/load/2",
+              "Type": "Load",
+              "RawMin": "1.0 %", "RawValue": "12.5 %", "RawMax": "98.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Clocks",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/clock.png",
+          "Children": [
+            {
+              "Text": "Cores (Average)",
+              "Min": "2987.0 MHz", "Value": "4275.0 MHz", "Max": "5050.0 MHz",
+              "SensorId": "/amdcpu/0/clock/1",
+              "Type": "Clock",
+              "RawMin": "2987.0 MHz", "RawValue": "4275.0 MHz", "RawMax": "5050.0 MHz",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Powers",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/power.png",
+          "Children": [
+            {
+              "Text": "Package",
+              "Min": "12.4 W", "Value": "42.5 W", "Max": "89.0 W",
+              "SensorId": "/amdcpu/0/power/0",
+              "Type": "Power",
+              "RawMin": "12.4 W", "RawValue": "42.5 W", "RawMax": "89.0 W",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42,
+      "Text": "NVIDIA GeForce RTX 4090",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/nvidiagpu/0",
+      "ImageURL": "images_icon/nvidia.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "38.0 °C", "Value": "52.0 °C", "Max": "71.0 °C",
+              "SensorId": "/nvidiagpu/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "38.0 °C", "RawValue": "52.0 °C", "RawMax": "71.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "GPU Hot Spot",
+              "Min": "42.0 °C", "Value": "61.5 °C", "Max": "83.0 °C",
+              "SensorId": "/nvidiagpu/0/temperature/2",
+              "Type": "Temperature",
+              "RawMin": "42.0 °C", "RawValue": "61.5 °C", "RawMax": "83.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "0.0 %", "Value": "78.0 %", "Max": "100.0 %",
+              "SensorId": "/nvidiagpu/0/load/0",
+              "Type": "Load",
+              "RawMin": "0.0 %", "RawValue": "78.0 %", "RawMax": "100.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "GPU Memory",
+              "Min": "0.0 %", "Value": "34.2 %", "Max": "100.0 %",
+              "SensorId": "/nvidiagpu/0/load/1",
+              "Type": "Load",
+              "RawMin": "0.0 %", "RawValue": "34.2 %", "RawMax": "100.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "SmallData",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/smalldata.png",
+          "Children": [
+            {
+              "Text": "GPU Memory Used",
+              "Min": "120.0 MB", "Value": "8619.9 MB", "Max": "10240.0 MB",
+              "SensorId": "/nvidiagpu/0/smalldata/1",
+              "Type": "SmallData",
+              "RawMin": "120.0 MB", "RawValue": "8619.9 MB", "RawMax": "10240.0 MB",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "GPU Memory Total",
+              "Min": "24564.0 MB", "Value": "24564.0 MB", "Max": "24564.0 MB",
+              "SensorId": "/nvidiagpu/0/smalldata/0",
+              "Type": "SmallData",
+              "RawMin": "24564.0 MB", "RawValue": "24564.0 MB", "RawMax": "24564.0 MB",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Powers",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/power.png",
+          "Children": [
+            {
+              "Text": "GPU Package",
+              "Min": "18.0 W", "Value": "142.0 W", "Max": "450.0 W",
+              "SensorId": "/nvidiagpu/0/power/1",
+              "Type": "Power",
+              "RawMin": "18.0 W", "RawValue": "142.0 W", "RawMax": "450.0 W",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Fans",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/fan.png",
+          "Children": [
+            {
+              "Text": "GPU Fan",
+              "Min": "0 RPM", "Value": "1205 RPM", "Max": "2400 RPM",
+              "SensorId": "/nvidiagpu/0/fan/0",
+              "Type": "Fan",
+              "RawMin": "0 RPM", "RawValue": "1205 RPM", "RawMax": "2400 RPM",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 71,
+      "Text": "Generic Memory",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/ram/0",
+      "ImageURL": "images_icon/ram.png",
+      "Children": [
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "Memory",
+              "Min": "12.0 %", "Value": "62.8 %", "Max": "91.0 %",
+              "SensorId": "/ram/0/load/0",
+              "Type": "Load",
+              "RawMin": "12.0 %", "RawValue": "62.8 %", "RawMax": "91.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Data",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/data.png",
+          "Children": [
+            {
+              "Text": "Memory Used",
+              "Min": "4.1 GB", "Value": "20.1 GB", "Max": "29.1 GB",
+              "SensorId": "/ram/0/data/0",
+              "Type": "Data",
+              "RawMin": "4.1 GB", "RawValue": "20.1 GB", "RawMax": "29.1 GB",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "Memory Available",
+              "Min": "2.9 GB", "Value": "11.9 GB", "Max": "27.9 GB",
+              "SensorId": "/ram/0/data/1",
+              "Type": "Data",
+              "RawMin": "2.9 GB", "RawValue": "11.9 GB", "RawMax": "27.9 GB",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 88,
+      "Text": "Samsung SSD 990 PRO 2TB",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/nvme/0",
+      "ImageURL": "images_icon/hdd.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "Temperature",
+              "Min": "32.0 °C", "Value": "38.0 °C", "Max": "54.0 °C",
+              "SensorId": "/nvme/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "32.0 °C", "RawValue": "38.0 °C", "RawMax": "54.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "Used Space",
+              "Min": "61.0 %", "Value": "62.1 %", "Max": "63.0 %",
+              "SensorId": "/nvme/0/load/0",
+              "Type": "Load",
+              "RawMin": "61.0 %", "RawValue": "62.1 %", "RawMax": "63.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "Total Activity",
+              "Min": "0.0 %", "Value": "0.5 %", "Max": "88.0 %",
+              "SensorId": "/nvme/0/load/1",
+              "Type": "Load",
+              "RawMin": "0.0 %", "RawValue": "0.5 %", "RawMax": "88.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Throughput",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/throughput.png",
+          "Children": [
+            {
+              "Text": "Read Rate",
+              "Min": "0 B/s", "Value": "12.3 MB/s", "Max": "4.1 GB/s",
+              "SensorId": "/nvme/0/throughput/0",
+              "Type": "Throughput",
+              "RawMin": "0 B/s", "RawValue": "12.3 MB/s", "RawMax": "4.1 GB/s",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "Version": "0.9.6",
+  "Text": "Sensor",
+  "Min": "Min", "Value": "Value", "Max": "Max",
+  "ImageURL": "",
+  "Children": [
+    {
+      "Text": "NVIDIA GeForce RTX 3080",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/nvidiagpu/0",
+      "ImageURL": "images_icon/nvidia.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "35.0 °C", "Value": "50.0 °C", "Max": "79.0 °C",
+              "SensorId": "/nvidiagpu/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "35.0 °C", "RawValue": "50.0 °C", "RawMax": "79.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "0.0 %", "Value": "20.0 %", "Max": "99.0 %",
+              "SensorId": "/nvidiagpu/0/load/0",
+              "Type": "Load",
+              "RawMin": "0.0 %", "RawValue": "20.0 %", "RawMax": "99.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Text": "AMD Radeon RX 6800 XT",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/atigpu/0",
+      "ImageURL": "images_icon/ati.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "36.0 °C", "Value": "48.0 °C", "Max": "81.0 °C",
+              "SensorId": "/atigpu/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "36.0 °C", "RawValue": "48.0 °C", "RawMax": "81.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "GPU Hot Spot",
+              "Min": "40.0 °C", "Value": "60.0 °C", "Max": "96.0 °C",
+              "SensorId": "/atigpu/0/temperature/1",
+              "Type": "Temperature",
+              "RawMin": "40.0 °C", "RawValue": "60.0 °C", "RawMax": "96.0 °C",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "0.0 %", "Value": "15.0 %", "Max": "100.0 %",
+              "SensorId": "/atigpu/0/load/0",
+              "Type": "Load",
+              "RawMin": "0.0 %", "RawValue": "15.0 %", "RawMax": "100.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

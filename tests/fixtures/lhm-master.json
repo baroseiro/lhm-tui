@@ -1,0 +1,159 @@
+{
+  "Version": "0.9.7",
+  "Text": "Sensor",
+  "Min": "Min", "Value": "Value", "Max": "Max",
+  "ImageURL": "",
+  "Children": [
+    {
+      "Text": "TESTBOX",
+      "Min": "", "Value": "", "Max": "",
+      "ImageURL": "images_icon/computer.png",
+      "Children": [
+    {
+      "Text": "AMD Ryzen 7 7800X3D",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/amdcpu/0",
+      "ImageURL": "images_icon/cpu.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "Core (Tctl/Tdie)",
+              "Min": "43.5 °C", "Value": "46.9 °C", "Max": "77.3 °C",
+              "SensorId": "/amdcpu/0/temperature/2",
+              "Type": "Temperature",
+              "RawMin": 43.5, "RawValue": 46.9, "RawMax": 77.3,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "CPU Total",
+              "Min": "2.0 %", "Value": "41.2 %", "Max": "100.0 %",
+              "SensorId": "/amdcpu/0/load/0",
+              "Type": "Load",
+              "RawMin": 2.0, "RawValue": 41.2, "RawMax": 100.0,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Clocks",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/clock.png",
+          "Children": [
+            {
+              "Text": "Cores (Average)",
+              "Min": "2987.0 MHz", "Value": "4275.0 MHz", "Max": "5050.0 MHz",
+              "SensorId": "/amdcpu/0/clock/1",
+              "Type": "Clock",
+              "RawMin": 2987.0, "RawValue": 4275.0, "RawMax": 5050.0,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Powers",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/power.png",
+          "Children": [
+            {
+              "Text": "Package",
+              "Min": "12.4 W", "Value": "42.5 W", "Max": "89.0 W",
+              "SensorId": "/amdcpu/0/power/0",
+              "Type": "Power",
+              "RawMin": 12.4, "RawValue": 42.5, "RawMax": 89.0,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "Text": "NVIDIA GeForce RTX 4090",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/nvidiagpu/0",
+      "ImageURL": "images_icon/nvidia.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "38.0 °C", "Value": "52.0 °C", "Max": "71.0 °C",
+              "SensorId": "/nvidiagpu/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": 38.0, "RawValue": 52.0, "RawMax": 71.0,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "GPU Core",
+              "Min": "0.0 %", "Value": "78.0 %", "Max": "100.0 %",
+              "SensorId": "/nvidiagpu/0/load/0",
+              "Type": "Load",
+              "RawMin": 0.0, "RawValue": 78.0, "RawMax": 100.0,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Powers",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/power.png",
+          "Children": [
+            {
+              "Text": "GPU Package",
+              "Min": "18.0 W", "Value": "142.0 W", "Max": "450.0 W",
+              "SensorId": "/nvidiagpu/0/power/1",
+              "Type": "Power",
+              "RawMin": 18.0, "RawValue": 142.0, "RawMax": 450.0,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Fans",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/fan.png",
+          "Children": [
+            {
+              "Text": "GPU Fan",
+              "Min": "0 RPM", "Value": "1205 RPM", "Max": "2400 RPM",
+              "SensorId": "/nvidiagpu/0/fan/0",
+              "Type": "Fan",
+              "RawMin": 0, "RawValue": 1205, "RawMax": 2400,
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    }
+      ]
+    }
+  ]
+}

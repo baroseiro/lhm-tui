@@ -167,7 +167,8 @@ Root object:
   "Text": "Sensor",
   "Min": "Min", "Value": "Value", "Max": "Max",
   "ImageURL": "",
-  "Children": [ /* one node per hardware item */ ]
+  "Children": [ /* single machine node ("SILVERWIN", computer.png) on current
+                   builds; the hardware items are its Children. Both shapes parse. */ ]
 }
 ```
 
@@ -180,6 +181,11 @@ Every node shares: `id` (int, **request-scoped sequential index — not stable**
 | TypeNode     | neither id field | `ImageURL` e.g. `images_icon/temperature.png` (groups: "Temperatures", "Load", "Clocks", "Powers", "Fans", "Data", "Throughput", "Voltages") |
 | SensorNode   | `SensorId`       | `SensorId` (e.g. `/amdcpu/0/temperature/2`), `Type` (SensorType name), `RawMin`/`RawValue`/`RawMax` |
 
+Nodes without either id are **containers**: group `TypeNode`s (whose children are sensors) and the
+**machine node** — current builds wrap all hardware in a single `computer.png` node (e.g.
+`"Text": "SILVERWIN"`) whose `Children` are the hardware items. The parser must descend both shapes
+(verified against a live instance).
+
 ### 3.4 Compatibility quirks (mandatory handling)
 
 | #   | Quirk                                                                                                                                                                                            | Handling rule                                                                                                                                                  |
@@ -188,9 +194,9 @@ Every node shares: `id` (int, **request-scoped sequential index — not stable**
 | Q2  | Bare `NaN` / `Infinity` literals may appear (server serializes with `AllowNamedFloatingPointLiterals`); strict JSON parsers reject them.                                                            | Before `serde_json`, run a sanitizer that replaces the **whole tokens** `NaN`, `Infinity`, `-Infinity` with `null` (regex anchored to value position: after `:` or `,`, before `,`/`}`/`]`; never inside strings). |
 | Q3  | Node `id` is sequential per response and changes with hardware set.                                                                                                                                | Never key maps by `id`. Use `SensorId`/`HardwareId` as stable identity (stable until LHM restarts).                                                             |
 | Q4  | Sensor `Value` may be `null`, `""`, or formatted without unit; `Min`/`Max` may be empty at first poll.                                                                                              | All numeric fields are `Option<f64>`; UI renders `—`.                                                                                                            |
-| Q5  | Hardware **type is not present as a field** — only icon + identifier prefix reveal it.                                                                                                             | Classify by `ImageURL` (`images_icon/cpu.png` → Cpu, `nvidia.png`/`ati.png`/`intel.png` → Gpu\*, `ram.png` → Memory, …), fall back to `HardwareId` prefix (`amdcpu`, `intelcpu`, `nvidiagpu`, `atigpu`, `gpuintel`, `ram`, `nvme`, `hdd`, `motherboard`, `lpc`, `nic`, `psu`, `battery`, `cooler`, `embeddedcontroller`). Unknown → `Other`. |
+| Q5  | Hardware **type is not present as a field** — only icon + identifier prefix reveal it.                                                                                                             | Classify by `ImageURL` (`images_icon/cpu.png` → Cpu, `nvidia.png`/`ati.png`/`intel.png` → Gpu\*, `ram.png` → Memory, …), fall back to `HardwareId` prefix (`amdcpu`/`intelcpu`/`cpu`, `nvidiagpu`/`gpu-nvidia`, `atigpu`/`gpu-amd`, `gpuintel`/`gpu-intel`, `ram`/`vram`/`memory`, `nvme`, `hdd`, `motherboard`, `lpc`, `nic`, `psu`, `battery`, `cooler`, `embeddedcontroller` — classic and hyphenated id styles both occur). Unknown → `Other`. |
 | Q6  | Values formatted with unknown/new sensors types may appear after LHM updates.                                                                                                                       | `Type` maps to enum with `Other(String)` catch-all; unknown types still render in tables.                                                                       |
-| Q7  | `Version` only exists on the root node, format `major.minor.build`.                                                                                                                                | Extract once per poll; `--probe` prints it; compatibility warning if `< 0.9.5`.                                                                                  |
+| Q7  | `Version` exists on the root node only, format `major.minor.build` — and is **absent on 0.9.6-era servers** (verified live).                                                                        | Treat as optional: extract once per poll; `--probe` prints `unknown` when missing; compatibility warning only when a parsed version is `< 0.9.5`.                  |
 | Q8  | Sensor groups contain a mix of `SensorNode`s only; groups themselves are `TypeNode`s.                                                                                                              | Two-level flattening in the parser.                                                                                                                              |
 
 ### 3.5 Request behavior
@@ -216,7 +222,8 @@ lhm-tui/
 ├─ lhm-tui.example.json     # copy of default config
 ├─ schema/lhm-tui.schema.json
 ├─ src/
-│  ├─ main.rs               # CLI parse, runtime setup, terminal init/restore
+│  ├─ lib.rs                # library root: pub modules shared with integration tests
+│  ├─ main.rs               # thin binary entrypoint (CLI parse, dispatch, exit codes)
 │  ├─ cli.rs                # clap definitions, env merging, effective-config build
 │  ├─ config.rs             # serde structs, defaults, discovery, validation, hot-reload
 │  ├─ lhm/

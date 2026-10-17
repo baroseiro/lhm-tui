@@ -1,0 +1,47 @@
+{
+  "Text": "Sensor",
+  "Min": "Min", "Value": "Value", "Max": "Max",
+  "ImageURL": "",
+  "Children": [
+    {
+      "Text": "AMD Ryzen 5 3600",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/amdcpu/0",
+      "ImageURL": "images_icon/cpu.png",
+      "Children": [
+        {
+          "Text": "Temperatures",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/temperature.png",
+          "Children": [
+            {
+              "Text": "Core Max",
+              "Min": "", "Value": "", "Max": "",
+              "SensorId": "/amdcpu/0/temperature/0",
+              "Type": "Temperature",
+              "RawMin": "", "RawValue": "", "RawMax": "",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "CPU Total",
+              "Min": "1.0 %", "Value": "8.4 %", "Max": "96.0 %",
+              "SensorId": "/amdcpu/0/load/0",
+              "Type": "Load",
+              "RawMin": "1.0 %", "RawValue": "8.4 %", "RawMax": "96.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

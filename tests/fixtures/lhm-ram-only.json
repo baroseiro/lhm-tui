@@ -1,0 +1,57 @@
+{
+  "Version": "0.9.6",
+  "Text": "Sensor",
+  "Min": "Min", "Value": "Value", "Max": "Max",
+  "ImageURL": "",
+  "Children": [
+    {
+      "Text": "Generic Memory",
+      "Min": "", "Value": "", "Max": "",
+      "HardwareId": "/ram/0",
+      "ImageURL": "images_icon/ram.png",
+      "Children": [
+        {
+          "Text": "Load",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/load.png",
+          "Children": [
+            {
+              "Text": "Memory",
+              "Min": "10.0 %", "Value": "44.4 %", "Max": "80.0 %",
+              "SensorId": "/ram/0/load/0",
+              "Type": "Load",
+              "RawMin": "10.0 %", "RawValue": "44.4 %", "RawMax": "80.0 %",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        },
+        {
+          "Text": "Data",
+          "Min": "", "Value": "", "Max": "",
+          "ImageURL": "images_icon/data.png",
+          "Children": [
+            {
+              "Text": "Memory Used",
+              "Min": "3.2 GB", "Value": "14.2 GB", "Max": "25.6 GB",
+              "SensorId": "/ram/0/data/0",
+              "Type": "Data",
+              "RawMin": "3.2 GB", "RawValue": "14.2 GB", "RawMax": "25.6 GB",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            },
+            {
+              "Text": "Memory Available",
+              "Min": "6.4 GB", "Value": "17.8 GB", "Max": "28.8 GB",
+              "SensorId": "/ram/0/data/1",
+              "Type": "Data",
+              "RawMin": "6.4 GB", "RawValue": "17.8 GB", "RawMax": "28.8 GB",
+              "ImageURL": "images/transparent.png",
+              "Children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -32,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   override (`T0.5`).
 - `lhm-tui.example.json` generated from the built-in defaults and covered by tests (round-trip,
   no unknown keys, valid values).
+- LHM client (P1): `/data.json` polling via `reqwest` (gzip, Basic auth, `User-Agent`, timeout)
+  with the tolerant wire format — unit-suffixed strings, and bare `NaN`/`Infinity` sanitizing
+  (`T1.1`/`T1.2`).
+- Snapshot normalization: hardware classification (icon + id-prefix fallback incl. hyphenated
+  `gpu-nvidia`/`gpu-amd` styles), machine-container descent, sensor grouping, stable `SensorId`
+  identity, skipped-node counting (`T1.3`).
+- `--probe` implemented: LHM version, payload size/latency, per-hardware sensor counts, exit 3
+  (connection) / 4 (auth) per SPEC §9; verified against a live instance (9 hardware items,
+  276 sensors, NVIDIA + AMD GPUs) (`T1.4`).
+- Poller task with `watch` channel, exponential backoff + jitter reset on success, and
+  `LinkStatus` transitions (Connecting/Live/Stale/Reconnecting) in the UI (`T1.5`).
+- Test suite growth: 7-fixture version matrix (incl. the machine-node shape and NaN quirks), a
+  scripted mock LHM server, poller recovery/backoff integration tests — 56 tests total (`T1.6`).
+- `src/lib.rs` + thin `main.rs` split so integration tests exercise the same code the binary runs.
 
 ### Changed
 
@@ -40,3 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Spec/plan corrections aligned with the implementation: poll interval floor fixed at 250 ms
   everywhere (was 200 in §8.2 and Appendix C), `serde_ignored` added to the dependency table,
   input events documented as a crossterm input thread, T0.2 stub exit code corrected to 1.
+- SPEC §3.3/§3.4 corrected from live-instance verification: hardware nodes are wrapped in a
+  machine container node; `Version` is absent on 0.9.6-era servers; id prefixes include the
+  hyphenated `gpu-nvidia`/`gpu-amd`/`gpu-intel` and `vram`/`memory` styles.
