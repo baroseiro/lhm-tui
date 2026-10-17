@@ -16,8 +16,8 @@
   is fully green.
 - **Task anatomy.** Every task lists **Goal**, **Files**, **Notes** and **Done when**. "Done when"
   is the merge gate — the PR must not merge without it.
-- **PR strategy.** One PR per task, or per small task group (≤ 400 diff lines). Every PR updates
-  `CHANGELOG.md` under `[Unreleased]` when user-visible.
+- **PR strategy.** One PR per task, or per small task group (≤ 400 diff lines). Every PR adds a
+  `CHANGELOG.md` entry under `[Unreleased]` (mandatory — rules in AGENTS.md, "Change tracking").
 - **Daily loop.** `cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo test` →
   manual smoke (`cargo run -- --probe` / `cargo run`) against a real LHM instance. Fix red CI
   before starting the next task.
@@ -60,7 +60,7 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 ### Phase P0 — Bootstrap (SPEC §11 M0)
 
 #### T0.1 — Repo scaffold + CI
-**Goal:** `cargo init` in place (binary crate `lhm-tui` in repo root), add dependencies from SPEC §4.3, `.gitignore`, MIT `LICENSE`, empty `CHANGELOG.md` (keep-a-changelog).
+**Goal:** `cargo init` in place (binary crate `lhm-tui` in repo root), add dependencies from SPEC §4.3, `.gitignore`, MIT `LICENSE`; `CHANGELOG.md` already exists — keep it current from here on.
 **Files:** `Cargo.toml`, `src/main.rs`, `.github/workflows/ci.yml`, `LICENSE`, `.gitignore`.
 **Notes:** CI matrix `windows-latest`/`ubuntu-latest`/`macos-latest`; steps: fmt --check, clippy `-D warnings`, `cargo test`, `cargo build --release`. Cache via `Swatinem/rust-cache`.
 **Done when:** CI green on the scaffold; `cargo run` prints version banner.
@@ -310,7 +310,7 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 **Done when:** Clean-VM test passes following README verbatim.
 
 #### T6.2 — Release metadata
-**Goal:** `CHANGELOG.md` v0.1.0 section, `CONTRIBUTING.md`, issue templates (bug/feature) incl. `--probe` request, `rust-toolchain.toml` (MSRV pin).
+**Goal:** Promote `CHANGELOG.md` `[Unreleased]` → `[0.1.0]`, `CONTRIBUTING.md`, issue templates (bug/feature) incl. `--probe` request, `rust-toolchain.toml` (MSRV pin).
 **Done when:** Community files present; version bumped to `0.1.0` in `Cargo.toml`.
 
 #### T6.3 — Packaging via `dist`
