@@ -27,7 +27,7 @@ live, color-thresholded panels in your terminal:
 - **Temperatures** — sortable table of every thermal sensor in the tree, colored by thresholds
 - Plus presets for **fans**, **power**, **storage** and **network**
 - **Optional GPU fan anti-stop floor** — keeps NVIDIA/AMD fan curves from parking the fans at
-  zero-RPM when idle (`f`): a 20 % floor while the GPU is idle, automatic driver control the
+  zero-RPM when idle (`f`): a 45 % floor while the GPU is idle, automatic driver control the
   moment load or temperature rises. Off by default; the only feature that writes to hardware,
   and only ever to the fan controls ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-opt-in))
 

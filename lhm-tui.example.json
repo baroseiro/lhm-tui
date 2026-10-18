@@ -138,7 +138,7 @@
   },
   "fan_guard": {
     "enabled": false,
-    "floor_percent": 20.0,
+    "floor_percent": 45.0,
     "idle_load_percent": 10.0,
     "idle_temp_c": 65.0,
     "release_load_margin_percent": 10.0,

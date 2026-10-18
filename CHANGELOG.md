@@ -140,6 +140,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `fan_guard.floor_percent` default raised 20 → **45 %**: the anti-stop floor should be clearly
+  audible/spinning rather than a barely-moving fan, and 45 % still leaves the driver curve full
+  range below the release hysteresis.
 - `fan_guard.idle_temp_c` default raised 50 → **65 °C**: idle GPU hot spots commonly sit at
   55–60 °C, so the anti-stop floor engages out of the box instead of waiting for a genuinely
   cold card.

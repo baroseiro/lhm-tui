@@ -60,7 +60,9 @@ impl Default for Config {
 pub struct FanGuardConfig {
     /// Off by default — enabling this writes to LHM control sensors.
     pub enabled: bool,
-    /// Duty cycle (%) held while idle (5–100; 0 is rejected so fans never stop).
+    /// Duty cycle (%) held while idle (5–100; 0 is rejected so fans never
+    /// stop). Defaults to 45 % — clearly spinning audible airflow, while the
+    /// driver curve still gets full range back under load.
     pub floor_percent: f32,
     /// Idle thresholds: floor engages when load ≤ `idle_load_percent` **and**
     /// the hottest GPU temperature ≤ `idle_temp_c` (65 °C by default — typical
@@ -76,7 +78,7 @@ impl Default for FanGuardConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            floor_percent: 20.0,
+            floor_percent: 45.0,
             idle_load_percent: 10.0,
             idle_temp_c: 65.0,
             release_load_margin_percent: 10.0,
@@ -1264,7 +1266,7 @@ mod tests {
         assert_eq!(config.keys["toggle_fan_guard"], vec!["f"]);
         assert_eq!(config.keys.len(), 17);
         assert!(!config.fan_guard.enabled, "fan writes off by default");
-        assert_eq!(config.fan_guard.floor_percent, 20.0);
+        assert_eq!(config.fan_guard.floor_percent, 45.0);
         assert_eq!(config.fan_guard.idle_load_percent, 10.0);
         assert_eq!(config.fan_guard.idle_temp_c, 65.0);
         assert_eq!(config.fan_guard.release_load_margin_percent, 10.0);
