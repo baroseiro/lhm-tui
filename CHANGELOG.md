@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Repository published publicly.** The old private visibility made both README badges render
+  "repo not found" and blocked anonymous users from downloading release assets or running
+  `cargo install --git`. Public now, with a repo description and topics; CI badge, release badge,
+  release downloads and source installs verified anonymously afterwards.
 - Release notes for v0.1.0 polished after the release run: artifact verification notes, the
   real QA status on the reference rig, and a link to the changelog section.
 
