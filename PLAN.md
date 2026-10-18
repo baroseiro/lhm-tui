@@ -330,8 +330,10 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 #### T6.1 — README finalization
 **Goal:** Replace `OWNER` placeholders; add real screenshots (`docs/preview.png`) and GIF (`docs/demo.gif`, 15 s: startup, graphs, window cycle, zoom); verify all doc links; README quick start tested on a clean VM.
 **Status:** `OWNER` replaced with `baroseiro`; links verified; install section restricted to the
-shipped channels (GitHub Releases + `cargo install --git`). Screenshots stay as TODO placeholders
-(need an interactive session) and the clean-VM run is a manual pre-release step.
+shipped channels (GitHub Releases + `cargo install --git`). Captures recorded on the reference rig
+with VHS: `docs/preview.png` (hero) and `docs/demo.gif` (13 s: gauges → `c` charts → `t`
+temperatures → `?` keymap → quit), reproducible via `docs/demo.tape`. The clean-VM run is a manual
+pre-release step.
 **Done when:** Clean-VM test passes following README verbatim.
 
 #### T6.2 — Release metadata

@@ -61,6 +61,20 @@ The ignored live tests are read-only except `live_set_control_rejects_unknown_se
 probes a **non-existent** sensor id (no hardware writes). The real fan anti-stop smoke test is a
 manual checklist item in [docs/qa-matrix.md](docs/qa-matrix.md).
 
+### Docs captures (screenshots/GIF)
+
+The README hero shot and demo GIF are recorded from a real session with
+[VHS](https://github.com/charmbracelet/vhs):
+
+```console
+vhs docs/demo.tape        # writes docs/preview.png + docs/demo.gif
+```
+
+Needs `vhs`, `ttyd` and `ffmpeg` on `PATH`, a running LHM on `localhost:8085`, and `lhm-tui` on
+`PATH`. The tape briefly floors an idle zero-RPM GPU at 45 % — that is the anti-stop feature doing
+its job; it is released again when the demo quits. Refresh both files when the layout changes
+noticeably (the TestBackend snapshots in `tests/` remain the rendering source of truth).
+
 ## Pull requests
 
 1. Small, focused commits with conventional-ish prefixes (`feat:`, `fix:`, `change:`, `docs:`).

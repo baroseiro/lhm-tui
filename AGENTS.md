@@ -12,9 +12,10 @@
 - **Reading order before any work:** `SPEC.md` in full, then `PLAN.md`. Plan phases P0–P6 map 1:1
   to SPEC §11 milestones M0–M6; tasks (`T<phase>.<n>`) are in dependency order, and `SPEC.md` /
   `PLAN.md` must stay consistent — update both together.
-- **Roadmap files**: the P0–P5 scaffolding is in place (LICENSE, `lhm-tui.example.json`,
-  `schema/`, `docs/`, `.github/`). Still missing by design: `docs/preview.png` / `docs/demo.gif`
-  (README placeholders, post-v0.1.0 docs) — never "fix" a doc by deleting references to them.
+- **Roadmap files**: the P0–P6 scaffolding is in place (LICENSE, `lhm-tui.example.json`,
+  `schema/`, `docs/`, `.github/`). UI captures (`docs/preview.png`, `docs/demo.gif`) are generated
+  from `docs/demo.tape` with VHS — regenerate them when the layout changes noticeably; never "fix"
+  a doc by deleting references to files that exist.
 
 ## Sources of truth & edit order
 

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- README captures recorded from a live session with VHS: `docs/preview.png` (hero shot) and
+  `docs/demo.gif` (13 s: default gauges → `c` charts → `t` temperatures → `?` keymap → quit), plus
+  the reproducible `docs/demo.tape` and a regeneration note in `CONTRIBUTING.md`.
+
 ### Changed
 
 - **Repository published publicly.** The old private visibility made both README badges render

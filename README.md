@@ -9,10 +9,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-informational)
 
-</div>
+![lhm-tui dashboard: CPU, two GPUs and memory panels live](docs/preview.png)
 
-<!-- TODO (post-v0.1.0 docs): add docs/preview.png (1600×900 PNG of a real session) and docs/demo.gif
-     (~15 s: startup, charts, window cycle, zoom) once an interactive capture session exists. -->
+</div>
 
 `lhm-tui` talks to LibreHardwareMonitor's built-in **Remote Web Server** over plain HTTP and renders
 live, color-thresholded panels in your terminal:
@@ -38,6 +37,18 @@ Windows machine on your network / over SSH — through a small JSON config file.
 
 > **Project status:** v0.1.0 — first public release. The full design — architecture, config
 > schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
+
+## Demo
+
+A 13-second loop on the reference machine (RTX 3090 + RX 7900 XTX): the default gauges view, `c`
+switching to live charts, `t` opening the temperatures table, `?` showing the key map, then a clean
+quit. Note the status line at the bottom — the fan anti-stop floor holding the 3090 at 45 % while
+idle.
+
+![lhm-tui demo: gauges, charts toggle, temperatures table, help overlay](docs/demo.gif)
+
+*Regenerate with [`vhs docs/demo.tape`](docs/demo.tape) (needs `vhs`, `ttyd`, `ffmpeg` and a running
+LHM).*
 
 ---
 
