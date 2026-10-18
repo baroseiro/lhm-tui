@@ -251,6 +251,9 @@ pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config, charts_
         }
         PanelKind::Gpu(index) => {
             let show = &cfg.panels.gpu.show;
+            // Fans may share the power/clock info row (right-aligned); when
+            // they do, the chart absorbs the saved row (the draw path sizes
+            // charts from its own row count), so this stays an upper bound.
             let fans = u16::from(
                 shows(show, "fan")
                     && bindings
@@ -743,6 +746,25 @@ fn draw_gpu(
         .collect();
     let vram_shown = show("memory");
     let fans_shown = show("fan") && !gpu.fans.is_empty();
+    let fan_pairs_owned = if fans_shown {
+        gpu_fan_pairs(gpu, ctx.snapshot)
+    } else {
+        Vec::new()
+    };
+    let fan_pairs: Vec<(&str, String)> = fan_pairs_owned
+        .iter()
+        .map(|(label, value)| (label.as_str(), value.clone()))
+        .collect();
+    // Fans share the power/clock row, aligned to the right edge, whenever the
+    // panel is wide enough; otherwise they keep a row of their own (SPEC §6.3).
+    let merge_fans = fans_shown
+        && !pairs.is_empty()
+        && usize::from(widgets::compact_pairs_width(&pairs))
+            + usize::from(widgets::compact_pairs_width(&fan_pairs))
+            + 3
+            <= usize::from(inner.width);
+    let info_row = !pairs.is_empty();
+    let fan_row = fans_shown && !merge_fans;
 
     if ctx.charts_on() {
         let mut graphs: Vec<(String, Vec<Series>, YMode)> = Vec::new();
@@ -779,9 +801,8 @@ fn draw_gpu(
                 graphs.push((format!("{panel_key}:temp"), series, YMode::Auto));
             }
         }
-        if !graphs.is_empty() || vram_shown || !pairs.is_empty() || fans_shown {
-            let reserved =
-                u16::from(vram_shown) + u16::from(!pairs.is_empty()) + u16::from(fans_shown);
+        if !graphs.is_empty() || vram_shown || info_row || fan_row {
+            let reserved = u16::from(vram_shown) + u16::from(info_row) + u16::from(fan_row);
             let chart_height = if graphs.is_empty() {
                 0
             } else {
@@ -815,17 +836,23 @@ fn draw_gpu(
                 draw_vram_gauge(frame, vram_rect, ctx, gpu);
                 offset += 1;
             }
-            if !pairs.is_empty() {
+            if info_row {
                 let info_rect = Rect {
                     x: inner.x,
                     y: inner.y + offset,
                     width: inner.width,
                     height: 1,
                 };
-                widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
+                if merge_fans {
+                    widgets::info_line_split(
+                        frame, info_rect, &pairs, &fan_pairs, ctx.theme, ctx.stale,
+                    );
+                } else {
+                    widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
+                }
                 offset += 1;
             }
-            if fans_shown {
+            if fan_row {
                 let fans_rect = Rect {
                     x: inner.x,
                     y: inner.y + offset,
@@ -857,9 +884,9 @@ fn draw_gpu(
     }
     if !pairs.is_empty() {
         constraints.push(Constraint::Length(1));
-        plan.push(5);
+        plan.push(if merge_fans { 7 } else { 5 });
     }
-    if fans_shown {
+    if fan_row {
         constraints.push(Constraint::Length(1));
         plan.push(6);
     }
@@ -899,35 +926,40 @@ fn draw_gpu(
             3 => gauge_for_slot(frame, *row, "Load", ctx, &gpu.load, 100.0, Metric::Load),
             4 => draw_vram_gauge(frame, *row, ctx, gpu),
             6 => draw_gpu_fans(frame, *row, ctx, gpu),
+            7 => widgets::info_line_split(frame, *row, &pairs, &fan_pairs, ctx.theme, ctx.stale),
             _ => widgets::info_line(frame, *row, &pairs, ctx.theme, ctx.stale),
         }
     }
 }
 
 /// One line with every fan on the card: `Fan 1 1205 RPM  Fan 2 1180 RPM`
-/// (single-fan cards keep the compact `Fan` label).
+/// (single-fan cards keep the compact `Fan` label). Used when the fans do not
+/// fit beside power/clock on the info row.
 fn draw_gpu_fans(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindings) {
     if area.height == 0 || gpu.fans.is_empty() {
         return;
     }
-    let multi = gpu.fans.len() > 1;
-    let labels: Vec<String> = gpu
-        .fans
+    let pairs_owned = gpu_fan_pairs(gpu, ctx.snapshot);
+    let pairs: Vec<(&str, String)> = pairs_owned
         .iter()
-        .enumerate()
-        .map(|(index, row)| fan_label(&row.fan.label, index, multi))
-        .collect();
-    let pairs: Vec<(&str, String)> = labels
-        .iter()
-        .zip(&gpu.fans)
-        .map(|(label, row)| {
-            (
-                label.as_str(),
-                slot_display(ctx.snapshot, &Some(row.fan.clone())),
-            )
-        })
+        .map(|(label, value)| (label.as_str(), value.clone()))
         .collect();
     widgets::info_line(frame, area, &pairs, ctx.theme, ctx.stale);
+}
+
+/// `Fan 1`/`Fan 2`… label plus displayed value for every fan on the card.
+fn gpu_fan_pairs(gpu: &GpuBindings, snapshot: &Snapshot) -> Vec<(String, String)> {
+    let multi = gpu.fans.len() > 1;
+    gpu.fans
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            (
+                fan_label(&row.fan.label, index, multi),
+                slot_display(snapshot, &Some(row.fan.clone())),
+            )
+        })
+        .collect()
 }
 
 /// `GPU Fan 2` → `Fan 2`; single-fan cards stay `Fan`.

@@ -465,7 +465,7 @@ Responsive rules:
 | Key           | Contents                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
 | `cpu`         | temp graph + total-load graph (dual series), per-core bars, clock/power gauges   |
-| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + power/clock gauges + a row with every fan |
+| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + power/clock gauges with every fan (`Fan 1`, `Fan 2`, …) right-aligned on the same row — fans keep their own row when the panel is too narrow |
 | `memory`      | used/available gauge + used-load graph + optional page file/virtual gauges       |
 | `thermal`     | table of all temperature sensors, sorted desc (hidden by default; `t` or list it in `ui.layout`) |
 | `fans`        | table of fans (+control % column)                                                 |
@@ -504,6 +504,7 @@ Key conflicts after remapping → config validation error listing offending acti
 - Graph series colors: per-slot palette (`theme.cpu`, `theme.gpu`, `theme.memory`, `theme.network`, `theme.storage`; extra series cycle).
 - Thresholds: values ≥ `warn` → `theme.warn`, ≥ `crit` → `theme.crit`; applies to gauges, bars, tables and graph line/latest-value marker. Defaults: 80/95 °C, 90/98 % load, GPU mem 90/97 %.
 - Numbers right-aligned, `tabular`-friendly fixed decimals: temps `69.5 °C`, loads `41.2 %`, memory `20.1 / 32.0 GB`, clocks `5.42 GHz`, fans `1205 RPM`, power `142 W`.
+- Info rows pack `label value` pairs with a 5-column label pad; on the GPU panel the fans sit right-aligned on the power/clock row (parent rows fall back to a separate fan row when the panel is too narrow).
 - `NO_COLOR` env or `--no-color`: honor by dropping colors but keeping bold/dim and bar glyphs.
   RGB theme colors are downgraded automatically to the terminal's detected color depth
   (truecolor → 256 → 16); built-in palettes: `default`, `gruvbox`, `nord`, `mono` (or a theme

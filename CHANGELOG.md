@@ -141,9 +141,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **GPU** panels put every fan right-aligned on the power/clock row (their own row when the panel
+  is too narrow for both).
 - The permanent key-hint bar at the bottom is gone: the full key map lives in the `h`/`?` popup
   (which now also lists the scroll keys), the chart window label moved into the header, and the
-  bottom line is a status line — the only place messages render (the old second-line toast is
+  bottom line is a status line - the only place messages render (the old second-line toast is
   gone) — highlighted for 12 s after the newest message, muted afterwards, so the fan anti-stop
   state, reload results and errors stay visible.
 - `fan_guard.floor_percent` default raised 20 → **45 %**: the anti-stop floor should be clearly
@@ -160,13 +162,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `f`, new §7.5 specifies the decision table, §8.2/§8.3 and Appendix C carry `fan_guard`, and
   §12.1/§12.4/§15 R9 cover its tests, QA row and vendor-tool conflict risk.
 - GPU panels list **every fan on the card** (`Fan 1 … Fan 2 …`, paired with their controls by
-  name; single-fan cards keep the compact `Fan` label; `gpu.<n>.fan` pins one). Fans moved to
-  their own row, and panel heights account for it.
+  name; single-fan cards keep the compact `Fan` label; `gpu.<n>.fan` pins one). Fans render
+  right-aligned on the power/clock row and fall back to their own row when the panel is too
+  narrow.
 - `panels.gpu.show` gains `clock` in the defaults (the show-gating in P4 had silently hidden GPU
   clocks, which SPEC §6.3 lists as part of the panel).
-
-### Changed
-
 - Declared MSRV corrected to Rust **1.89** (was 1.83): the resolved dependency tree
   (ratatui 0.30.2 / uuid 1.89) does not build on older toolchains.
 - Spec/plan corrections aligned with the implementation: poll interval floor fixed at 250 ms

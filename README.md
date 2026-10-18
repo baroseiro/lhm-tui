@@ -22,7 +22,8 @@ live, color-thresholded panels in your terminal:
 
 - **CPU** — temperature & total load graphs, per-core utilization bars, clocks, package power
 - **GPU** — one panel per GPU (NVIDIA/AMD/Intel, multi-GPU supported): core load, **VRAM usage**,
-  hotspot temperature, power draw and fan speed
+  hotspot temperature, power draw, and every fan on the card (right-aligned on the power/clock
+  row)
 - **Memory** — used/available gauges with history, page file and virtual memory
 - **Temperatures** — sortable table of every thermal sensor in the tree, colored by thresholds
 - Plus presets for **fans**, **power**, **storage** and **network**

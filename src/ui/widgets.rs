@@ -48,6 +48,10 @@ fn truncate(text: &str, width: u16) -> String {
 /// Fixed label column shared by gauges and info rows (SPEC §6.5).
 const LABEL_WIDTH: u16 = 8;
 
+/// Label/value column widths of `info_line` pairs (SPEC §6.5).
+const INFO_LABEL_WIDTH: u16 = 5;
+const INFO_VALUE_WIDTH: u16 = 10;
+
 /// One-line gauge: ` label ███████░░░ display` with a fixed label column and
 /// the value right-aligned at the inner edge.
 #[allow(clippy::too_many_arguments)]
@@ -108,14 +112,79 @@ pub fn info_line(
             spans.push(Span::raw(" "));
         }
         spans.push(Span::styled(
-            format!("{} ", pad_display(label, 5)),
+            format!("{} ", pad_display(label, INFO_LABEL_WIDTH)),
             with_dim(Style::new().fg(theme.muted), dim),
         ));
         spans.push(Span::styled(
-            pad_display(value, 10),
+            pad_display(value, INFO_VALUE_WIDTH),
             with_dim(Style::new().fg(theme.text).bold(), dim),
         ));
     }
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// Rendered width of a `compact_pairs` block (no leading/trailing space).
+/// Labels keep the shared 5-column pad; values stay natural up to 10 columns.
+pub fn compact_pairs_width(pairs: &[(&str, String)]) -> u16 {
+    let count = pairs.len() as u16;
+    if count == 0 {
+        return 0;
+    }
+    pairs
+        .iter()
+        .map(|(_, value)| INFO_LABEL_WIDTH + 1 + display_width(value).min(INFO_VALUE_WIDTH))
+        .sum::<u16>()
+        + (count - 1)
+}
+
+fn push_compact_pairs(
+    spans: &mut Vec<Span<'static>>,
+    pairs: &[(&str, String)],
+    theme: &Theme,
+    dim: bool,
+) {
+    for (index, (label, value)) in pairs.iter().enumerate() {
+        if index > 0 {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(Span::styled(
+            format!("{} ", pad_display(label, INFO_LABEL_WIDTH)),
+            with_dim(Style::new().fg(theme.muted), dim),
+        ));
+        spans.push(Span::styled(
+            truncate(value, INFO_VALUE_WIDTH),
+            with_dim(Style::new().fg(theme.text).bold(), dim),
+        ));
+    }
+}
+
+/// `info_line` with a second block pinned to the right edge of the same row
+/// (GPU fans beside power/clock). Both blocks render compactly; callers must
+/// size the row with [`compact_pairs_width`] and fall back to
+/// [`info_line`] when the two blocks plus a gap column do not fit.
+pub fn info_line_split(
+    frame: &mut Frame,
+    area: Rect,
+    left: &[(&str, String)],
+    right: &[(&str, String)],
+    theme: &Theme,
+    dim: bool,
+) {
+    if area.height == 0 || right.is_empty() {
+        return;
+    }
+    let left_width = u32::from(compact_pairs_width(left));
+    let right_width = u32::from(compact_pairs_width(right));
+    // One leading and one trailing space, plus at least one gap column.
+    let gap = u32::from(area.width).saturating_sub(left_width + right_width + 2);
+    let mut spans: Vec<Span> = Vec::new();
+    if !left.is_empty() {
+        spans.push(Span::raw(" "));
+        push_compact_pairs(&mut spans, left, theme, dim);
+    }
+    spans.push(Span::raw(" ".repeat(gap.max(1) as usize)));
+    push_compact_pairs(&mut spans, right, theme, dim);
+    spans.push(Span::raw(" "));
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
