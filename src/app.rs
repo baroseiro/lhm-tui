@@ -53,9 +53,23 @@ pub struct ControlRequest {
     pub sensor_id: String,
     /// `Some(percent)` = software floor; `None` = back to automatic.
     pub value: Option<f32>,
-    /// Optional toast text (only attached to the last request of a batch).
+    /// Optional status message (only attached to the last request of a batch).
     pub notice: Option<String>,
 }
+
+/// A message for the bottom status line (SPEC §6.2). Fresh messages render
+/// highlighted; `age_status` dims them once the highlight window passed.
+#[derive(Debug, Clone)]
+pub struct StatusMessage {
+    pub text: String,
+    /// When the message arrived.
+    pub at: Instant,
+    /// True once the 12 s highlight window passed.
+    pub dimmed: bool,
+}
+
+/// How long a status message stays highlighted (SPEC §6.2).
+pub const STATUS_HIGHLIGHT: Duration = Duration::from_secs(12);
 
 /// Connection status shown in the header (SPEC §10.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,11 +117,9 @@ pub struct AppState {
     pub charts_override: Option<bool>,
     /// `?`/`h` help overlay visibility (any key press closes it).
     pub help_visible: bool,
-    /// Transient alert shown on the second line (fades after 12 s).
-    pub toast: Option<(String, Instant)>,
-    /// Last status message: mirrored by the bottom status line and kept after
-    /// the toast fades (fan anti-stop state, reload results, errors, …).
-    pub status_line: Option<String>,
+    /// Latest message for the bottom status line (SPEC §6.2): highlighted
+    /// while fresh, dimmed after the 12 s window.
+    pub status: Option<StatusMessage>,
     /// Focused-panel fullscreen zoom (`enter`, T5.2).
     pub zoomed: bool,
     /// Sensor browser overlay (`b`, T5.2): filter text and selection.
@@ -133,7 +145,7 @@ pub struct AppState {
     pub fan_guard_state: BTreeMap<String, GpuFanState>,
     /// Sender for fan-control writes; `None` in unit tests.
     pub fan_control_tx: Option<tokio::sync::mpsc::UnboundedSender<ControlRequest>>,
-    /// Throttle for engage/release toasts.
+    /// Throttle for engage/release status messages.
     pub last_fan_notice: Option<Instant>,
     /// Chart autoscale state (hysteresis per graph).
     pub charts: ChartsState,
@@ -164,8 +176,7 @@ impl AppState {
             thermal_override: None,
             charts_override: None,
             help_visible: false,
-            toast: None,
-            status_line: None,
+            status: None,
             zoomed: false,
             browser_open: false,
             browser_query: String::new(),
@@ -189,11 +200,26 @@ impl AppState {
         self.last_fetch.as_deref().map(|fetched| &fetched.snapshot)
     }
 
-    /// Raise a status message: transient toast on the second line **and** the
-    /// persistent bottom status line (SPEC §6.1).
-    pub fn set_toast(&mut self, message: String) {
-        self.status_line = Some(message.clone());
-        self.toast = Some((message, Instant::now()));
+    /// Raise a message on the bottom status line (SPEC §6.2): highlighted for
+    /// the first 12 s, then dimmed but still visible.
+    pub fn set_status(&mut self, message: String) {
+        self.status = Some(StatusMessage {
+            text: message,
+            at: Instant::now(),
+            dimmed: false,
+        });
+    }
+
+    /// Dim the status line once its highlight window passed; returns `true`
+    /// exactly once per message (the caller marks the frame dirty).
+    pub fn age_status(&mut self) -> bool {
+        if let Some(status) = &mut self.status {
+            if !status.dimmed && status.at.elapsed() >= STATUS_HIGHLIGHT {
+                status.dimmed = true;
+                return true;
+            }
+        }
+        false
     }
 
     /// Effective table sort: `s` override when set, else the configured default.
@@ -352,7 +378,7 @@ impl Default for AppState {
 
 /// Run the TUI until the user quits. Owns the terminal lifecycle, including
 /// restore on every exit path (SPEC §4.2 shutdown). Startup config warnings
-/// are surfaced as a toast (T4.6).
+/// are surfaced on the status line (T4.6).
 pub async fn run(cfg: &Config, options: SessionOptions) -> Result<()> {
     let mut terminal = ratatui::init();
     let result = run_loop(&mut terminal, cfg, options).await;
@@ -369,7 +395,7 @@ async fn run_loop(
     let mut app = AppState::new();
     app.cli = Some(options.cli.clone());
     if !options.warnings.is_empty() {
-        app.set_toast(options.warnings.join("  ·  "));
+        app.set_status(options.warnings.join("  ·  "));
     }
     let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
     app.notice_tx = Some(notice_tx.clone());
@@ -389,15 +415,12 @@ async fn run_loop(
     while !app.should_quit {
         tokio::select! {
             _ = tick.tick() => {
-                // Toast expiry.
-                if let Some((_, started)) = &app.toast {
-                    if started.elapsed() >= Duration::from_secs(12) {
-                        app.toast = None;
-                        app.dirty = true;
-                    }
+                // The status line dims once its 12 s highlight window passed.
+                if app.age_status() {
+                    app.dirty = true;
                 }
-                // Age ticker: refresh stale/paused/toast status once a second.
-                let unstable = app.link != LinkStatus::Live || app.paused || app.toast.is_some();
+                // Age ticker: refresh stale/paused status once a second.
+                let unstable = app.link != LinkStatus::Live || app.paused;
                 if !app.dirty && unstable && last_status_redraw.elapsed() >= Duration::from_secs(1) {
                     app.dirty = true;
                     last_status_redraw = Instant::now();
@@ -425,7 +448,7 @@ async fn run_loop(
                 None => app.should_quit = true,
             },
             Some(message) = notice_rx.recv() => {
-                app.set_toast(message);
+                app.set_status(message);
                 app.dirty = true;
             }
             changed = poll_events.changed(), if poller_alive => {
@@ -681,7 +704,7 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
                 cfg.fan_guard.floor_percent, cfg.fan_guard.idle_load_percent, cfg.fan_guard.idle_temp_c
             )
         };
-        app.set_toast(message);
+        app.set_status(message);
     } else if key_matches(&key, "down") || key_matches(&key, "j") {
         scroll_focused(app, cfg, 1);
     } else if key_matches(&key, "up") || key_matches(&key, "k") {
@@ -734,7 +757,7 @@ fn handle_browser_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
     }
 }
 
-/// `m`: fire `GET /ResetAllMinMax` and report the outcome as a toast (T5.3).
+/// `m`: fire `GET /ResetAllMinMax` and report the outcome on the status line (T5.3).
 fn reset_min_max(app: &AppState, cfg: &Config) {
     let Some(tx) = app.notice_tx.clone() else {
         return; // unit tests / non-TUI contexts
@@ -859,7 +882,7 @@ fn dispatch_control(
 
 /// Background writer for `/Sensor?action=Set` requests (T5.8). One client is
 /// cached per URL; every request reports success/failure through the notice
-/// channel (toasts).
+/// channel (status messages).
 async fn control_loop(
     mut requests: tokio::sync::mpsc::UnboundedReceiver<ControlRequest>,
     notices: tokio::sync::mpsc::UnboundedSender<String>,
@@ -919,7 +942,7 @@ fn release_engaged_fans(app: &mut AppState, cfg: &Config) {
 /// previous config stays active.
 pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cli::Cli>) {
     let Some(cli) = cli else {
-        app.set_toast("reload unavailable (no CLI handle)".to_string());
+        app.set_status("reload unavailable (no CLI handle)".to_string());
         app.dirty = true;
         return;
     };
@@ -943,11 +966,11 @@ pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cl
             if !loaded.warnings.is_empty() {
                 message = format!("{message}  ·  {}", loaded.warnings.join("  ·  "));
             }
-            app.set_toast(message);
+            app.set_status(message);
         }
         Err(err) => {
             let message = format!("reload failed: {}", err.to_string().replace('\n', "  "));
-            app.set_toast(message);
+            app.set_status(message);
         }
     }
     app.dirty = true;

@@ -40,9 +40,8 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
         return;
     }
 
-    let [header, toast, body, status] = Layout::vertical([
+    let [header, body, status] = Layout::vertical([
         Constraint::Length(1),
-        Constraint::Length(u16::from(app.toast.is_some())),
         Constraint::Min(3),
         Constraint::Length(1),
     ])
@@ -50,12 +49,6 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
 
     if cfg.ui.show_header {
         frame.render_widget(header_line(app, cfg, area, &theme), header);
-    }
-    if let Some((message, _)) = &app.toast {
-        frame.render_widget(
-            Paragraph::new(Span::styled(message.clone(), Style::new().fg(theme.warn))),
-            toast,
-        );
     }
 
     let stale = matches!(app.link, LinkStatus::Stale | LinkStatus::Reconnecting)
@@ -369,8 +362,8 @@ fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, the
     if let Some(error) = &app.last_error {
         push("last error", error.clone());
     }
-    if let Some((message, _)) = &app.toast {
-        push("toast", message.clone());
+    if let Some(status) = &app.status {
+        push("status", status.text.clone());
     }
 
     frame.render_widget(Paragraph::new(Text::from(lines)), inner);
@@ -501,19 +494,19 @@ fn header_line(app: &AppState, cfg: &Config, size: Rect, theme: &Theme) -> Parag
     Paragraph::new(Line::from(spans))
 }
 
-/// Bottom status line: mirrors the newest status message (the transient toast
-/// on line 2) and keeps it visible in a muted style after the toast fades.
-/// Pressing `?`/`h` opens the full key map instead of a permanent key bar.
+/// Bottom status line: the latest message (SPEC §6.2) — highlighted while
+/// fresh, muted after the 12 s highlight window (`AppState::age_status`).
+/// The full key map is the `?`/`h` popup, not a permanent key bar.
 fn status_line(app: &AppState, theme: &Theme) -> Paragraph<'static> {
-    let Some(message) = &app.status_line else {
+    let Some(status) = &app.status else {
         return Paragraph::new(Span::styled(String::new(), Style::new()));
     };
-    let style = if app.toast.is_some() {
-        Style::new().fg(theme.warn)
-    } else {
+    let style = if status.dimmed {
         Style::new().fg(theme.muted)
+    } else {
+        Style::new().fg(theme.warn)
     };
-    Paragraph::new(Span::styled(format!(" {message}"), style))
+    Paragraph::new(Span::styled(format!(" {}", status.text), style))
 }
 
 /// Status screen shown before the first snapshot (or without bindings).

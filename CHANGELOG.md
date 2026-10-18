@@ -103,8 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Key remapping hardened (T4.4) and the `?` help overlay shows the live, remapped keymap.
   - `schema/lhm-tui.schema.json` ships complete (T4.5) and is enforced in tests against the
     example config, plus negative tests proving it rejects broken configs.
-  - Startup config warnings surface as a 12 s toast in the TUI (T4.6); validation output has a
-    snapshot test.
+  - Startup config warnings surface on the 12 s-highlighted status line in the TUI (T4.6);
+    validation output has a snapshot test.
 - Key matching ignores the SHIFT bit for character keys (fixes `?` on terminals that report
   `shift+/`), and `--theme` accepts built-in names or a theme file path.
 - Polish (P5):
@@ -113,8 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `b` opens the sensor browser (type to filter hardware/sensor/id, arrows move, `enter` opens
     an ad-hoc fullscreen graph, `q`/`esc`/`b` close it).
   - `r` reloads the configuration live (full file → env → CLI re-resolution; bindings rebind
-    immediately; server-level changes respawn the poller; errors keep the old config and appear as
-    toasts). `m` calls `GET /ResetAllMinMax` and toasts the result.
+    immediately; server-level changes respawn the poller; errors keep the old config and appear on
+    the status line). `m` calls `GET /ResetAllMinMax` and reports the result there too.
   - `--once` and `--dump <PATH|->` are implemented (fixed-viewport frame without alternate screen;
     stable normalized JSON, golden-tested); both follow the SPEC exit codes 3/4.
   - `NO_COLOR`/`--no-color` now strip the *entire* UI (header, status, footer previously hardcoded
@@ -127,8 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GPU fan anti-stop floor** (SPEC §7.5, `T5.8`): opt-in guard that holds every controllable GPU
   fan at a software duty cycle while the GPU is idle and hands it back to the driver's automatic
   curve the moment load or temperature rises — the fix for NVIDIA's zero-RPM parking. Toggle with
-  `f` (the message lands on the status line and as a toast; the debug overlay shows the guard
-  state), configure via `fan_guard.*` (floor %, idle load/temp, release hysteresis); off by
+  `f` (the message lands on the status line; the debug overlay shows the guard state), configure via `fan_guard.*` (floor %, idle load/temp, release hysteresis); off by
   default. Safety rails: hysteresis instead of flapping, fail-safe to auto when load/temp are
   unknown, back to auto on `f` off and on quit, `floor_percent < 5` rejected (0 % would stop the
   fans the guard exists to keep spinning). Writes use `POST /Sensor?action=Set` with a zero-length
@@ -144,8 +143,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The permanent key-hint bar at the bottom is gone: the full key map lives in the `h`/`?` popup
   (which now also lists the scroll keys), the chart window label moved into the header, and the
-  bottom line is a status line mirroring the transient toast — bright while the toast is fresh
-  (12 s), muted afterwards — so the fan anti-stop state, reload results and errors stay visible.
+  bottom line is a status line — the only place messages render (the old second-line toast is
+  gone) — highlighted for 12 s after the newest message, muted afterwards, so the fan anti-stop
+  state, reload results and errors stay visible.
 - `fan_guard.floor_percent` default raised 20 → **45 %**: the anti-stop floor should be clearly
   audible/spinning rather than a barely-moving fan, and 45 % still leaves the driver curve full
   range below the release hysteresis.

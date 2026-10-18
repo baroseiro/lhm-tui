@@ -31,7 +31,7 @@ failures and list deferrals in the release notes.
 5. `enter` zooms; `tab` cycles focus; `b` searches sensors; Enter graphs a
    sensor; `q`/`esc` close overlays without quitting.
 6. `p` pauses (header shows `paused`); `r` reloads an edited config without
-   losing history; `m` toasts the min/max reset result.
+   losing history; `m` reports the min/max reset result on the status line.
 7. Kill/restart LHM mid-session: status goes `stale` then `live` again.
 8. Quit restores the terminal (no raw mode, cursor visible, shell usable).
 9. `--once` and `--dump -` produce output and exit 0.

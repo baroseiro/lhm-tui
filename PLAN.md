@@ -252,7 +252,7 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Done when:** CI validates example; intentionally-broken fixture fails as expected.
 
 #### T4.6 — Config UX pass
-**Goal:** Unknown-key warnings printed on startup (to log + toast in TUI, `--strict-config` escalates); all validation errors aggregated with paths; `--print-config` output is itself a valid config (round-trip test).
+**Goal:** Unknown-key warnings printed on startup (to log + status line in TUI, `--strict-config` escalates); all validation errors aggregated with paths; `--print-config` output is itself a valid config (round-trip test).
 **Files:** `src/config.rs`, `tests/config.rs`.
 **Notes:** Round-trip property: `--print-config > tmp.json` + `--config tmp.json --print-config` is byte-identical given same env.
 **Done when:** Round-trip test green; error message snapshot tests.
@@ -263,8 +263,8 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 
 ### Phase P5 — Polish (SPEC §11 M5)
 
-#### T5.1 — Help + debug overlays, toasts
-**Goal:** `?` help (keymap incl. remaps, config path, LHM URL/version); `d` debug overlay (poll latency, payload size, skipped nodes, history sizes, frame time, last error); 2 s toast for `m` reset confirmation and startup warnings.
+#### T5.1 — Help + debug overlays, status messages
+**Goal:** `?` help (keymap incl. remaps, config path, LHM URL/version); `d` debug overlay (poll latency, payload size, skipped nodes, history sizes, frame time, last error); status message for `m` reset confirmation and startup warnings.
 **Files:** `src/ui/mod.rs` (overlays), `src/app.rs`.
 **Notes:** Overlays are modal-ish but non-blocking (poll continues).
 **Done when:** Snapshot tests per overlay; debug counters match logged values in a soak run.
@@ -277,11 +277,11 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Shipped:** zoom keeps the focus ring active while zoomed; the browser filters on a case-insensitive substring over `hardware name sensor name SensorId`, `enter` opens the ad-hoc graph, `q`/`esc`/`b` close it.
 
 #### T5.3 — Reload + reset min/max
-**Goal:** `r` reload config from the same path (re-validate; on error keep old config + toast; success applies layout/theme/keys live, keeps history); `m` calls `GET /ResetAllMinMax` with confirmation toast; failure → banner.
+**Goal:** `r` reload config from the same path (re-validate; on error keep old config + status message; success applies layout/theme/keys live, keeps history); `m` calls `GET /ResetAllMinMax` with a confirmation status message; failure → banner.
 **Files:** `src/app.rs`, `src/lhm/client.rs` (second endpoint fn).
 **Notes:** Reload must not touch the poller's interval if unchanged, and vice versa if changed — restart just the interval timer.
 **Done when:** Manual test matrix (valid reload / invalid reload / LHM down); integration test for `/ResetAllMinMax` via mock.
-**Shipped:** reload re-runs the full discovery + precedence chain via the stored CLI handle; bindings are recomputed immediately (no empty-panel flash) and history survives. Server-level changes (URL/interval/auth/retry) respawn the poller automatically (`pending_poller_restart`). `/ResetAllMinMax` results land as toasts.
+**Shipped:** reload re-runs the full discovery + precedence chain via the stored CLI handle; bindings are recomputed immediately (no empty-panel flash) and history survives. Server-level changes (URL/interval/auth/retry) respawn the poller automatically (`pending_poller_restart`). `/ResetAllMinMax` results land on the status line.
 
 #### T5.4 — Responsive rules + ascii + too-small screen
 **Goal:** Implement SPEC §6.1 rules fully: 120/80/60 col breakpoints; `<60×20` dedicated screen; `a` toggle ascii; tables drop min/max columns at narrow widths.
@@ -317,7 +317,7 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Files:** `src/fan_guard.rs`, `src/lhm/client.rs` (`set_sensor_control`), `src/app.rs` (control task, `f`, exit sweep), `src/ui/mod.rs` (status line + debug), `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, SPEC §7.5/§8.2/§8.3/§3.2/§6.4.
 **Notes:** `/Sensor?action=Set` answers HTTP 200 — accept/reject must be read from the JSON body (`result: ok|fail`). Write only on state transitions. `floor_percent < 5` is a validation error so the guard can never stop the fans.
 **Done when:** Mock-server tests for set/null/rejection; decision-table unit tests (idle, hysteresis, fail-safe, no controls); interaction test for `f` engage → release; frames/help snapshots updated; real-hardware smoke recorded in `docs/qa-matrix.md`.
-**Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table), background control task with per-URL client cache and toast reporting, `f` toggle (message lands on the status line + toast) + debug overlay line, hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
+**Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table), background control task with per-URL client cache and status-line reporting, `f` toggle (message lands on the status line) + debug overlay line, hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
 
 ---
 

@@ -437,8 +437,9 @@ CPU, memory and each GPU occupy the full width; two GPUs (or GPU + thermal) sit 
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Line 2 is the transient toast (12 s) and the bottom line is the status line settling to the
-same message; the full key map is a popup (`?` or `h`), not a permanent key bar.
+The bottom line is the status line: the newest message (fan anti-stop state, reload results,
+errors) highlighted for 12 s and dimmed afterwards. The full key map is a popup (`?` or `h`), not
+a permanent key bar; the chart window label lives in the header.
 
 Responsive rules:
 
@@ -457,8 +458,7 @@ Responsive rules:
 | `table`     | Scrollable sensor table (columns: name, value, unit, LHM min, LHM max, window min, window max, bar)     |
 | `sparkline` | One-line 60-second trend for a value inside headers/gauges                                              |
 | `statusdot` | `●` green live / `●` yellow stale (age) / `●` red reconnecting / `○` paused                            |
-| `toast`     | Transient alert on line 2 (fades after 12 s); mirrored by the status line                              |
-| `statusbar` | Bottom line: latest status message — bright while the toast is fresh, muted afterwards                  |
+| `statusbar` | Bottom line: latest status message — highlighted for 12 s, muted afterwards                       |
 
 ### 6.3 Preset panels (v0.1)
 
@@ -488,7 +488,7 @@ Responsive rules:
 | `b`                      | Sensor browser overlay (searchable list; `Enter` pins sensor to zoom chart) |
 | `s`                      | Cycle table sort: value ↓ · value ↑ · name · default             |
 | `r`                      | Reload config from disk (keeps history)                          |
-| `m`                      | `GET /ResetAllMinMax` on LHM (with 2 s toast confirmation)       |
+| `m`                      | `GET /ResetAllMinMax` on LHM (result on the status line)         |
 | `a`                      | Toggle ASCII rendering (overrides config)                        |
 | `t`                      | Toggle the temperatures table visibility                         |
 | `c`                      | Toggle charts (metric graphs ↔ gauges/bars)                      |
@@ -588,8 +588,8 @@ core / hot spot / memory junction):
 | in between | no write | hold current mode (hysteresis, no flapping) |
 | load/temp unknown (sensor missing, stale payload) | no write | release to driver control (fail-safe) |
 
-- Only transitions write HTTP; steady state stays silent. A failed write surfaces as a toast and
-  leaves the GPU tracked as released, so the next idle snapshot retries.
+- Only transitions write HTTP; steady state stays silent. A failed write surfaces on the status
+  line and leaves the GPU tracked as released, so the next idle snapshot retries.
 - `floor_percent` must be ≥ 5 — 0 % would stop the fans the guard exists to keep spinning — and
   validation rejects smaller values.
 - On quit, and on `f` toggle-off, every engaged control gets a best-effort `SetDefault()` (1 s
@@ -827,7 +827,7 @@ alternate screen, restoring the cursor, and disables colours when stdout is not 
 | HTTP 401                   | Banner "Authentication failed — check server.username/password"              | Auto, but banner persists until success |
 | HTTP 5xx / malformed JSON  | Banner "Unexpected response (HTTP {code})"; debug log captures payload head  | Auto                              |
 | Schema drift (unknown node layouts) | Parser skips unknown nodes, counts them; `d` overlay lists skipped count  | Next release, tolerant by design  |
-| LHM version < 0.9.5        | One-time toast warning (config `server.verify_version`)                      | —                                 |
+| LHM version < 0.9.5        | One-time warning on the status line (config `server.verify_version`)         | -                                 |
 | Terminal too small         | Dedicated screen; polling continues                                          | Auto on resize                    |
 | Panic                      | Terminal restored via drop guard; error + log path printed                   | —                                 |
 

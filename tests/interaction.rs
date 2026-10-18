@@ -5,7 +5,7 @@ mod support;
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
@@ -182,7 +182,7 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
     assert!(!app.effective_fan_guard(&cfg));
     handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
     assert_eq!(app.fan_guard_override, Some(true));
-    assert!(app.toast.is_some(), "toggle feedback");
+    assert!(app.status.is_some(), "toggle feedback on the status line");
     assert!(
         app.fan_guard_state["/gpu-nvidia/0"].engaged,
         "toggle engages immediately on the current snapshot"
@@ -210,15 +210,20 @@ fn h_opens_help_and_status_line_keeps_the_last_message() {
     handle_event(&mut app, key(KeyCode::Esc), &cfg);
     assert!(!app.help_visible, "any key closes it");
 
-    // Actions raise the transient toast *and* the persistent status line.
-    assert!(app.status_line.is_none());
+    // Actions write the bottom status line, highlighted while fresh.
+    assert!(app.status.is_none());
     handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
-    let message = app.status_line.clone().expect("status line set");
-    assert!(message.contains("anti-stop"), "got: {message}");
+    let status = app.status.as_ref().expect("status message");
+    assert!(status.text.contains("anti-stop"), "got: {}", status.text);
+    assert!(!status.dimmed, "fresh messages are highlighted");
 
-    // The run loop clears the toast after 12 s; the status line stays put.
-    app.toast = None;
-    assert_eq!(app.status_line.as_deref(), Some(message.as_str()));
+    // After the 12 s window it dims — exactly once — and keeps the text.
+    app.status.as_mut().expect("status").at = Instant::now() - Duration::from_secs(13);
+    assert!(app.age_status(), "highlight expires");
+    let status = app.status.as_ref().expect("status message");
+    assert!(status.dimmed);
+    assert!(status.text.contains("anti-stop"), "text survives dimming");
+    assert!(!app.age_status(), "already dimmed");
 }
 
 #[test]
@@ -287,7 +292,7 @@ fn reload_applies_valid_config_and_keeps_old_on_error() {
 
     let (mut app, mut cfg) = live_app();
 
-    // Valid reload: layout changes and a toast confirms.
+    // Valid reload: layout changes and the status line confirms.
     std::fs::write(&path, r##"{"ui":{"layout":["cpu","memory"]}}"##).expect("write config");
     let cli = lhm_tui::cli::Cli::parse_from(["lhm-tui", "--config", path.to_str().expect("utf8")]);
     app.cli = Some(cli.clone());
@@ -295,17 +300,22 @@ fn reload_applies_valid_config_and_keeps_old_on_error() {
     assert!(app.pending_reload, "run_loop performs the reload");
     lhm_tui::app::reload_config(&mut app, &mut cfg, Some(cli.clone()));
     assert_eq!(cfg.ui.layout, vec!["cpu", "memory"]);
-    assert!(app.toast.as_ref().expect("toast").0.contains("reloaded"));
+    assert!(app
+        .status
+        .as_ref()
+        .expect("status")
+        .text
+        .contains("reloaded"));
 
-    // Broken reload: previous config stays, toast reports the error.
+    // Broken reload: previous config stays, the status line reports the error.
     std::fs::write(&path, "{ not json").expect("write bad config");
     lhm_tui::app::reload_config(&mut app, &mut cfg, Some(cli));
     assert_eq!(cfg.ui.layout, vec!["cpu", "memory"], "old config kept");
     assert!(app
-        .toast
+        .status
         .as_ref()
-        .expect("toast")
-        .0
+        .expect("status")
+        .text
         .contains("reload failed"));
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -315,10 +325,13 @@ fn reload_applies_valid_config_and_keeps_old_on_error() {
 fn reset_minmax_is_a_noop_without_notice_channel() {
     let (mut app, cfg) = live_app();
     // Unit tests have no tokio runtime / notice channel: pressing `m` must
-    // not panic and must not fabricate a toast.
-    let before = app.toast.clone();
+    // not panic and must not fabricate a status message.
+    let before = app.status.as_ref().map(|status| status.text.clone());
     handle_event(&mut app, key(KeyCode::Char('m')), &cfg);
-    assert_eq!(app.toast, before);
+    assert_eq!(
+        app.status.as_ref().map(|status| status.text.clone()),
+        before
+    );
 }
 
 #[test]
