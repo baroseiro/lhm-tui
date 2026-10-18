@@ -20,3 +20,12 @@ install-path = "CARGO_HOME"
 hosting = "github"
 # Whether to install an updater program
 install-updater = false
+
+# Build the Windows ARM64 target NATIVELY on GitHub's ARM64 Windows runner.
+# dist's default for this triple is a Linux cargo-xwin cross build, which
+# breaks on `ring`'s C code (MSVC-style `/imsvc` flags reach plain clang);
+# `host == target` makes dist skip the cross wrapper and run a plain
+# `cargo build --target aarch64-pc-windows-msvc`.
+[dist.github-custom-runners.aarch64-pc-windows-msvc]
+runner = "windows-11-arm"
+host = "aarch64-pc-windows-msvc"
