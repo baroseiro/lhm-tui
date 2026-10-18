@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Configuration & design questions (SPEC.md)
+    url: https://github.com/baroseiro/lhm-tui/blob/main/SPEC.md
+    about: The config reference (§8), keybindings (§6.4), fan-guard behaviour (§7.5) and future plans (§16) live here.
+  - name: Running the QA checklist before filing
+    url: https://github.com/baroseiro/lhm-tui/blob/main/docs/qa-matrix.md
+    about: A quick pass over the relevant row often explains the symptom (stale data, no GPU sensors, fan floor skips).

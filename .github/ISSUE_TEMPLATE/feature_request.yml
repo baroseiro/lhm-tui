@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a panel, widget, config option or workflow improvement
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: [SPEC.md](https://github.com/baroseiro/lhm-tui/blob/main/SPEC.md) is the
+        frozen design — check §8 (config) and §16 (future work) first; some ideas are already
+        planned (v0.2 fan/pump control, v0.3 recording, multi-host, …).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the monitoring/monitoring-workflow need, not just the implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: How would you expect it to look/behave? Config keys, keys, CLI flags — whatever you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing config (`panels.custom`, `sensor_overrides`, themes…), other tools, workarounds.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is about monitoring LibreHardwareMonitor data (not general system tuning)
+          required: false
+        - label: I checked SPEC §16 — this is not already planned/deferred
+          required: false

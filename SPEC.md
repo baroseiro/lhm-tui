@@ -877,7 +877,7 @@ Each milestone ships green CI and is independently reviewable.
 | M3  | Charts                   | Ring buffers, decimation, autoscale+hysteresis, braille rendering, window cycling, legend/stats          | 15 min @ 1 s smooth on 60 Hz redraw; no axis jitter (visual soak test); CPU < 1 %                     |
 | M4  | Config depth             | Full `panels.*` overrides, custom panels, themes + thresholds, key remap, validation errors, JSON schema | Example config round-trips: `--print-config`; every §8.3 field exercised by ≥ 1 test                 |
 | M5  | Polish                   | Help/debug overlays, zoom, sensor browser, reload, reset min/max, ascii/no-color, responsive rules       | Manual QA matrix (§12.4) passes on Windows Terminal + tmux + kitty                                   |
-| M6  | Release v0.1.0           | README (with screenshots/GIF), packaging (`dist`), winget + scoop manifests, CHANGELOG, tag             | `cargo install lhm-tui` works; release archives attach to GitHub Release; winget validation passes   |
+| M6  | Release v0.1.0           | README, packaging (`dist`), CHANGELOG, tag (winget + scoop + crates.io deferred to v0.1.x)               | Release archives attach to a GitHub Release and run `--probe` on clean machines; winget/crates.io validation moved to v0.1.x |
 
 ---
 
@@ -937,14 +937,19 @@ Each milestone ships green CI and is independently reviewable.
 
 - **CI** (`.github/workflows/ci.yml`): `cargo fmt --check`, `clippy -D warnings`, `cargo test`,
   `cargo build --release` on `windows-latest`, `ubuntu-latest`, `macos-latest`.
-- **Release** (`release.yml` via [`dist`](https://opensource.axo.dev/cargo-dist/)): tag `v*` →
-  archives + installers for `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`,
-  `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-apple-darwin`,
-  `aarch64-apple-darwin`; SHA256SUMS; GitHub Release with generated notes.
-- **Channels**: crates.io (`cargo install lhm-tui`), winget manifest (`lhm-tui.lhm-tui`),
-  scoop bucket, direct GitHub Releases zip.
-- **Docs**: README with screenshots (`docs/preview.png`), animated GIF (`docs/demo.gif`), config
-  reference auto-derived from the schema, `CHANGELOG.md` (keep-a-changelog), `LICENSE` (MIT).
+- **Release** (`release.yml` via [`dist`](https://opensource.axo.dev/cargo-dist/) 0.33, configured in
+  `dist-workspace.toml`): tag `v*` → archives + installers for `x86_64-pc-windows-msvc`,
+  `aarch64-pc-windows-msvc`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
+  `x86_64-apple-darwin`, `aarch64-apple-darwin`; `sha256.sum` + per-artifact checksums; GitHub
+  Release with the `CHANGELOG.md` section as its body.
+- **Channels (v0.1.0)**: direct GitHub Releases archives (zip/tar.xz) and the generated
+  shell/PowerShell installers, plus `cargo install --git https://github.com/baroseiro/lhm-tui`.
+- **Channels (v0.1.x, deferred)**: crates.io (`cargo install lhm-tui`), winget manifest
+  (`baroseiro.lhm-tui`), scoop bucket — all consume the same T6.3 artifacts, deliberately kept off
+  the v0.1.0 critical path.
+- **Docs**: README (screenshots/GIF land post-v0.1.0), config reference in SPEC §8 plus the JSON
+  Schema (`lhm-tui.example.json` is the copy-paste starting point), `CHANGELOG.md`
+  (keep-a-changelog), `LICENSE` (MIT), `CONTRIBUTING.md` + issue templates.
 
 ---
 
@@ -1084,7 +1089,7 @@ both covered in fixtures):
 ```json
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/OWNER/lhm-tui/main/schema/lhm-tui.schema.json",
+  "$id": "https://raw.githubusercontent.com/baroseiro/lhm-tui/main/schema/lhm-tui.schema.json",
   "title": "lhm-tui configuration",
   "type": "object",
   "additionalProperties": false,

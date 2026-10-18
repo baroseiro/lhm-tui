@@ -1,6 +1,6 @@
 [package]
 name = "lhm-tui"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.89"
 description = "Terminal dashboard for LibreHardwareMonitor: live CPU/GPU temperatures, load, memory and charts over its web API."
@@ -34,3 +34,8 @@ jsonschema = { version = "0.59", default-features = false }
 [profile.release]
 lto = "thin"
 strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-18
+
 ### Added
 
 - `SPEC.md` — technical specification v1.0 for the read-only LibreHardwareMonitor TUI:
@@ -139,10 +141,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   popup now also lists the fixed scroll keys.
 - `lhm-tui.example.json` and `schema/lhm-tui.schema.json` gained the `fan_guard` section, and the
   default keymap gained `f` (`toggle_fan_guard`).
+- Release pipeline via cargo-dist 0.33 (`dist-workspace.toml`, generated
+  `.github/workflows/release.yml`): pushing a `v*` tag builds archives for
+  windows-msvc/linux-musl/macos (x64 + arm64), shell + PowerShell installers, per-artifact SHA256
+  checksums and a combined `sha256.sum`, then publishes a GitHub Release whose body is this
+  changelog's matching section (`T6.3`).
+- `CONTRIBUTING.md`, bug/feature issue templates (the bug form asks for `--probe` output) and a PR
+  checklist, plus `rust-toolchain.toml` pinning the MSRV toolchain (1.89, rustfmt + clippy) and
+  `docs/release-notes-v0.1.0.md` with the hand-written release highlights (`T6.2`/`T6.6`).
 - Tests: 171 total.
 
 ### Changed
 
+- **First public release: v0.1.0.** Version bumped from 0.0.1; the README install section now
+  covers the shipped channels only — GitHub Releases archives, the generated install scripts and
+  `cargo install --git` — and the `OWNER` placeholders were replaced with the real account
+  (`baroseiro`, `T6.1`). winget, scoop and crates.io are deferred to **v0.1.x** (`T6.4`/`T6.5`).
 - **Default flip: charts are off by default** (`charts.enabled: false`). The dashboard opens as the
   instant gauges/bars layout (no chart warm-up); press `c`, pass `--charts` or set
   `charts.enabled: true` for live graphs. History is still collected, so `c` switches instantly.

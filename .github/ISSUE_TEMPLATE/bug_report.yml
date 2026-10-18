@@ -1,0 +1,69 @@
+name: Bug report
+description: Something renders wrong, crashes, or fails to connect
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! `lhm-tui --probe` output is the single most useful attachment —
+        it prints the URL, LHM version, hardware/sensor counts and the sensor-binding report.
+        **Redact machine names, IPs and usernames** before pasting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead? Include the exact keys/config you used.
+    validations:
+      required: true
+  - type: textarea
+    id: probe
+    attributes:
+      label: `lhm-tui --probe` output (redacted)
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: lhm-tui-version
+    attributes:
+      label: lhm-tui version
+      description: Output of `lhm-tui --version` (or the release you downloaded).
+      placeholder: "lhm-tui 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: lhm-version
+    attributes:
+      label: LibreHardwareMonitor version
+      description: From LHM's title bar or the `--probe` output (e.g. 0.9.6). Running as administrator?
+      placeholder: "0.9.6, running as admin"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows 11 + Windows Terminal
+        - Windows 10/11 + legacy conhost
+        - WSL2
+        - Linux (terminal?)
+        - macOS
+        - SSH / tmux
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config
+      description: The config file (or just the keys that matter), with passwords redacted. `lhm-tui --print-config` prints the merged config with secrets masked.
+      render: json
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log file (optional)
+      description: "`lhm-tui --log lhm-tui.log -v -v` then attach the interesting part."
+    validations:
+      required: false

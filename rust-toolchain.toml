@@ -1,0 +1,7 @@
+# MSRV pin. CI installs its own toolchain explicitly (`dtolnay/rust-toolchain`,
+# which overrides this file via RUSTUP_TOOLCHAIN); everything local resolves to
+# the minimum supported Rust so MSRV regressions surface before pushing.
+[toolchain]
+channel = "1.89"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

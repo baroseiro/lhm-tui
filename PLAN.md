@@ -323,8 +323,15 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 
 ### Phase P6 — Release v0.1.0 (SPEC §11 M6, §14)
 
+> **Scope note (v0.1.0):** T6.4 and T6.5 are **deferred to v0.1.x** — v0.1.0 ships via GitHub
+> Releases (archives + installers from `dist`) plus `cargo install --git`; winget, scoop and
+> crates.io follow in a patch release once a clean-VM run of the remaining tasks exists.
+
 #### T6.1 — README finalization
 **Goal:** Replace `OWNER` placeholders; add real screenshots (`docs/preview.png`) and GIF (`docs/demo.gif`, 15 s: startup, graphs, window cycle, zoom); verify all doc links; README quick start tested on a clean VM.
+**Status:** `OWNER` replaced with `baroseiro`; links verified; install section restricted to the
+shipped channels (GitHub Releases + `cargo install --git`). Screenshots stay as TODO placeholders
+(need an interactive session) and the clean-VM run is a manual pre-release step.
 **Done when:** Clean-VM test passes following README verbatim.
 
 #### T6.2 — Release metadata
@@ -334,20 +341,35 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 #### T6.3 — Packaging via `dist`
 **Goal:** `dist` config (targets per SPEC §14: windows-msvc x64/arm64, linux-musl x64/arm64, macos x64/arm64), release workflow on `v*` tag, checksums, install script test on Windows + one Linux.
 **Done when:** A pre-release tag produces downloadable artifacts that run `--probe` on clean machines.
+**Shipped:** `dist-workspace.toml` (cargo-dist 0.33.0, exactly the six SPEC targets, shell +
+powershell installers), generated `.github/workflows/release.yml`, `[profile.dist]` in
+`Cargo.toml`; `dist plan --tag=v0.1.0` lists archives + checksums + installers; a local
+`dist build --target x86_64-pc-windows-msvc` artifact is smoke-tested here. Tagging + CI run is
+the remaining step (T6.6).
 
-#### T6.4 — Manifests: winget + scoop
-**Goal:** winget manifest PR (`OWNER.lhm-tui`) and scoop bucket entry; both install the windows-msvc binary.
-**Done when:** `winget install` / `scoop install` work on clean VM.
+#### T6.4 — Manifests: winget + scoop — **deferred to v0.1.x**
+**Goal:** winget manifest PR (`baroseiro.lhm-tui`) and scoop bucket entry; both install the windows-msvc binary.
+**Deferred because:** both channels need the public release to point at (T6.6) and clean-VM
+verification; keeping them out of the v0.1.0 critical path. No code impact — the artifacts they
+need are produced by T6.3.
 
-#### T6.5 — crates.io publish
+#### T6.5 — crates.io publish — **deferred to v0.1.x**
 **Goal:** `cargo publish --dry-run` clean (README/SPEC not required in package; ensure `exclude` list sane), then publish `0.1.0`; verify `cargo install lhm-tui`.
-**Done when:** Install from crates.io works on clean VM; docs.rs builds.
+**Deferred because:** publishing is irreversible-ish for a name + version; wanted after the
+GitHub-Release install path is proven. `cargo install --git https://github.com/baroseiro/lhm-tui`
+covers source installs for v0.1.0.
 
 #### T6.6 — Tag + release notes
 **Goal:** Tag `v0.1.0`, GitHub Release with generated notes + hand-written highlights (features, known issues from T5.7 deferrals, compatibility statement LHM ≥ 0.9.5).
+**Prepared:** `docs/release-notes-v0.1.0.md` holds the hand-written highlights/known-issues body to
+edit into the generated release; `CHANGELOG.md` carries the `[0.1.0]` section dist turns into the
+release body.
 **Done when:** Release public; README badge resolve; announcement issue closed.
 
-**Exit checklist P6:** all four install channels verified; README/screenshots final; release notes mention the v0.1 scope (monitoring + the fan anti-stop floor, no general writes) and v0.2 control plans.
+**Exit checklist P6:** GitHub Release artifacts verified (Windows + one Linux, `--probe` clean);
+README/screenshots final (screenshots may land post-tag in v0.1.1 docs); release notes mention the
+v0.1 scope (monitoring + the fan anti-stop floor, no general writes) and v0.2 control plans;
+winget/scoop/crates.io explicitly deferred to v0.1.x.
 
 ---
 

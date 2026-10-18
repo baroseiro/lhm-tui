@@ -2,7 +2,7 @@
 source: tests/widgets.rs
 expression: out
 ---
- lhm-tui v0.0.1  ● live   80×26   http://127.0.0.1:8085
+ lhm-tui v0.1.0  ● live   80×26   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 7 7800X3D ───────────────────────────────────────────────────╮
 │ Temp ╭ Help — any key closes ─────────────────────────────────────────╮.9 °C │
 │ Load │  q, esc, ctrl+c     Quit                                       │1.2 % │

@@ -12,9 +12,9 @@
 - **Reading order before any work:** `SPEC.md` in full, then `PLAN.md`. Plan phases P0–P6 map 1:1
   to SPEC §11 milestones M0–M6; tasks (`T<phase>.<n>`) are in dependency order, and `SPEC.md` /
   `PLAN.md` must stay consistent — update both together.
-- **Files referenced but not yet created are intentional roadmap** (LICENSE, `lhm-tui.example.json`,
-  `schema/lhm-tui.schema.json`, `docs/`, `.github/`). Create them per PLAN tasks; never "fix" a doc
-  by deleting references to them.
+- **Roadmap files**: the P0–P5 scaffolding is in place (LICENSE, `lhm-tui.example.json`,
+  `schema/`, `docs/`, `.github/`). Still missing by design: `docs/preview.png` / `docs/demo.gif`
+  (README placeholders, post-v0.1.0 docs) — never "fix" a doc by deleting references to them.
 
 ## Sources of truth & edit order
 
@@ -27,10 +27,9 @@ Precedence when things conflict: **executable config/scripts > `SPEC.md` > `PLAN
 3. `SPEC.md` §8.2's annotated config is **JSONC for documentation only**. The actual
    `lhm-tui.example.json` must be strict JSON — no comments, no trailing commas (SPEC §8.1).
    Don't copy the comments, and don't "clean up" the SPEC example.
-4. `OWNER` placeholders in `README.md` (badges, install/clone URLs, license line) and in the schema
-   `$id` are known. The real GitHub account is **`baroseiro`** (from `git remote -v`) — use that when
-   replacing them (release task T6.1), don't invent other names. README TODO comments mark what to
-   fix before publishing.
+4. `OWNER` placeholders were replaced with **`baroseiro`** in `README.md` and in the schema `$id`
+   (T6.1); the README screenshot/animation placeholders remain (comments mark what to add post-tag).
+   Don't reintroduce `OWNER`.
 5. ASCII mockups in `SPEC.md` §6.1 / `README.md` are illustrative. TestBackend snapshots (T5.6)
    are the rendering source of truth.
 

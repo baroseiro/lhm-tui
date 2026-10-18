@@ -4,18 +4,15 @@
 
 **A btop-style terminal dashboard for LibreHardwareMonitor — CPU, GPU, temps, load and RAM, live in your terminal.**
 
-[![CI](https://github.com/OWNER/lhm-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/lhm-tui/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/OWNER/lhm-tui?include_prereleases&sort=semver)](https://github.com/OWNER/lhm-tui/releases/latest)
-[![crates.io](https://img.shields.io/crates/v/lhm-tui.svg)](https://crates.io/crates/lhm-tui)
+[![CI](https://github.com/baroseiro/lhm-tui/actions/workflows/ci.yml/badge.svg)](https://github.com/baroseiro/lhm-tui/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/baroseiro/lhm-tui?include_prereleases&sort=semver)](https://github.com/baroseiro/lhm-tui/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-windows%20%7C%20linux%20%7C%20macos-informational)
 
 </div>
 
-<!-- TODO before publishing: replace OWNER in every URL above with your GitHub user/org, then delete this comment and the two screenshot comments below. -->
-
-<!-- TODO: add docs/preview.png once M2 renders presets. Suggested size: 1600×900 PNG of a real session. -->
-<!-- TODO: add docs/demo.gif once charts land (M3). Record ~15s with ScreenToGif or terminalizer. -->
+<!-- TODO (post-v0.1.0 docs): add docs/preview.png (1600×900 PNG of a real session) and docs/demo.gif
+     (~15 s: startup, charts, window cycle, zoom) once an interactive capture session exists. -->
 
 `lhm-tui` talks to LibreHardwareMonitor's built-in **Remote Web Server** over plain HTTP and renders
 live, color-thresholded panels in your terminal:
@@ -39,8 +36,8 @@ live, color-thresholded panels in your terminal:
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
 Windows machine on your network / over SSH — through a small JSON config file.
 
-> **Project status:** v0.1.0 in development. The full design — architecture, config schema, chart
-> engine, milestones — lives in [SPEC.md](SPEC.md).
+> **Project status:** v0.1.0 — first public release. The full design — architecture, config
+> schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
 
 ---
 
@@ -60,15 +57,17 @@ Windows machine on your network / over SSH — through a small JSON config file.
 2. **Install `lhm-tui`** (pick one):
 
    ```powershell
-   # Windows — winget
-   winget install OWNER.lhm-tui
+   # Windows — download the zip from the latest release and put lhm-tui.exe on your PATH
+   # https://github.com/baroseiro/lhm-tui/releases/latest
 
-   # Windows — scoop
-   scoop install lhm-tui
+   # Any platform — install script (fetches the right build for you)
+   # https://github.com/baroseiro/lhm-tui/releases/latest/download/lhm-tui-installer.ps1
 
-   # Any platform — from source / crates.io
-   cargo install lhm-tui
+   # Any platform — from source
+   cargo install --git https://github.com/baroseiro/lhm-tui
    ```
+
+   *winget, scoop and crates.io (`cargo install lhm-tui`) are planned for a v0.1.x follow-up.*
 3. **Run it:**
 
    ```console
@@ -213,7 +212,9 @@ Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itse
 
 ## Roadmap
 
-- **v0.1.0** — dashboard: presets, live braille charts, JSON config, themes, opt-in GPU fan anti-stop floor *(current)*
+- **v0.1.0** — dashboard: presets, optional braille charts, JSON config, themes, GPU fan anti-stop
+  floor, installers via GitHub Releases *(current)*
+- **v0.1.x** — winget + scoop manifests, crates.io publish, README screenshots/GIF
 - **v0.2.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
 - **v0.3.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
 - **v0.4.0** — multi-host tabs, user theme files
@@ -224,7 +225,7 @@ See [SPEC.md](SPEC.md) for the full design and milestone acceptance criteria.
 ## Building from source
 
 ```console
-git clone https://github.com/OWNER/lhm-tui
+git clone https://github.com/baroseiro/lhm-tui
 cd lhm-tui
 cargo build --release        # binary in target/release/lhm-tui
 cargo test                   # unit + integration + TUI snapshot tests
@@ -233,20 +234,22 @@ cargo test                   # unit + integration + TUI snapshot tests
 Long-run checks: `pwsh scripts/soak.ps1 -Minutes 30` (or `./scripts/soak.sh 30`) samples RSS/CPU
 per minute into a CSV; the pre-release checklist lives in [`docs/qa-matrix.md`](docs/qa-matrix.md).
 
-MSRV: Rust **1.89** (2021 edition). Cross-compiles cleanly to Linux/macOS for remote monitoring.
+MSRV: Rust **1.89** (2021 edition, pinned by `rust-toolchain.toml`). Cross-compiles cleanly to
+Linux/macOS for remote monitoring.
 
 ## Contributing
 
-Issues and PRs are welcome! Please:
+Issues and PRs are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the build/test loop and the
+changelog rule. In short:
 
 - Open an issue first for anything larger than a bug fix — the design decisions live in SPEC.md.
-- Run `cargo fmt` and `cargo clippy -- -D warnings` before pushing; CI runs both plus tests on
-  Windows, Linux and macOS.
+- Run `cargo fmt` and `cargo clippy --all-targets -- -D warnings` before pushing; CI runs both plus
+  tests on Windows, Linux and macOS.
 - Include the output of `lhm-tui --probe` (redact IPs/usernames) and your LHM version for bug reports.
 
 ## License
 
-[MIT](LICENSE) © OWNER
+[MIT](LICENSE) © baroseiro
 
 *Not affiliated with the LibreHardwareMonitor project. "LibreHardwareMonitor" is the work of its
 respective authors; `lhm-tui` merely consumes its public HTTP API.*
