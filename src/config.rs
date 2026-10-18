@@ -30,6 +30,8 @@ pub struct Config {
     pub charts: ChartsConfig,
     pub theme: ThemeConfig,
     pub panels: PanelsConfig,
+    /// GPU fan anti-stop floor (the only hardware write; off by default).
+    pub fan_guard: FanGuardConfig,
     pub keys: BTreeMap<String, Vec<String>>,
 }
 
@@ -43,7 +45,41 @@ impl Default for Config {
             charts: ChartsConfig::default(),
             theme: ThemeConfig::default(),
             panels: PanelsConfig::default(),
+            fan_guard: FanGuardConfig::default(),
             keys: default_keys(),
+        }
+    }
+}
+
+/// GPU fan anti-stop guard (T5.8): keeps fans spinning at `floor_percent` when
+/// the GPU is idle, handing control back to the driver as soon as load or
+/// temperature rises. This is the **only** hardware write the tool performs;
+/// it is off by default and writable only on `Control` sensors (SPEC §3.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FanGuardConfig {
+    /// Off by default — enabling this writes to LHM control sensors.
+    pub enabled: bool,
+    /// Duty cycle (%) held while idle (5–100; 0 is rejected so fans never stop).
+    pub floor_percent: f32,
+    /// Idle thresholds: floor engages when load ≤ this **and** the hottest
+    /// GPU temperature ≤ `idle_temp_c`.
+    pub idle_load_percent: f32,
+    pub idle_temp_c: f32,
+    /// Hysteresis before returning to automatic control.
+    pub release_load_margin_percent: f32,
+    pub release_temp_margin_c: f32,
+}
+
+impl Default for FanGuardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            floor_percent: 20.0,
+            idle_load_percent: 10.0,
+            idle_temp_c: 50.0,
+            release_load_margin_percent: 10.0,
+            release_temp_margin_c: 5.0,
         }
     }
 }
@@ -466,13 +502,14 @@ pub const KNOWN_ACTIONS: &[(&str, &str)] = &[
     ("debug", "Debug overlay"),
     ("toggle_thermal", "Toggle temperatures table"),
     ("toggle_charts", "Toggle charts"),
+    ("toggle_fan_guard", "GPU fan anti-stop floor"),
 ];
 
 /// Built-in theme names (T4.3); `custom` is used for `--theme <file>`.
 pub const BUILTIN_THEMES: &[&str] = &["default", "gruvbox", "nord", "mono", "custom"];
 
 fn default_keys() -> BTreeMap<String, Vec<String>> {
-    let entries: [(&str, &[&str]); 16] = [
+    let entries: [(&str, &[&str]); 17] = [
         ("quit", &["q", "esc", "ctrl+c"]),
         ("help", &["?"]),
         ("pause", &["p", "space"]),
@@ -489,6 +526,7 @@ fn default_keys() -> BTreeMap<String, Vec<String>> {
         ("debug", &["d"]),
         ("toggle_thermal", &["t"]),
         ("toggle_charts", &["c"]),
+        ("toggle_fan_guard", &["f"]),
     ];
     entries
         .iter()
@@ -1040,6 +1078,34 @@ pub fn validate(config: &Config) -> Vec<String> {
         }
     }
 
+    // Fan guard safety rails (T5.8): a floor of 0 % would stop the fans the
+    // guard exists to keep spinning, so it is rejected outright.
+    let guard = &config.fan_guard;
+    if !(5.0..=100.0).contains(&guard.floor_percent) {
+        errors.push(format!(
+            "fan_guard.floor_percent: must be within 5..=100 (got {}; 0 would stop the fans)",
+            guard.floor_percent
+        ));
+    }
+    if !(0.0..=100.0).contains(&guard.idle_load_percent) {
+        errors.push(format!(
+            "fan_guard.idle_load_percent: must be within 0..=100 (got {})",
+            guard.idle_load_percent
+        ));
+    }
+    if !(-20.0..=110.0).contains(&guard.idle_temp_c) {
+        errors.push(format!(
+            "fan_guard.idle_temp_c: must be within -20..=110 (got {})",
+            guard.idle_temp_c
+        ));
+    }
+    if guard.release_load_margin_percent < 0.0 {
+        errors.push("fan_guard.release_load_margin_percent: must be >= 0".to_string());
+    }
+    if guard.release_temp_margin_c < 0.0 {
+        errors.push("fan_guard.release_temp_margin_c: must be >= 0".to_string());
+    }
+
     errors
 }
 
@@ -1194,7 +1260,14 @@ mod tests {
         assert_eq!(config.keys["pause"], vec!["p", "space"]);
         assert_eq!(config.keys["toggle_thermal"], vec!["t"]);
         assert_eq!(config.keys["toggle_charts"], vec!["c"]);
-        assert_eq!(config.keys.len(), 16);
+        assert_eq!(config.keys["toggle_fan_guard"], vec!["f"]);
+        assert_eq!(config.keys.len(), 17);
+        assert!(!config.fan_guard.enabled, "fan writes off by default");
+        assert_eq!(config.fan_guard.floor_percent, 20.0);
+        assert_eq!(config.fan_guard.idle_load_percent, 10.0);
+        assert_eq!(config.fan_guard.idle_temp_c, 50.0);
+        assert_eq!(config.fan_guard.release_load_margin_percent, 10.0);
+        assert_eq!(config.fan_guard.release_temp_margin_c, 5.0);
     }
 
     #[test]
@@ -1349,6 +1422,41 @@ mod tests {
         let mut errors = Vec::new();
         apply_cli_overrides(&mut config, &cli, &mut errors);
         assert_eq!(errors.len(), 2, "errors: {errors:?}");
+    }
+
+    #[test]
+    fn fan_guard_bounds_are_validated() {
+        let mut config = Config::default();
+        config.fan_guard.floor_percent = 0.0;
+        config.fan_guard.idle_load_percent = 150.0;
+        config.fan_guard.idle_temp_c = 130.0;
+        config.fan_guard.release_load_margin_percent = -1.0;
+        config.fan_guard.release_temp_margin_c = -2.0;
+        let errors = validate(&config);
+        assert_eq!(errors.len(), 5, "errors: {errors:?}");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("fan_guard.floor_percent")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("fan_guard.idle_load_percent")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("fan_guard.idle_temp_c")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("fan_guard.release_load_margin_percent")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("fan_guard.release_temp_margin_c")));
+
+        // The 5 % floor is accepted; 0 % (fans stopped) never is.
+        config.fan_guard = FanGuardConfig::default();
+        assert!(validate(&config).is_empty());
+        config.fan_guard.floor_percent = 5.0;
+        assert!(validate(&config).is_empty());
+        config.fan_guard.floor_percent = 4.9;
+        assert!(!validate(&config).is_empty());
     }
 
     #[test]

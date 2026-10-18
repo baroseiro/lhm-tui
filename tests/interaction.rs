@@ -119,6 +119,88 @@ fn t_and_c_keys_toggle_thermal_and_charts() {
 }
 
 #[test]
+fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
+    use lhm_tui::lhm::model::Snapshot;
+
+    fn set_sensor(snapshot: &mut Snapshot, id: &str, value: f64) {
+        for hardware in &mut snapshot.hardware {
+            for group in &mut hardware.groups {
+                for sensor in &mut group.sensors {
+                    if sensor.id == id {
+                        sensor.value = Some(value);
+                    }
+                }
+            }
+        }
+    }
+
+    fn apply(app: &mut AppState, snapshot: &Snapshot, cfg: &Config) {
+        app.apply_poll_event(
+            PollEvent::Snapshot(Arc::new(Fetched {
+                snapshot: snapshot.clone(),
+                latency: Duration::from_millis(5),
+                bytes: 74_000,
+            })),
+            cfg,
+        );
+    }
+
+    let (app, mut cfg) = live_app();
+    // Idle NVIDIA GPU: 0 % load and every temperature at or below 45 °C
+    // (the fixture ships 0 % load but a 60.5 °C hotspot).
+    let mut idle = parse_payload(&support::fixture("lhm-live-5900xt.json")).expect("parses");
+    set_sensor(&mut idle, "/gpu-nvidia/0/temperature/0", 45.0);
+    set_sensor(&mut idle, "/gpu-nvidia/0/temperature/2", 45.0);
+    set_sensor(&mut idle, "/gpu-nvidia/0/temperature/3", 44.0);
+    let mut busy = idle.clone();
+    set_sensor(&mut busy, "/gpu-nvidia/0/load/0", 60.0);
+
+    // Off by default: no GPU ever enters the floor while opt-in is missing.
+    let mut app = app;
+    assert!(!app.effective_fan_guard(&cfg));
+    apply(&mut app, &idle, &cfg);
+    assert!(
+        app.fan_guard_state.values().all(|state| !state.engaged),
+        "no floor while off"
+    );
+
+    // Config opt-in engages on the next snapshot.
+    cfg.fan_guard.enabled = true;
+    apply(&mut app, &idle, &cfg);
+    let state = app.fan_guard_state.get("/gpu-nvidia/0").expect("tracked");
+    assert!(state.engaged, "idle GPU held at the floor");
+    assert_eq!(state.control_ids.len(), 2, "both RTX 3090 fans armed");
+    assert!(
+        !app.fan_guard_state["/gpu-amd/0"].engaged,
+        "83 °C AMD keeps driver control"
+    );
+
+    // Force config back off but keep the session; `f` overrides to on.
+    cfg.fan_guard.enabled = false;
+    let mut app = AppState::new();
+    apply(&mut app, &idle, &cfg);
+    assert!(!app.effective_fan_guard(&cfg));
+    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    assert_eq!(app.fan_guard_override, Some(true));
+    assert!(app.toast.is_some(), "toggle feedback");
+    assert!(
+        app.fan_guard_state["/gpu-nvidia/0"].engaged,
+        "toggle engages immediately on the current snapshot"
+    );
+
+    // Load spike → released (fail-safe to automatic control).
+    apply(&mut app, &busy, &cfg);
+    assert!(!app.fan_guard_state["/gpu-nvidia/0"].engaged);
+
+    // Toggling off clears the override and any floor.
+    apply(&mut app, &idle, &cfg);
+    assert!(app.fan_guard_state["/gpu-nvidia/0"].engaged);
+    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    assert_eq!(app.fan_guard_override, Some(false));
+    assert!(!app.fan_guard_state["/gpu-nvidia/0"].engaged);
+}
+
+#[test]
 fn enter_toggles_zoom() {
     let (mut app, cfg) = live_app();
     handle_event(&mut app, key(KeyCode::Enter), &cfg);

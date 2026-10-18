@@ -14,6 +14,7 @@ pub mod bindings;
 pub mod charts;
 pub mod cli;
 pub mod config;
+pub mod fan_guard;
 pub mod history;
 pub mod lhm;
 pub mod theme;

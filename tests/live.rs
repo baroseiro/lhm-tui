@@ -146,3 +146,31 @@ async fn live_full_dashboard_render() {
     println!("{text}");
     assert!(text.contains("Mem Temp"), "c switches to gauge panels");
 }
+
+#[tokio::test]
+#[ignore = "requires LibreHardwareMonitor on localhost:8085; writes nothing (unknown sensor id)"]
+async fn live_set_control_rejects_unknown_sensor() {
+    let cfg = Config::default();
+    let client = LhmClient::new(&cfg.server).expect("client");
+
+    // Deliberately unknown id: LHM answers `{"result":"fail",...}` without
+    // touching any hardware — this pins the POST contract (SPEC §3.2).
+    let err = client
+        .set_sensor_control("/does/not/exist", Some(20.0))
+        .await
+        .expect_err("unknown id must fail");
+    let message = err.to_string();
+    println!("live set failure: {message}");
+    assert!(message.contains("Unknown id"), "got: {message}");
+
+    // The guard can only work if real fans expose bound Control sensors.
+    let fetched = live_fetch(&cfg).await;
+    let bindings = bindings::resolve(&fetched.snapshot, &cfg.panels);
+    let controls: usize = bindings
+        .gpus
+        .iter()
+        .map(|gpu| gpu.fans.iter().filter(|fan| fan.control.is_some()).count())
+        .sum();
+    println!("live: {controls} controllable GPU fans");
+    assert!(controls >= 1, "at least one GPU fan control bound");
+}

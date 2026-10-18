@@ -124,12 +124,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `tests/frames.rs` renders full frames at 160/120/80/60 columns across live/stale/disconnected/
     paused/zoom/debug/browser/adhoc states; `scripts/soak.{ps1,sh}` sample RSS/CPU per minute;
     `docs/qa-matrix.md` carries the pre-release checklist.
-- Tests: 155 total.
+- **GPU fan anti-stop floor** (SPEC §7.5, `T5.8`): opt-in guard that holds every controllable GPU
+  fan at a software duty cycle while the GPU is idle and hands it back to the driver's automatic
+  curve the moment load or temperature rises — the fix for NVIDIA's zero-RPM parking. Toggle with
+  `f` (footer shows `anti-stop ON (n at floor)`, debug overlay shows the guard state), configure
+  via `fan_guard.*` (floor %, idle load/temp, release hysteresis); off by default. Safety rails:
+  hysteresis instead of flapping, fail-safe to auto when load/temp are unknown, back to auto on
+  `f` off and on quit, `floor_percent < 5` rejected (0 % would stop the fans the guard exists to
+  keep spinning). Writes use `POST /Sensor?action=Set` with a zero-length body (`value=null` →
+  `SetDefault`) — the GET path hangs on errors and carries no result marker — and are the only
+  hardware interaction in v0.1.
+- `lhm-tui.example.json` and `schema/lhm-tui.schema.json` gained the `fan_guard` section, and the
+  default keymap gained `f` (`toggle_fan_guard`).
+- Tests: 165 total.
 
 ### Changed
 
 - SPEC §9 documents `--dump` as a public machine surface (timestamps as Unix seconds) and the
   `--once` no-alternate-screen/colour behaviour.
+- SPEC sync for the fan floor (T5.8): §1.4 N1 narrowed to "no general sensor writes" (exception:
+  the opt-in floor), §3.2 documents `/Sensor?action=Set` via **POST** (HTTP 200 with a `result`
+  body — accept and reject must be read from the body; the GET path hangs on errors), §6.4 lists
+  `f`, new §7.5 specifies the decision table, §8.2/§8.3 and Appendix C carry `fan_guard`, and
+  §12.1/§12.4/§15 R9 cover its tests, QA row and vendor-tool conflict risk.
 - GPU panels list **every fan on the card** (`Fan 1 … Fan 2 …`, paired with their controls by
   name; single-fan cards keep the compact `Fan` label; `gpu.<n>.fan` pins one). Fans moved to
   their own row, and panel heights account for it.

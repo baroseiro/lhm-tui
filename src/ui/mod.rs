@@ -71,7 +71,7 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
     }
 
     if cfg.ui.show_footer {
-        frame.render_widget(footer_line(app, cfg, &theme), footer);
+        frame.render_widget(footer_line(app, cfg, &theme, footer.width), footer);
     }
     if app.help_visible {
         render_help(frame, area, cfg, &theme);
@@ -263,7 +263,7 @@ fn render_browser(frame: &mut Frame, area: Rect, app: &AppState, theme: &Theme) 
 /// Debug overlay: poll stats, history sizes, last error (T5.1).
 fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, theme: &Theme) {
     let width = area.width.saturating_sub(12).clamp(40, 72);
-    let rows = app.last_fetch.iter().count() + 14;
+    let rows = app.last_fetch.iter().count() + 15;
     let height = (rows as u16 + 2).min(area.height.saturating_sub(4));
     let popup = Rect {
         x: area.x + (area.width - width) / 2,
@@ -348,6 +348,23 @@ fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, the
         },
     );
     push("chart axes", format!("{} tracked", app.charts.len()));
+    let guard_engaged: usize = app
+        .fan_guard_state
+        .values()
+        .filter(|state| state.engaged)
+        .count();
+    let guard_controls: usize = app
+        .fan_guard_state
+        .values()
+        .map(|state| state.control_ids.len())
+        .sum();
+    push(
+        "fan guard",
+        match app.effective_fan_guard(cfg) {
+            true => format!("on · {guard_controls} controls · {guard_engaged} at floor"),
+            false => "off".to_string(),
+        },
+    );
     push("failed polls", app.failed_attempts.to_string());
     if let Some(error) = &app.last_error {
         push("last error", error.clone());
@@ -463,7 +480,8 @@ fn header_line(app: &AppState, cfg: &Config, size: Rect, theme: &Theme) -> Parag
     Paragraph::new(line)
 }
 
-fn footer_line(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'static> {
+fn footer_line(app: &AppState, cfg: &Config, theme: &Theme, width: u16) -> Paragraph<'static> {
+    use unicode_width::UnicodeWidthStr;
     let first = |action: &str| {
         cfg.keys
             .get(action)
@@ -472,7 +490,7 @@ fn footer_line(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'static
             .unwrap_or_else(|| "?".to_string())
     };
     let window = app.effective_window(cfg).1;
-    let line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(format!(" {} ", first("quit")), Style::new().bold().fg(theme.accent)),
         Span::styled("quit", Style::new().fg(theme.muted)),
         Span::styled(
@@ -487,8 +505,37 @@ fn footer_line(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'static
             ),
             Style::new().fg(theme.muted),
         ),
-    ]);
-    Paragraph::new(line)
+    ];
+    let guard_key = first("toggle_fan_guard");
+    let used: usize = spans.iter().map(|span| span.content.as_ref().width()).sum();
+    let hint_width = usize::from(width).saturating_sub(used);
+    let mut candidates: Vec<(String, bool)> = Vec::new();
+    if app.effective_fan_guard(cfg) {
+        let engaged: usize = app
+            .fan_guard_state
+            .values()
+            .filter(|state| state.engaged)
+            .count();
+        candidates.push((
+            format!("   ·   {guard_key} anti-stop ON ({engaged} at floor)"),
+            true,
+        ));
+        candidates.push((format!("   ·   {guard_key} anti-stop ON"), true));
+    } else {
+        candidates.push((format!("   ·   {guard_key} anti-stop"), false));
+    }
+    for (text, highlight) in candidates {
+        if text.width() <= hint_width {
+            let style = if highlight {
+                Style::new().fg(theme.accent)
+            } else {
+                Style::new().fg(theme.muted)
+            };
+            spans.push(Span::styled(text, style));
+            break;
+        }
+    }
+    Paragraph::new(Line::from(spans))
 }
 
 /// Status screen shown before the first snapshot (or without bindings).

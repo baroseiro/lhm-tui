@@ -4,24 +4,24 @@ expression: out
 ---
  lhm-tui v0.0.1  ● live   80×26   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 7 7800X3D ───────────────────────────────────────────────────╮
-│⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠│
-│● CPU ╭ Help — any key closes ─────────────────────────────────────────╮      │
-│⠀⠀⠀⠀⠀⠀│  q, esc, ctrl+c     Quit                                       │⠀⠀⠀⠀⠀⠐│
-│● Core│  ?                  Help overlay                               │      │
-│ ▅▁   │  p, space           Pause / resume polling                     │      │
-│      │  g                  Chart window forward                       │      │
-╰ Clock│  G                  Chart window backward                      │──────╯
-╭ GPU 0│  tab                Focus next panel                           │──────╮
-│⠀⠀⠀⠀⠀⠀│  shift+tab, backtab Focus previous panel                       │⠀⠀⠀⠀⠀⠰│
-│● GPU │  enter              Zoom focused panel                         │      │
-│⠀⠀⠀⠀⠀⠀│  b                  Sensor browser                             │⠀⠀⠀⠀⠀⢐│
-│● GPU │  s                  Cycle table sort                           │      │
-│ VRAM │  r                  Reload config                              │64 MB │
-│ Power│  m                  Reset LHM min/max                          │      │
-╰ Fan  │  a                  Toggle ASCII rendering                     │──────╯
-╭ Memor│  d                  Debug overlay                              │──────╮
-│⠁⠁⠁⠁⠁⠁│  t                  Toggle temperatures table                  │⠁⠁⠁⠁⠁⠁│
-│⠄⠄⠄⠄⠄⠄│  c                  Toggle charts                              │⠄⠄⠄⠄⠄⠌│
+│⠀⠀⠀⠀⠀⠀╭ Help — any key closes ─────────────────────────────────────────╮⠀⠀⠀⠀⠀⠠│
+│● CPU │  q, esc, ctrl+c     Quit                                       │      │
+│⠀⠀⠀⠀⠀⠀│  ?                  Help overlay                               │⠀⠀⠀⠀⠀⠐│
+│● Core│  p, space           Pause / resume polling                     │      │
+│ ▅▁   │  g                  Chart window forward                       │      │
+│      │  G                  Chart window backward                      │      │
+╰ Clock│  tab                Focus next panel                           │──────╯
+╭ GPU 0│  shift+tab, backtab Focus previous panel                       │──────╮
+│⠀⠀⠀⠀⠀⠀│  enter              Zoom focused panel                         │⠀⠀⠀⠀⠀⠰│
+│● GPU │  b                  Sensor browser                             │      │
+│⠀⠀⠀⠀⠀⠀│  s                  Cycle table sort                           │⠀⠀⠀⠀⠀⢐│
+│● GPU │  r                  Reload config                              │      │
+│ VRAM │  m                  Reset LHM min/max                          │64 MB │
+│ Power│  a                  Toggle ASCII rendering                     │      │
+╰ Fan  │  d                  Debug overlay                              │──────╯
+╭ Memor│  t                  Toggle temperatures table                  │──────╮
+│⠁⠁⠁⠁⠁⠁│  c                  Toggle charts                              │⠁⠁⠁⠁⠁⠁│
+│⠄⠄⠄⠄⠄⠄│  f                  GPU fan anti-stop floor                    │⠄⠄⠄⠄⠄⠌│
 │⡀⡀⡀⡀⡀⡀│                                                                │⡀⡀⡀⡀⡀⡀│
 │● Memo│                                                                │      │
 │ Used ╰────────────────────────────────────────────────────────────────╯.0 GB │

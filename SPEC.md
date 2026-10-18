@@ -5,7 +5,7 @@
 |                  |                                                                          |
 | ---------------- | ------------------------------------------------------------------------ |
 | Status           | Draft v1.0                                                               |
-| Target release   | v0.1.0 — read-only monitoring                                            |
+| Target release   | v0.1.0 - monitoring + opt-in GPU fan anti-stop floor                      |
 | Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`      |
 | Data source      | LHM built-in **Remote Web Server** (`GET /data.json`), polling-based      |
 | Platforms        | TUI runs on Windows / Linux / macOS; the LHM host is Windows by definition |
@@ -77,7 +77,7 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 
 | #   | Non-goal                                                                    |
 | --- | --------------------------------------------------------------------------- |
-| N1  | Writing sensor values (fan/pump control, `Sensor?action=Set`) — planned v0.2 |
+| N1  | General sensor writes (fan/pump control UI, arbitrary `Sensor?action=Set`) — planned v0.2. The single exception is the opt-in, off-by-default fan anti-stop floor (§7.5), which only ever writes GPU fan `Control` sensors and only ever restores automatic control |
 | N2  | Direct hardware access; `lhm-tui` never needs admin rights, LHM does         |
 | N3  | Bundling/installing/running LHM itself                                      |
 | N4  | Persisting history to disk (in-memory ring buffers only; CSV recording is v0.3) |
@@ -144,6 +144,8 @@ LHM has no TLS and no WebSocket; the API is plain HTTP request/response JSON.
 | ------------------------------ | -------- | -------------------------------------------------- | ------------ |
 | `/data.json`                   | GET      | Full hardware/sensor tree (the primary source)      | **primary**  |
 | `/Sensor?action=Get&id=<ID>`   | GET/POST | Single sensor value/min/max/format                  | optional     |
+| `/Sensor?action=Set&id=<ID>&value=<pct>` | POST | Set a `Control` sensor's software duty cycle (0-100) | fan anti-stop floor only (§7.5) |
+| `/Sensor?action=Set&id=<ID>&value=null` | POST | `SetDefault()`: hand the sensor back to driver control | fan anti-stop floor only (§7.5) |
 | `/Sensor?action=ResetMinMax&id=<ID>` | GET/POST | Reset one sensor's min/max                    | future       |
 | `/ResetAllMinMax`              | GET      | Reset min/max of all sensors                        | keybinding `m` |
 | `/metrics`                     | GET      | Prometheus text exposition (incl. `archive=` history) | future (see §16) |
@@ -155,6 +157,15 @@ Notes:
   sends gzip when the client advertises `Accept-Encoding: gzip`.
 - On failed Basic auth: HTTP 401.
 - `/data.json` returns HTTP 200 only; no ETag / long-poll.
+- `/Sensor?action=Set` replies HTTP 200 with a JSON body: `{"result": "ok"}` on success or
+  `{"result": "fail", "message": "..."}` when the write is rejected — clients must inspect the
+  body, not just the status code. Writing requires LHM to run with the privileges needed to
+  control the device (typically administrator on Windows).
+- lhm-tui writes via **POST** with an empty body plus `Content-Length: 0` (parameters stay in the
+  query; LHM's `HttpListener` rejects bodyless POSTs with 411 otherwise). The GET path is avoided:
+  it lets handler exceptions escape uncaught — the request hangs without a reply and reports no
+  result marker on success. A 200 JSON body without an explicit `"result": "fail"` is accepted as
+  success (older builds answered `{}`).
 
 ### 3.3 `/data.json` schema
 
@@ -476,6 +487,7 @@ Responsive rules:
 | `a`                      | Toggle ASCII rendering (overrides config)                        |
 | `t`                      | Toggle the temperatures table visibility                         |
 | `c`                      | Toggle charts (metric graphs ↔ gauges/bars)                      |
+| `f`                      | Toggle the GPU fan anti-stop floor (§7.5); off by default        |
 | `d`                      | Debug overlay: poll latency, payload size, sensor/hw counts, last error, LHM version |
 | `y`                      | Copy current snapshot summary to clipboard (OSC 52) — optional v0.1.1 |
 
@@ -550,6 +562,38 @@ separately and labeled "LHM min/max" (since-boot or since-reset values).
   overall "btop-style" layout) is Apache-2.0 — permissive, but any reuse requires attribution and
   license notice. Verify the license of any external reference before reusing anything from it;
   the default is an original implementation from this spec.
+
+### 7.5 GPU fan anti-stop floor (opt-in)
+
+Stock NVIDIA fan curves stop the fans entirely below a driver-defined temperature (zero-RPM /
+silent mode) and expose no switch to disable it. `fan_guard` works around that by holding every
+controllable GPU fan at a software floor while the GPU is idle and handing control back to the
+driver as soon as real work starts. It is the only hardware write the tool performs, it is
+**disabled by default** (`fan_guard.enabled`, or the `f` key at runtime), and it only ever touches
+`Control` sensors (LHM `Sensor.Control.SetSoftware` / `SetDefault`) — never tachometers, voltages
+or anything else.
+
+Decision per GPU, evaluated on every applied snapshot (load = bound GPU load; temp = hottest of
+core / hot spot / memory junction):
+
+| GPU state | Guard off | Guard on |
+| --------- | --------- | -------- |
+| idle: load ≤ `idle_load_percent` and temp ≤ `idle_temp_c` | no write | set every bound fan `Control` to `floor_percent` |
+| busy: load > idle + `release_load_margin_percent` or temp > idle + `release_temp_margin_c` | no write | `value=null` → `SetDefault()` (driver curve) |
+| in between | no write | hold current mode (hysteresis, no flapping) |
+| load/temp unknown (sensor missing, stale payload) | no write | release to driver control (fail-safe) |
+
+- Only transitions write HTTP; steady state stays silent. A failed write surfaces as a toast and
+  leaves the GPU tracked as released, so the next idle snapshot retries.
+- `floor_percent` must be ≥ 5 — 0 % would stop the fans the guard exists to keep spinning — and
+  validation rejects smaller values.
+- On quit, and on `f` toggle-off, every engaged control gets a best-effort `SetDefault()` (1 s
+  timeout per fan) so no manual duty cycle is left behind on the LHM side.
+- Writes need LHM to run with the privileges to control the GPU (Windows: administrator). Without
+  a `Controls` group the guard reports "no controllable fans" and does nothing.
+- `panels.sensor_overrides` (e.g. `gpu.<n>.fan` pinning one fan) decides *which* fans are
+  controllable, exactly as for the dashboards; display-only gating (`panels.gpu.show`, `t`, `c`)
+  never affects the guard.
 
 ---
 
@@ -675,6 +719,15 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
     ]
   },
 
+  "fan_guard": {
+    "enabled": false,                 // opt-in GPU fan anti-stop floor (§7.5); writes to Control sensors
+    "floor_percent": 20.0,            // duty held while idle; 5..=100 (0 would stop the fans)
+    "idle_load_percent": 10.0,        // floor engages when load ≤ this …
+    "idle_temp_c": 50.0,              // … and the hottest GPU temperature ≤ this
+    "release_load_margin_percent": 10.0,  // hysteresis: back to auto above idle + margin
+    "release_temp_margin_c": 5.0
+  },
+
   "keys": {
     "quit":  ["q", "esc", "ctrl+c"],
     "pause": ["p", "space"],
@@ -703,6 +756,10 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors |
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
+| `fan_guard.enabled`               | bool            | `false`          | Opt-in GPU fan floor; the only hardware write (§7.5) |
+| `fan_guard.floor_percent`         | float           | `20.0`           | 5–100 (0 rejected)                           |
+| `fan_guard.idle_load_percent` / `idle_temp_c` | float | `10.0` / `50.0` | Engage thresholds; unknown data never engages |
+| `fan_guard.release_*_margin_*`    | float           | `10.0` / `5.0`   | Hysteresis before returning to auto control  |
 | `keys.*`                          | string[]        | see §6.4         | Validated for conflicts                      |
 
 ### 8.4 Config JSON Schema
@@ -807,6 +864,8 @@ Each milestone ships green CI and is independently reviewable.
 - `history`: ring capacity math, wraparound, gap handling.
 - `charts`: decimation (envelope correctness incl. spike preservation), nice-step rounding,
   hysteresis transitions, percent/fixed modes.
+- `fan_guard`: idle engage, hysteresis hold, load/temp release, unknown-data fail-safe (§7.5),
+  no-controllable-fans no-op, validation bounds.
 
 ### 12.2 Integration
 
@@ -825,6 +884,9 @@ Each milestone ships green CI and is independently reviewable.
 - Windows 11 + Windows Terminal (truecolor + conhost fallback), WSL2, tmux over SSH, kitty, wezterm.
 - Real hardware: AMD CPU + Nvidia GPU; Intel CPU + iGPU; AMD GPU; 2 GPUs (mixed vendor); no GPU;
   memory-only machine; LHM 0.9.5 and 0.9.6; with and without Basic auth.
+- Fan anti-stop floor (§7.5), on real hardware at idle: `f` drops every fan control to the floor
+  (zero-RPM stops, fans spin again), a load spike returns them to the driver curve, and quitting
+  the TUI (or `f` off) leaves LHM back in automatic control — verify in LHM's own UI.
 - 24 h soak: memory flat (±2 MB), no fd leak, reconnect after LHM restart and network flicker.
 
 ---
@@ -868,6 +930,7 @@ Each milestone ships green CI and is independently reviewable.
 | R6  | Basic auth password in config file                                                                        | `password_env`/`password_file` first in docs; redaction in `--print-config`; refuse world-readable config file on Unix with a warning |
 | R7  | Windows conhost default 9001 scrollback / alt-screen semantics in old builds                              | Require Windows Terminal in docs; graceful VT capability check                                              |
 | R8  | `Sensor`-endpoint polling as optimization for pinned-only configs — needed in v0.1?                       | No; keep one `/data.json` fetch (simpler, atomic). Revisit if payload > 500 KB                              |
+| R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | Off by default; only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
 
 ---
 
@@ -876,7 +939,9 @@ Each milestone ships green CI and is independently reviewable.
 Ordered backlog beyond v0.1.0:
 
 1. **v0.2 — Control**: set fan/pump `Control` sensors (`Sensor?action=Set`), confirmation modal,
-   safe-range config, `--read-only` lock flag.
+   safe-range config, `--read-only` lock flag. *(The v0.1 fan anti-stop floor — §7.5 — is a narrow,
+   opt-in slice of this: it only ever writes GPU fan controls and only to auto or the configured
+   floor.)*
 2. **v0.3 — Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
    (terminal bell, OSC 9 desktop notification, webhook).
 3. **v0.3 — History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
@@ -1064,6 +1129,18 @@ both covered in fixtures):
     },
     "theme": { "type": "object" },
     "panels": { "type": "object" },
+    "fan_guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 20 },
+        "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },
+        "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 50 },
+        "release_load_margin_percent": { "type": "number", "minimum": 0, "default": 10 },
+        "release_temp_margin_c": { "type": "number", "minimum": 0, "default": 5 }
+      }
+    },
     "keys": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } }
   }
 }

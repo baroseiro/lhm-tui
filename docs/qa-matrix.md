@@ -19,6 +19,7 @@ failures and list deferrals in the release notes.
 | 11 | No GPU (VM) | 0.9.6 | ☐ | graceful presets |
 | 12 | LHM 0.9.5 (old tuple) | 0.9.5 | ☐ | version warning |
 | 13 | `NO_COLOR=1` / `--no-color` | — | ☐ | plain rendering |
+| 14 | Fan anti-stop floor, NVIDIA at idle | 0.9.6, LHM as admin | ☐ | §7.5: `f` spins stopped fans; load spike → auto; quit → auto |
 
 ## Checklist per row
 
@@ -34,3 +35,7 @@ failures and list deferrals in the release notes.
 7. Kill/restart LHM mid-session: status goes `stale` then `live` again.
 8. Quit restores the terminal (no raw mode, cursor visible, shell usable).
 9. `--once` and `--dump -` produce output and exit 0.
+10. Fan anti-stop floor (row 14 only): with the GPU idle, `f` engages — fans
+    that were stopped spin up, LHM's UI shows a manual control value; start a
+    GPU load → the guard releases and the driver curve takes over; stop the
+    load → floor returns; `f` off / quit → LHM shows automatic control again.

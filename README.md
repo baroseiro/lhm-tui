@@ -26,6 +26,10 @@ live, color-thresholded panels in your terminal:
 - **Memory** — used/available gauges with history, page file and virtual memory
 - **Temperatures** — sortable table of every thermal sensor in the tree, colored by thresholds
 - Plus presets for **fans**, **power**, **storage** and **network**
+- **Optional GPU fan anti-stop floor** — keeps NVIDIA/AMD fan curves from parking the fans at
+  zero-RPM when idle (`f`): a 20 % floor while the GPU is idle, automatic driver control the
+  moment load or temperature rises. Off by default; the only feature that writes to hardware,
+  and only ever to the fan controls ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-opt-in))
 
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
 Windows machine on your network / over SSH — through a small JSON config file.
@@ -110,6 +114,7 @@ lhm-tui --help
 | `m`                   | Reset LHM min/max counters              |
 | `a` / `d`             | ASCII mode / debug overlay              |
 | `t` / `c`             | Toggle temperatures table / charts      |
+| `f`                   | Toggle GPU fan anti-stop floor (off by default) |
 
 All keys are remappable in the config file.
 
@@ -162,6 +167,7 @@ Common things people change:
 | Remap keys                          | `keys`                                                                  |
 | Turn charts off                     | `charts.enabled: false` (or run with `--no-charts`, or press `c`)       |
 | Show the temperatures table         | Press `t`, or add `"thermal"` to `ui.layout`                            |
+| Keep GPU fans spinning when idle    | Press `f`, or `"fan_guard": { "enabled": true }` ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-opt-in)) |
 | Switch theme                        | `theme.name`: `default`, `gruvbox`, `nord` or `mono`                    |
 | Custom theme file                   | `lhm-tui --theme path/to/theme.json` (same shape as the `theme` block)  |
 | Strip all colors                    | `NO_COLOR=1 lhm-tui` or `--no-color`                                    |
@@ -191,13 +197,15 @@ otherwise use the gateway IP (`ip route | grep default`) or the LAN IP.
 | Nothing but `—` on an NVIDIA laptop GPU   | Some mobile dGPUs only expose sensors while the GPU is active                              |
 | Braille graphs look broken                | Press `a` for ASCII mode or set `charts.marker` to `halfblock` in the config               |
 | Wrong sensor bound to a chart             | `lhm-tui --probe` prints the binding report; pin the sensor via `panels.sensor_overrides`  |
+| `f` says "no controllable GPU fans"       | LHM needs to run as administrator so the `Controls` group exists (NVIDIA/AMD cards)        |
+| Anti-stop floor fights Afterburner/Adrenalin | Stop the vendor tool while the floor is enabled, or leave `fan_guard.enabled` off        |
 
 Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itself).
 
 ## Roadmap
 
-- **v0.1.0** — read-only dashboard: presets, live braille charts, JSON config, themes *(current)*
-- **v0.2.0** — fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
+- **v0.1.0** — dashboard: presets, live braille charts, JSON config, themes, opt-in GPU fan anti-stop floor *(current)*
+- **v0.2.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
 - **v0.3.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
 - **v0.4.0** — multi-host tabs, user theme files
 - Later — template-based custom panels, plugin scripting

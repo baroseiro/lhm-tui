@@ -71,6 +71,64 @@ async fn maps_timeout_to_connect_error() {
 }
 
 #[tokio::test]
+async fn set_sensor_control_sends_software_value() {
+    let mock = MockLhm::start(vec![Step::json(r#"{"result":"ok"}"#)]);
+    let client = LhmClient::new(&config_for(&mock.url())).expect("client");
+
+    client
+        .set_sensor_control("/nvidiagpu/0/control/1", Some(20.0))
+        .await
+        .expect("set");
+    let request = mock.last_request().expect("request recorded");
+    assert!(request.starts_with("POST /Sensor?"), "got: {request}");
+    assert!(request.contains("action=Set"), "got: {request}");
+    assert!(
+        request.contains("id=%2Fnvidiagpu%2F0%2Fcontrol%2F1"),
+        "got: {request}"
+    );
+    assert!(request.contains("value=20.0"), "got: {request}");
+}
+
+#[tokio::test]
+async fn set_sensor_control_null_returns_to_automatic() {
+    let mock = MockLhm::start(vec![Step::json(r#"{"result":"ok"}"#)]);
+    let client = LhmClient::new(&config_for(&mock.url())).expect("client");
+
+    client
+        .set_sensor_control("/gpu-amd/0/control/0", None)
+        .await
+        .expect("set");
+    let request = mock.last_request().expect("request recorded");
+    assert!(request.contains("value=null"), "got: {request}");
+}
+
+#[tokio::test]
+async fn set_sensor_control_accepts_bare_ok_bodies() {
+    // LHM's GET path answered `{}` on success; the POST path `{"result":"ok"}`.
+    let mock = MockLhm::start(vec![Step::json("{}")]);
+    let client = LhmClient::new(&config_for(&mock.url())).expect("client");
+    client
+        .set_sensor_control("/gpu-amd/0/control/0", Some(20.0))
+        .await
+        .expect("bare body is a success");
+}
+
+#[tokio::test]
+async fn set_sensor_control_reports_rejections() {
+    let mock = MockLhm::start(vec![Step::json(
+        r#"{"result":"fail","message":"invalid sensor id"}"#,
+    )]);
+    let client = LhmClient::new(&config_for(&mock.url())).expect("client");
+
+    let err = client
+        .set_sensor_control("/nvidiagpu/0/control/9", Some(20.0))
+        .await
+        .expect_err("must fail");
+    let message = err.to_string();
+    assert!(message.contains("invalid sensor id"), "got: {message}");
+}
+
+#[tokio::test]
 async fn sends_basic_auth_when_configured() {
     let mock = MockLhm::start(vec![
         Step::json(support::fixture("lhm-ram-only.json")).require_auth("user", "s3cret")

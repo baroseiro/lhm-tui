@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// Load a fixture from `tests/fixtures/`.
@@ -63,6 +63,7 @@ pub struct MockLhm {
     addr: SocketAddr,
     requests: Arc<AtomicUsize>,
     stop: Arc<AtomicUsize>,
+    last_request: Arc<Mutex<Option<String>>>,
     handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -76,10 +77,12 @@ impl MockLhm {
         let addr = listener.local_addr().expect("mock addr");
         let requests = Arc::new(AtomicUsize::new(0));
         let stop = Arc::new(AtomicUsize::new(0));
+        let last_request = Arc::new(Mutex::new(None));
 
         let handle = {
             let requests = Arc::clone(&requests);
             let stop = Arc::clone(&stop);
+            let last_request = Arc::clone(&last_request);
             std::thread::spawn(move || {
                 let mut index = 0usize;
                 while stop.load(Ordering::SeqCst) == 0 {
@@ -89,6 +92,9 @@ impl MockLhm {
                             // flag (Winsock); restore blocking reads for this connection.
                             let _ = stream.set_nonblocking(false);
                             let request = read_request(&mut stream);
+                            if let Ok(mut slot) = last_request.lock() {
+                                *slot = Some(request.clone());
+                            }
                             let step = steps
                                 .get(index)
                                 .cloned()
@@ -135,6 +141,7 @@ impl MockLhm {
             addr,
             requests,
             stop,
+            last_request,
             handle: Some(handle),
         }
     }
@@ -145,6 +152,14 @@ impl MockLhm {
 
     pub fn request_count(&self) -> usize {
         self.requests.load(Ordering::SeqCst)
+    }
+
+    /// First line of the most recent request (method + target).
+    pub fn last_request(&self) -> Option<String> {
+        self.last_request.lock().ok().and_then(|slot| {
+            slot.as_ref()
+                .and_then(|request| request.lines().next().map(str::to_string))
+        })
     }
 
     pub fn stop(&mut self) {

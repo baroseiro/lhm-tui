@@ -82,6 +82,78 @@ impl LhmClient {
         Ok(())
     }
 
+    /// Set a control sensor's software duty (`POST /Sensor?action=Set`,
+    /// SPEC §3.2). `None` hands the fan back to automatic/driver control
+    /// (`value=null` → `SetDefault`).
+    ///
+    /// POST (empty JSON body) rather than GET: LHM's GET path lets handler
+    /// exceptions escape the listener (the request hangs with no reply, and
+    /// success carries no `result` marker), while POST always answers
+    /// `{"result":"ok"}` or `{"result":"fail","message":…}`.
+    pub async fn set_sensor_control(
+        &self,
+        sensor_id: &str,
+        value: Option<f32>,
+    ) -> Result<(), LhmError> {
+        let url = format!("{}/Sensor", self.base_url);
+        let value_text = match value {
+            Some(value) => format!("{value:.1}"),
+            None => "null".to_string(),
+        };
+        let mut request = self
+            .http
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .query(&[
+                ("action", "Set"),
+                ("id", sensor_id),
+                ("value", value_text.as_str()),
+            ])
+            // LHM's HttpListener rejects bodyless POSTs with 411 unless an
+            // explicit zero length is present; the parameters live in the
+            // query, so the body stays empty.
+            .header(reqwest::header::CONTENT_LENGTH, "0")
+            .body(String::new());
+        if let Some(username) = &self.username {
+            request = request.basic_auth(username, self.password.as_deref());
+        }
+        let response = request.send().await.map_err(|source| LhmError::Connect {
+            url: url.clone(),
+            source,
+        })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(LhmError::Auth { url });
+        }
+        if !status.is_success() {
+            return Err(LhmError::Http {
+                url,
+                status: status.as_u16(),
+            });
+        }
+        let body = response.text().await.map_err(|source| LhmError::Connect {
+            url: url.clone(),
+            source,
+        })?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(&body).map_err(|err| LhmError::BadPayload {
+                url: url.clone(),
+                message: err.to_string(),
+            })?;
+        // POST answers `{"result":"ok"}`; LHM's older GET path answered `{}`
+        // for a successful set, so anything without an explicit `fail` counts
+        // as accepted.
+        if parsed.get("result").and_then(|result| result.as_str()) != Some("fail") {
+            return Ok(());
+        }
+        let message = parsed
+            .get("message")
+            .and_then(|message| message.as_str())
+            .unwrap_or("sensor write rejected")
+            .to_string();
+        Err(LhmError::BadPayload { url, message })
+    }
+
     /// Fetch and normalize `/data.json` (one poll).
     pub async fn fetch_data_json(&self) -> Result<Fetched, LhmError> {
         let url = format!("{}/data.json", self.base_url);

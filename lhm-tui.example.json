@@ -136,6 +136,14 @@
     "sensor_overrides": {},
     "custom": []
   },
+  "fan_guard": {
+    "enabled": false,
+    "floor_percent": 20.0,
+    "idle_load_percent": 10.0,
+    "idle_temp_c": 50.0,
+    "release_load_margin_percent": 10.0,
+    "release_temp_margin_c": 5.0
+  },
   "keys": {
     "ascii": [
       "a"
@@ -176,6 +184,9 @@
     ],
     "toggle_charts": [
       "c"
+    ],
+    "toggle_fan_guard": [
+      "f"
     ],
     "toggle_thermal": [
       "t"

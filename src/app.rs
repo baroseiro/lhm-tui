@@ -17,6 +17,7 @@ use ratatui::DefaultTerminal;
 use crate::bindings::{self, Bindings};
 use crate::charts::ChartsState;
 use crate::config::{Config, RetryConfig, ServerConfig, TableSort};
+use crate::fan_guard::{self, GpuFanState, GuardAction};
 use crate::history::History;
 use crate::lhm::client::{Fetched, LhmClient};
 use crate::lhm::model::Snapshot;
@@ -43,6 +44,17 @@ pub enum PollEvent {
 pub struct SessionOptions {
     pub cli: crate::cli::Cli,
     pub warnings: Vec<String>,
+}
+
+/// One fan-control write, processed by the background control task (T5.8).
+#[derive(Debug)]
+pub struct ControlRequest {
+    pub server: ServerConfig,
+    pub sensor_id: String,
+    /// `Some(percent)` = software floor; `None` = back to automatic.
+    pub value: Option<f32>,
+    /// Optional toast text (only attached to the last request of a batch).
+    pub notice: Option<String>,
 }
 
 /// Connection status shown in the header (SPEC §10.1).
@@ -112,6 +124,14 @@ pub struct AppState {
     pub cli: Option<crate::cli::Cli>,
     /// Sender for async notices (`m` reset result); `None` in unit tests.
     pub notice_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    /// `f` override for `fan_guard.enabled` (T5.8).
+    pub fan_guard_override: Option<bool>,
+    /// Per-GPU fan-guard tracking, keyed by HardwareId.
+    pub fan_guard_state: BTreeMap<String, GpuFanState>,
+    /// Sender for fan-control writes; `None` in unit tests.
+    pub fan_control_tx: Option<tokio::sync::mpsc::UnboundedSender<ControlRequest>>,
+    /// Throttle for engage/release toasts.
+    pub last_fan_notice: Option<Instant>,
     /// Chart autoscale state (hysteresis per graph).
     pub charts: ChartsState,
 }
@@ -152,6 +172,10 @@ impl AppState {
             pending_poller_restart: false,
             cli: None,
             notice_tx: None,
+            fan_guard_override: None,
+            fan_guard_state: BTreeMap::new(),
+            fan_control_tx: None,
+            last_fan_notice: None,
             charts: ChartsState::new(),
         }
     }
@@ -209,6 +233,11 @@ impl AppState {
     /// Effective charts mode: `c` override, else `charts.enabled` from config.
     pub fn effective_charts(&self, cfg: &Config) -> bool {
         self.charts_override.unwrap_or(cfg.charts.enabled)
+    }
+
+    /// Effective fan anti-stop state: `f` override, else `fan_guard.enabled`.
+    pub fn effective_fan_guard(&self, cfg: &Config) -> bool {
+        self.fan_guard_override.unwrap_or(cfg.fan_guard.enabled)
     }
 
     /// Panel-visibility overrides for `presets::panel_list`.
@@ -271,6 +300,7 @@ impl AppState {
                 self.failed_attempts = 0;
                 self.last_retry_in = None;
                 self.link = LinkStatus::Live;
+                update_fan_guard(self, cfg);
             }
             PollEvent::Failure {
                 message,
@@ -331,7 +361,10 @@ async fn run_loop(
         app.toast = Some((options.warnings.join("  ·  "), Instant::now()));
     }
     let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
-    app.notice_tx = Some(notice_tx);
+    app.notice_tx = Some(notice_tx.clone());
+    let (control_tx, control_rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(control_loop(control_rx, notice_tx));
+    app.fan_control_tx = Some(control_tx);
     let frame_ms = u64::from(1000 / cfg.ui.fps.max(1)).max(1);
     let mut tick = tokio::time::interval(Duration::from_millis(frame_ms));
 
@@ -400,6 +433,25 @@ async fn run_loop(
                         &cfg,
                     );
                 }
+            }
+        }
+    }
+
+    // Best-effort: never leave a software fan floor behind (T5.8).
+    let engaged_ids: Vec<String> = app
+        .fan_guard_state
+        .values()
+        .filter(|state| state.engaged)
+        .flat_map(|state| state.control_ids.clone())
+        .collect();
+    if !engaged_ids.is_empty() {
+        if let Ok(client) = LhmClient::new(&cfg.server) {
+            for sensor_id in engaged_ids {
+                let _ = tokio::time::timeout(
+                    Duration::from_millis(1000),
+                    client.set_sensor_control(&sensor_id, None),
+                )
+                .await;
             }
         }
     }
@@ -596,6 +648,29 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
         let current = app.effective_charts(cfg);
         app.charts_override = Some(!current);
         app.dirty = true;
+    } else if action_matches(cfg, "toggle_fan_guard", &key) {
+        let current = app.effective_fan_guard(cfg);
+        app.fan_guard_override = Some(!current);
+        app.dirty = true;
+        update_fan_guard(app, cfg);
+        let armed: usize = app
+            .fan_guard_state
+            .values()
+            .map(|state| state.control_ids.len())
+            .sum();
+        let message = if current {
+            "fan anti-stop OFF — GPU fans are back to automatic".to_string()
+        } else if armed == 0 {
+            "fan anti-stop ON — no controllable GPU fans found (LHM needs the Controls \
+             group; run LHM as admin)"
+                .to_string()
+        } else {
+            format!(
+                "fan anti-stop ON — {armed} fan control(s): {:.0}% below {:.0}% load / {:.0} °C, auto otherwise",
+                cfg.fan_guard.floor_percent, cfg.fan_guard.idle_load_percent, cfg.fan_guard.idle_temp_c
+            )
+        };
+        app.toast = Some((message, Instant::now()));
     } else if key_matches(&key, "down") || key_matches(&key, "j") {
         scroll_focused(app, cfg, 1);
     } else if key_matches(&key, "up") || key_matches(&key, "k") {
@@ -666,6 +741,168 @@ fn reset_min_max(app: &AppState, cfg: &Config) {
     });
 }
 
+/// Fan anti-stop guard evaluation (T5.8): engage the floor when a GPU is
+/// idle, release when load or temperature rises, fail-safe on unknown data.
+fn update_fan_guard(app: &mut AppState, cfg: &Config) {
+    let Some(fetched) = app.last_fetch.clone() else {
+        return;
+    };
+    let views = match app.bindings.as_ref() {
+        Some(bindings) => fan_guard::views(&fetched.snapshot, bindings),
+        None => return,
+    };
+    if views.is_empty() {
+        return;
+    }
+
+    let enabled = app.effective_fan_guard(cfg);
+    let now = Instant::now();
+    let allow_notice = app
+        .last_fan_notice
+        .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5));
+
+    // Decide first (immutable pass), apply after (mutable pass).
+    let mut planned: Vec<(fan_guard::GpuFanView, GuardAction)> = Vec::new();
+    for view in views {
+        let state = app
+            .fan_guard_state
+            .entry(view.hardware_id.clone())
+            .or_default();
+        state.control_ids = view.control_ids.clone();
+        let action = if enabled {
+            fan_guard::decide(&view, state.engaged, &cfg.fan_guard)
+        } else if state.engaged {
+            GuardAction::Release
+        } else {
+            GuardAction::Hold
+        };
+        planned.push((view, action));
+    }
+
+    for (view, action) in planned {
+        match action {
+            GuardAction::Engage => {
+                if let Some(state) = app.fan_guard_state.get_mut(&view.hardware_id) {
+                    state.engaged = true;
+                }
+                let requests: Vec<(String, Option<f32>)> = view
+                    .control_ids
+                    .iter()
+                    .map(|id| (id.clone(), Some(cfg.fan_guard.floor_percent)))
+                    .collect();
+                let notice = allow_notice.then(|| {
+                    format!(
+                        "fan anti-stop: {} held at {:.0} % while idle",
+                        view.name, cfg.fan_guard.floor_percent
+                    )
+                });
+                if notice.is_some() {
+                    app.last_fan_notice = Some(now);
+                }
+                dispatch_control(app, cfg, requests, notice);
+                app.dirty = true;
+            }
+            GuardAction::Release => {
+                if let Some(state) = app.fan_guard_state.get_mut(&view.hardware_id) {
+                    state.engaged = false;
+                }
+                let requests: Vec<(String, Option<f32>)> = view
+                    .control_ids
+                    .iter()
+                    .map(|id| (id.clone(), None))
+                    .collect();
+                let notice =
+                    allow_notice.then(|| format!("fan anti-stop: {} back to automatic", view.name));
+                if notice.is_some() {
+                    app.last_fan_notice = Some(now);
+                }
+                dispatch_control(app, cfg, requests, notice);
+                app.dirty = true;
+            }
+            GuardAction::Hold => {}
+        }
+    }
+}
+
+/// Queue fan-control writes for the background control task. No-op without a
+/// runtime (unit tests), where only the tracking state moves.
+fn dispatch_control(
+    app: &AppState,
+    cfg: &Config,
+    requests: Vec<(String, Option<f32>)>,
+    notice: Option<String>,
+) {
+    let Some(tx) = app.fan_control_tx.clone() else {
+        return;
+    };
+    let last = requests.len().saturating_sub(1);
+    for (index, (sensor_id, value)) in requests.into_iter().enumerate() {
+        let _ = tx.send(ControlRequest {
+            server: cfg.server.clone(),
+            sensor_id,
+            value,
+            notice: if index == last { notice.clone() } else { None },
+        });
+    }
+}
+
+/// Background writer for `/Sensor?action=Set` requests (T5.8). One client is
+/// cached per URL; every request reports success/failure through the notice
+/// channel (toasts).
+async fn control_loop(
+    mut requests: tokio::sync::mpsc::UnboundedReceiver<ControlRequest>,
+    notices: tokio::sync::mpsc::UnboundedSender<String>,
+) {
+    let mut client: Option<(String, LhmClient)> = None;
+    while let Some(request) = requests.recv().await {
+        let url = request.server.url.clone();
+        if client.as_ref().is_none_or(|(cached, _)| cached != &url) {
+            client = LhmClient::new(&request.server)
+                .ok()
+                .map(|client| (url, client));
+        }
+        let Some((_, client)) = client.as_ref() else {
+            let _ = notices.send("fan anti-stop: cannot create HTTP client".to_string());
+            continue;
+        };
+        match client
+            .set_sensor_control(&request.sensor_id, request.value)
+            .await
+        {
+            Ok(()) => {
+                if let Some(notice) = request.notice {
+                    let _ = notices.send(notice);
+                }
+            }
+            Err(err) => {
+                let _ = notices.send(format!("fan anti-stop failed: {err}"));
+            }
+        }
+    }
+}
+
+/// Hand every engaged fan back to automatic control using the *given* config's
+/// server (used when a reload switches to a different LHM host, T5.8).
+fn release_engaged_fans(app: &mut AppState, cfg: &Config) {
+    let engaged: Vec<String> = app
+        .fan_guard_state
+        .values()
+        .filter(|state| state.engaged)
+        .flat_map(|state| state.control_ids.clone())
+        .collect();
+    for state in app.fan_guard_state.values_mut() {
+        state.engaged = false;
+    }
+    if !engaged.is_empty() {
+        dispatch_control(
+            app,
+            cfg,
+            engaged.into_iter().map(|id| (id, None)).collect(),
+            None,
+        );
+    }
+}
+
 /// `r`: re-resolve the config (file → env → CLI) and apply it live (T5.3).
 /// Keeps history and the last snapshot; on error nothing is replaced and the
 /// previous config stays active.
@@ -681,6 +918,11 @@ pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cl
     match crate::config::load(&cli) {
         Ok(loaded) => {
             let previous_server = cfg.server.clone();
+            // Pointing at a different LHM abandons any engaged fan floor on the
+            // old host: hand those fans back to automatic control first (T5.8).
+            if loaded.config.server.url != previous_server.url {
+                release_engaged_fans(app, cfg);
+            }
             *cfg = loaded.config;
             app.pending_poller_restart = cfg.server != previous_server;
             // Rebind now so panel changes apply without waiting for a poll.
