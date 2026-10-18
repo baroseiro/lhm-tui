@@ -1,4 +1,4 @@
-//! Root layout: header, panel composition and footer (SPEC §6.1).
+//! Root layout: header, panel composition, status line and overlays (SPEC §6.1).
 //!
 //! Panels come from `ui.layout` expanded over the current bindings (preset
 //! panel list); consecutive GPU panels share a row when the terminal is wide
@@ -40,7 +40,7 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
         return;
     }
 
-    let [header, toast, body, footer] = Layout::vertical([
+    let [header, toast, body, status] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(u16::from(app.toast.is_some())),
         Constraint::Min(3),
@@ -71,7 +71,7 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
     }
 
     if cfg.ui.show_footer {
-        frame.render_widget(footer_line(app, cfg, &theme, footer.width), footer);
+        frame.render_widget(status_line(app, &theme), status);
     }
     if app.help_visible {
         render_help(frame, area, cfg, &theme);
@@ -376,10 +376,10 @@ fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, the
     frame.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
-/// `?` overlay: remapped keys with their action descriptions (T4.4).
+/// `?`/`h` overlay: remapped keys with their action descriptions (T4.4).
 fn render_help(frame: &mut Frame, area: Rect, cfg: &Config, theme: &Theme) {
     let width = area.width.saturating_sub(8).clamp(30, 66);
-    let height = (crate::config::KNOWN_ACTIONS.len() as u16 + 4)
+    let height = (crate::config::KNOWN_ACTIONS.len() as u16 + 5)
         .min(area.height.saturating_sub(2))
         .max(6);
     let popup = Rect {
@@ -408,6 +408,17 @@ fn render_help(frame: &mut Frame, area: Rect, cfg: &Config, theme: &Theme) {
             Span::styled((*description).to_string(), Style::new().fg(theme.text)),
         ]));
     }
+    // Scroll/move keys are fixed shortcuts, not remappable actions (SPEC §6.4).
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("  {:<18} ", "↓ ↑, j k"),
+            Style::new().fg(theme.muted),
+        ),
+        Span::styled(
+            "Scroll focused table / move selection".to_string(),
+            Style::new().fg(theme.text),
+        ),
+    ]));
     frame.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
@@ -462,7 +473,7 @@ fn header_line(app: &AppState, cfg: &Config, size: Rect, theme: &Theme) -> Parag
     } else {
         (dot(app, theme), link_label(app, theme))
     };
-    let line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(" lhm-tui ", Style::new().bold().fg(theme.accent)),
         Span::styled(
             concat!("v", env!("CARGO_PKG_VERSION"), "  "),
@@ -476,66 +487,33 @@ fn header_line(app: &AppState, cfg: &Config, size: Rect, theme: &Theme) -> Parag
         ),
         Span::styled("   ", Style::new()),
         Span::styled(cfg.server.url.clone(), Style::new().fg(theme.muted)),
-    ]);
-    Paragraph::new(line)
-}
-
-fn footer_line(app: &AppState, cfg: &Config, theme: &Theme, width: u16) -> Paragraph<'static> {
-    use unicode_width::UnicodeWidthStr;
-    let first = |action: &str| {
-        cfg.keys
-            .get(action)
-            .and_then(|keys| keys.first())
-            .cloned()
-            .unwrap_or_else(|| "?".to_string())
-    };
-    let window = app.effective_window(cfg).1;
-    let mut spans = vec![
-        Span::styled(format!(" {} ", first("quit")), Style::new().bold().fg(theme.accent)),
-        Span::styled("quit", Style::new().fg(theme.muted)),
-        Span::styled(
-            format!(
-                "   ·   {} pause   ·   {} focus   ·   {} sort   ·   j/k scroll   ·   {} window({window})   ·   {} temps   ·   {} charts",
-                first("pause"),
-                first("focus_next"),
-                first("sort"),
-                first("window_next"),
-                first("toggle_thermal"),
-                first("toggle_charts"),
-            ),
-            Style::new().fg(theme.muted),
-        ),
     ];
-    let guard_key = first("toggle_fan_guard");
-    let used: usize = spans.iter().map(|span| span.content.as_ref().width()).sum();
-    let hint_width = usize::from(width).saturating_sub(used);
-    let mut candidates: Vec<(String, bool)> = Vec::new();
-    if app.effective_fan_guard(cfg) {
-        let engaged: usize = app
-            .fan_guard_state
-            .values()
-            .filter(|state| state.engaged)
-            .count();
-        candidates.push((
-            format!("   ·   {guard_key} anti-stop ON ({engaged} at floor)"),
-            true,
-        ));
-        candidates.push((format!("   ·   {guard_key} anti-stop ON"), true));
-    } else {
-        candidates.push((format!("   ·   {guard_key} anti-stop"), false));
-    }
-    for (text, highlight) in candidates {
-        if text.width() <= hint_width {
-            let style = if highlight {
-                Style::new().fg(theme.accent)
-            } else {
-                Style::new().fg(theme.muted)
-            };
-            spans.push(Span::styled(text, style));
-            break;
+    // The window label used to live in the key bar; it moved to the header
+    // (only when it still fits — narrow terminals keep the URL instead).
+    if app.effective_charts(cfg) {
+        use unicode_width::UnicodeWidthStr;
+        let used: usize = spans.iter().map(|span| span.content.as_ref().width()).sum();
+        let label = format!("   window {}", app.effective_window(cfg).1);
+        if used + label.width() <= usize::from(size.width) {
+            spans.push(Span::styled(label, Style::new().fg(theme.muted)));
         }
     }
     Paragraph::new(Line::from(spans))
+}
+
+/// Bottom status line: mirrors the newest status message (the transient toast
+/// on line 2) and keeps it visible in a muted style after the toast fades.
+/// Pressing `?`/`h` opens the full key map instead of a permanent key bar.
+fn status_line(app: &AppState, theme: &Theme) -> Paragraph<'static> {
+    let Some(message) = &app.status_line else {
+        return Paragraph::new(Span::styled(String::new(), Style::new()));
+    };
+    let style = if app.toast.is_some() {
+        Style::new().fg(theme.warn)
+    } else {
+        Style::new().fg(theme.muted)
+    };
+    Paragraph::new(Span::styled(format!(" {message}"), style))
 }
 
 /// Status screen shown before the first snapshot (or without bindings).

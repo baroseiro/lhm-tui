@@ -2,11 +2,11 @@
 source: tests/widgets.rs
 expression: out
 ---
- lhm-tui v0.0.1  ● live   80×26   http://127.0.0.1:8085
+ lhm-tui v0.0.1  ● live   80×26   http://127.0.0.1:8085   window 5m
 ╭ CPU · AMD Ryzen 7 7800X3D ───────────────────────────────────────────────────╮
 │⠀⠀⠀⠀⠀⠀╭ Help — any key closes ─────────────────────────────────────────╮⠀⠀⠀⠀⠀⠠│
 │● CPU │  q, esc, ctrl+c     Quit                                       │      │
-│⠀⠀⠀⠀⠀⠀│  ?                  Help overlay                               │⠀⠀⠀⠀⠀⠐│
+│⠀⠀⠀⠀⠀⠀│  ?, h               Help overlay                               │⠀⠀⠀⠀⠀⠐│
 │● Core│  p, space           Pause / resume polling                     │      │
 │ ▅▁   │  g                  Chart window forward                       │      │
 │      │  G                  Chart window backward                      │      │
@@ -22,9 +22,8 @@ expression: out
 ╭ Memor│  t                  Toggle temperatures table                  │──────╮
 │⠁⠁⠁⠁⠁⠁│  c                  Toggle charts                              │⠁⠁⠁⠁⠁⠁│
 │⠄⠄⠄⠄⠄⠄│  f                  GPU fan anti-stop floor                    │⠄⠄⠄⠄⠄⠌│
-│⡀⡀⡀⡀⡀⡀│                                                                │⡀⡀⡀⡀⡀⡀│
+│⡀⡀⡀⡀⡀⡀│  ↓ ↑, j k           Scroll focused table / move selection      │⡀⡀⡀⡀⡀⡀│
 │● Memo│                                                                │      │
-│ Used ╰────────────────────────────────────────────────────────────────╯.0 GB │
-│                                                                              │
+│ Used │                                                                │.0 GB │
+│      ╰────────────────────────────────────────────────────────────────╯      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- q quit   ·   p pause   ·   tab focus   ·   s sort   ·   j/k scroll   ·   g wind

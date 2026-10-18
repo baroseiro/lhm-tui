@@ -71,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Charts are optional: `charts.enabled` in the config or `--charts`/`--no-charts` on the CLI;
   disabled keeps the compact gauges/bars layout. History is always collected (≈1 MB) so toggling
   is instant.
-- Chart window cycling (`g`/`G`) through `charts.window_cycle`, window label in the footer;
+- Chart window cycling (`g`/`G`) through `charts.window_cycle`, window label in the header;
   `a` toggles ASCII rendering at runtime; chart panels shrink first (down to a 4-row chart) when
   the terminal is short.
 - UI fixes from live feedback: fixed-width label column aligns gauges and info rows, table
@@ -127,19 +127,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GPU fan anti-stop floor** (SPEC §7.5, `T5.8`): opt-in guard that holds every controllable GPU
   fan at a software duty cycle while the GPU is idle and hands it back to the driver's automatic
   curve the moment load or temperature rises — the fix for NVIDIA's zero-RPM parking. Toggle with
-  `f` (footer shows `anti-stop ON (n at floor)`, debug overlay shows the guard state), configure
-  via `fan_guard.*` (floor %, idle load/temp, release hysteresis); off by default. Safety rails:
-  hysteresis instead of flapping, fail-safe to auto when load/temp are unknown, back to auto on
-  `f` off and on quit, `floor_percent < 5` rejected (0 % would stop the fans the guard exists to
-  keep spinning). Writes use `POST /Sensor?action=Set` with a zero-length body (`value=null` →
-  `SetDefault`) — the GET path hangs on errors and carries no result marker — and are the only
-  hardware interaction in v0.1.
+  `f` (the message lands on the status line and as a toast; the debug overlay shows the guard
+  state), configure via `fan_guard.*` (floor %, idle load/temp, release hysteresis); off by
+  default. Safety rails: hysteresis instead of flapping, fail-safe to auto when load/temp are
+  unknown, back to auto on `f` off and on quit, `floor_percent < 5` rejected (0 % would stop the
+  fans the guard exists to keep spinning). Writes use `POST /Sensor?action=Set` with a zero-length
+  body (`value=null` → `SetDefault`) — the GET path hangs on errors and carries no result marker —
+  and are the only hardware interaction in v0.1.
+- `h` opens the help/key-map popup (second default binding of `help`, alongside `?`), and the
+  popup now also lists the fixed scroll keys.
 - `lhm-tui.example.json` and `schema/lhm-tui.schema.json` gained the `fan_guard` section, and the
   default keymap gained `f` (`toggle_fan_guard`).
-- Tests: 165 total.
+- Tests: 166 total.
 
 ### Changed
 
+- The permanent key-hint bar at the bottom is gone: the full key map lives in the `h`/`?` popup
+  (which now also lists the scroll keys), the chart window label moved into the header, and the
+  bottom line is a status line mirroring the transient toast — bright while the toast is fresh
+  (12 s), muted afterwards — so the fan anti-stop state, reload results and errors stay visible.
 - `fan_guard.floor_percent` default raised 20 → **45 %**: the anti-stop floor should be clearly
   audible/spinning rather than a barely-moving fan, and 45 % still leaves the driver curve full
   range below the release hysteresis.

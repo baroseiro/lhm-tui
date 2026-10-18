@@ -201,6 +201,27 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
 }
 
 #[test]
+fn h_opens_help_and_status_line_keeps_the_last_message() {
+    let (mut app, cfg) = live_app();
+
+    // The key map moved from the footer into the `h`/`?` popup (T4.4).
+    handle_event(&mut app, key(KeyCode::Char('h')), &cfg);
+    assert!(app.help_visible, "h opens the key map");
+    handle_event(&mut app, key(KeyCode::Esc), &cfg);
+    assert!(!app.help_visible, "any key closes it");
+
+    // Actions raise the transient toast *and* the persistent status line.
+    assert!(app.status_line.is_none());
+    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    let message = app.status_line.clone().expect("status line set");
+    assert!(message.contains("anti-stop"), "got: {message}");
+
+    // The run loop clears the toast after 12 s; the status line stays put.
+    app.toast = None;
+    assert_eq!(app.status_line.as_deref(), Some(message.as_str()));
+}
+
+#[test]
 fn enter_toggles_zoom() {
     let (mut app, cfg) = live_app();
     handle_event(&mut app, key(KeyCode::Enter), &cfg);

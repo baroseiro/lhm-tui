@@ -314,10 +314,10 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 
 #### T5.8 — GPU fan anti-stop floor (pulled forward from v0.2)
 **Goal:** Optional GPU fan floor (SPEC §7.5): while a GPU is idle (load ≤ `fan_guard.idle_load_percent` **and** hottest temperature ≤ `idle_temp_c`), hold every bound fan `Control` at `fan_guard.floor_percent`; hand control back to the driver (`value=null` → `SetDefault`) when load/temp cross the hysteresis margins, on `f` toggle-off, on quit, and whenever load/temp are unknown (fail-safe). Off by default; the only hardware write in v0.1.
-**Files:** `src/fan_guard.rs`, `src/lhm/client.rs` (`set_sensor_control`), `src/app.rs` (control task, `f`, exit sweep), `src/ui/mod.rs` (footer + debug), `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, SPEC §7.5/§8.2/§8.3/§3.2/§6.4.
+**Files:** `src/fan_guard.rs`, `src/lhm/client.rs` (`set_sensor_control`), `src/app.rs` (control task, `f`, exit sweep), `src/ui/mod.rs` (status line + debug), `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, SPEC §7.5/§8.2/§8.3/§3.2/§6.4.
 **Notes:** `/Sensor?action=Set` answers HTTP 200 — accept/reject must be read from the JSON body (`result: ok|fail`). Write only on state transitions. `floor_percent < 5` is a validation error so the guard can never stop the fans.
 **Done when:** Mock-server tests for set/null/rejection; decision-table unit tests (idle, hysteresis, fail-safe, no controls); interaction test for `f` engage → release; frames/help snapshots updated; real-hardware smoke recorded in `docs/qa-matrix.md`.
-**Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table), background control task with per-URL client cache and toast reporting, `f` toggle + footer `anti-stop ON (n at floor)` + debug overlay line, hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
+**Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table), background control task with per-URL client cache and toast reporting, `f` toggle (message lands on the status line + toast) + debug overlay line, hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
 
 ---
 

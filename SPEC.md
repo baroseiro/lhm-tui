@@ -433,9 +433,12 @@ CPU, memory and each GPU occupy the full width; two GPUs (or GPU + thermal) sit 
 │ │ ██████████████░░░░░░░ 62 %  20.1 / 32.0 GB│ │ Core (Tctl/Tdie)    69.5 °C  ██████░│ │
 │ │      ╰╮╭────────╮  ╰───────────  38.9 GB  │ │ GPU Core            52.0 °C  ████░░░│ │
 │ └──────────────────────────────────────────┘ └───────────────────────────────────────┘ │
-│ q quit  ? help  p pause  g window(5m)  enter zoom  tab focus  r reload  m reset mm  d dbg│
+│ fan anti-stop ON — 3 fan control(s): 45% below 10% load / 65 °C, auto otherwise          │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+Line 2 is the transient toast (12 s) and the bottom line is the status line settling to the
+same message; the full key map is a popup (`?` or `h`), not a permanent key bar.
 
 Responsive rules:
 
@@ -454,6 +457,8 @@ Responsive rules:
 | `table`     | Scrollable sensor table (columns: name, value, unit, LHM min, LHM max, window min, window max, bar)     |
 | `sparkline` | One-line 60-second trend for a value inside headers/gauges                                              |
 | `statusdot` | `●` green live / `●` yellow stale (age) / `●` red reconnecting / `○` paused                            |
+| `toast`     | Transient alert on line 2 (fades after 12 s); mirrored by the status line                              |
+| `statusbar` | Bottom line: latest status message — bright while the toast is fresh, muted afterwards                  |
 
 ### 6.3 Preset panels (v0.1)
 
@@ -474,11 +479,11 @@ Responsive rules:
 | Keys                     | Action                                                          |
 | ------------------------ | --------------------------------------------------------------- |
 | `q`, `Esc`, `Ctrl+C`     | Quit                                                            |
-| `?`                      | Help overlay (live keymap with remaps)                           |
+| `?`, `h`                 | Help overlay: full key map with live remaps (any key closes)     |
 | `p`, `Space`             | Pause / resume polling (charts keep rendering last data)         |
 | `g` / `G`                | Cycle chart window forward/backward through `charts.window_cycle` |
 | `Tab` / `Shift+Tab`      | Move focus to next/previous panel                               |
-| `←` `↓` `↑` `→`, `h j k l` | Scroll focused table / move selection                         |
+| `←` `↓` `↑` `→`, `j` `k` | Scroll focused table / move selection                    |
 | `Enter`                  | Toggle zoom: focused panel fullscreen                            |
 | `b`                      | Sensor browser overlay (searchable list; `Enter` pins sensor to zoom chart) |
 | `s`                      | Cycle table sort: value ↓ · value ↑ · name · default             |
@@ -649,7 +654,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
     "fps": 30,                        // render tick 1..60 (redraw-on-change still applies)
     "layout": ["cpu", "gpu", "memory"],  // thermal hidden by default — t toggles it
     "show_header": true,
-    "show_footer": true,
+    "show_footer": true,              // bottom status line (latest message)
     "max_height": 12,                 // max rows a table panel may grow to
     "auto_height": true,              // stretch panels (charts first) to fill the terminal
     "table_sort": "value_desc",       // value_desc | value_asc | name | none

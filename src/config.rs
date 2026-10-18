@@ -161,6 +161,7 @@ pub struct UiConfig {
     pub fps: u32,
     pub layout: Vec<String>,
     pub show_header: bool,
+    /// Bottom status line (latest status message; keys live in the `h`/`?` popup).
     pub show_footer: bool,
     pub max_height: u32,
     pub table_sort: TableSort,
@@ -514,7 +515,7 @@ pub const BUILTIN_THEMES: &[&str] = &["default", "gruvbox", "nord", "mono", "cus
 fn default_keys() -> BTreeMap<String, Vec<String>> {
     let entries: [(&str, &[&str]); 17] = [
         ("quit", &["q", "esc", "ctrl+c"]),
-        ("help", &["?"]),
+        ("help", &["?", "h"]),
         ("pause", &["p", "space"]),
         ("window_next", &["g"]),
         ("window_prev", &["G"]),
@@ -1264,6 +1265,7 @@ mod tests {
         assert_eq!(config.keys["toggle_thermal"], vec!["t"]);
         assert_eq!(config.keys["toggle_charts"], vec!["c"]);
         assert_eq!(config.keys["toggle_fan_guard"], vec!["f"]);
+        assert_eq!(config.keys["help"], vec!["?", "h"]);
         assert_eq!(config.keys.len(), 17);
         assert!(!config.fan_guard.enabled, "fan writes off by default");
         assert_eq!(config.fan_guard.floor_percent, 45.0);

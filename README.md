@@ -103,7 +103,7 @@ lhm-tui --help
 | Keys                  | Action                                  |
 | --------------------- | --------------------------------------- |
 | `q` / `Esc` / `Ctrl+C`| Quit                                    |
-| `?`                   | Help overlay                            |
+| `?` / `h`             | Help overlay — full key map             |
 | `p` / `Space`         | Pause / resume polling                  |
 | `g` / `G`             | Cycle chart window (1m · 5m · 15m)      |
 | `Tab` / `Shift+Tab`   | Focus next / previous panel             |
@@ -116,7 +116,9 @@ lhm-tui --help
 | `t` / `c`             | Toggle temperatures table / charts      |
 | `f`                   | Toggle GPU fan anti-stop floor (off by default) |
 
-All keys are remappable in the config file.
+All keys are remappable in the config file. The overlay (`h` or `?`) shows the live key map for
+your remaps, and the bottom line is a status line with the latest message (reload results, fan
+anti-stop state, errors) — the chart window label moved into the header.
 
 ## Configuration
 

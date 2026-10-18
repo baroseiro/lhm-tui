@@ -101,10 +101,13 @@ pub struct AppState {
     pub thermal_override: Option<bool>,
     /// `c` key override for `charts.enabled`.
     pub charts_override: Option<bool>,
-    /// `?` help overlay visibility (any key press closes it).
+    /// `?`/`h` help overlay visibility (any key press closes it).
     pub help_visible: bool,
-    /// Startup warnings shown as a toast (unknown config keys, …).
+    /// Transient alert shown on the second line (fades after 12 s).
     pub toast: Option<(String, Instant)>,
+    /// Last status message: mirrored by the bottom status line and kept after
+    /// the toast fades (fan anti-stop state, reload results, errors, …).
+    pub status_line: Option<String>,
     /// Focused-panel fullscreen zoom (`enter`, T5.2).
     pub zoomed: bool,
     /// Sensor browser overlay (`b`, T5.2): filter text and selection.
@@ -162,6 +165,7 @@ impl AppState {
             charts_override: None,
             help_visible: false,
             toast: None,
+            status_line: None,
             zoomed: false,
             browser_open: false,
             browser_query: String::new(),
@@ -183,6 +187,13 @@ impl AppState {
     /// Latest snapshot, when one has been received.
     pub fn snapshot(&self) -> Option<&Snapshot> {
         self.last_fetch.as_deref().map(|fetched| &fetched.snapshot)
+    }
+
+    /// Raise a status message: transient toast on the second line **and** the
+    /// persistent bottom status line (SPEC §6.1).
+    pub fn set_toast(&mut self, message: String) {
+        self.status_line = Some(message.clone());
+        self.toast = Some((message, Instant::now()));
     }
 
     /// Effective table sort: `s` override when set, else the configured default.
@@ -358,7 +369,7 @@ async fn run_loop(
     let mut app = AppState::new();
     app.cli = Some(options.cli.clone());
     if !options.warnings.is_empty() {
-        app.toast = Some((options.warnings.join("  ·  "), Instant::now()));
+        app.set_toast(options.warnings.join("  ·  "));
     }
     let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
     app.notice_tx = Some(notice_tx.clone());
@@ -414,7 +425,7 @@ async fn run_loop(
                 None => app.should_quit = true,
             },
             Some(message) = notice_rx.recv() => {
-                app.toast = Some((message, Instant::now()));
+                app.set_toast(message);
                 app.dirty = true;
             }
             changed = poll_events.changed(), if poller_alive => {
@@ -670,7 +681,7 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
                 cfg.fan_guard.floor_percent, cfg.fan_guard.idle_load_percent, cfg.fan_guard.idle_temp_c
             )
         };
-        app.toast = Some((message, Instant::now()));
+        app.set_toast(message);
     } else if key_matches(&key, "down") || key_matches(&key, "j") {
         scroll_focused(app, cfg, 1);
     } else if key_matches(&key, "up") || key_matches(&key, "k") {
@@ -908,10 +919,7 @@ fn release_engaged_fans(app: &mut AppState, cfg: &Config) {
 /// previous config stays active.
 pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cli::Cli>) {
     let Some(cli) = cli else {
-        app.toast = Some((
-            "reload unavailable (no CLI handle)".to_string(),
-            Instant::now(),
-        ));
+        app.set_toast("reload unavailable (no CLI handle)".to_string());
         app.dirty = true;
         return;
     };
@@ -935,11 +943,11 @@ pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cl
             if !loaded.warnings.is_empty() {
                 message = format!("{message}  ·  {}", loaded.warnings.join("  ·  "));
             }
-            app.toast = Some((message, Instant::now()));
+            app.set_toast(message);
         }
         Err(err) => {
             let message = format!("reload failed: {}", err.to_string().replace('\n', "  "));
-            app.toast = Some((message, Instant::now()));
+            app.set_toast(message);
         }
     }
     app.dirty = true;
@@ -1291,6 +1299,13 @@ mod tests {
         handle_event(&mut app, Event::Key(q), &cfg);
         assert!(!app.help_visible);
         assert!(!app.should_quit, "q closed the help, not the app");
+
+        // `h` is the second default help binding (SPEC §6.4).
+        let h = KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE);
+        handle_event(&mut app, Event::Key(h), &cfg);
+        assert!(app.help_visible, "h opens the key map");
+        handle_event(&mut app, Event::Key(q), &cfg);
+        assert!(!app.help_visible);
 
         // q quits once the overlay is closed.
         handle_event(&mut app, Event::Key(q), &cfg);
