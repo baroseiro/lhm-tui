@@ -249,23 +249,29 @@ pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config, charts_
             };
             (content + 2).max(3)
         }
-        PanelKind::Gpu(_) => {
+        PanelKind::Gpu(index) => {
             let show = &cfg.panels.gpu.show;
+            let fans = u16::from(
+                shows(show, "fan")
+                    && bindings
+                        .gpus
+                        .get(*index)
+                        .is_some_and(|gpu| !gpu.fans.is_empty()),
+            );
             let vram = u16::from(shows(show, "memory"));
-            let info =
-                u16::from(shows(show, "power") || shows(show, "fan") || shows(show, "clock"));
+            let info = u16::from(shows(show, "power") || shows(show, "clock"));
             let content = if charts_on {
                 let graphs = u16::from(shows(show, "load") || shows(show, "memory"))
                     + u16::from(shows(show, "temp"));
                 if graphs > 0 {
-                    chart + vram + info
+                    chart + vram + info + fans
                 } else {
-                    vram + info
+                    vram + info + fans
                 }
             } else {
                 let temps = if shows(show, "temp") { 3 } else { 0 };
                 let load = u16::from(shows(show, "load"));
-                temps + load + vram + info
+                temps + load + vram + info + fans
             };
             (content + 2).max(3)
         }
@@ -730,16 +736,13 @@ fn draw_gpu(
     }
 
     let show = |slot: &str| shows(&ctx.cfg.panels.gpu.show, slot);
-    let pairs: Vec<(&str, String)> = [
-        ("Power", &gpu.power),
-        ("Fan", &gpu.fan),
-        ("Clock", &gpu.clock),
-    ]
-    .into_iter()
-    .filter(|(label, slot)| slot.is_some() && show(&label.to_ascii_lowercase()))
-    .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
-    .collect();
+    let pairs: Vec<(&str, String)> = [("Power", &gpu.power), ("Clock", &gpu.clock)]
+        .into_iter()
+        .filter(|(label, slot)| slot.is_some() && show(&label.to_ascii_lowercase()))
+        .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
+        .collect();
     let vram_shown = show("memory");
+    let fans_shown = show("fan") && !gpu.fans.is_empty();
 
     if ctx.charts_on() {
         let mut graphs: Vec<(String, Vec<Series>, YMode)> = Vec::new();
@@ -776,8 +779,9 @@ fn draw_gpu(
                 graphs.push((format!("{panel_key}:temp"), series, YMode::Auto));
             }
         }
-        if !graphs.is_empty() || vram_shown || !pairs.is_empty() {
-            let reserved = u16::from(vram_shown) + u16::from(!pairs.is_empty());
+        if !graphs.is_empty() || vram_shown || !pairs.is_empty() || fans_shown {
+            let reserved =
+                u16::from(vram_shown) + u16::from(!pairs.is_empty()) + u16::from(fans_shown);
             let chart_height = if graphs.is_empty() {
                 0
             } else {
@@ -819,6 +823,16 @@ fn draw_gpu(
                     height: 1,
                 };
                 widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
+                offset += 1;
+            }
+            if fans_shown {
+                let fans_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 1,
+                };
+                draw_gpu_fans(frame, fans_rect, ctx, gpu);
             }
             return;
         }
@@ -826,7 +840,7 @@ fn draw_gpu(
 
     // Gauge fallback (charts off, or nothing chartable).
     let mut constraints: Vec<Constraint> = Vec::new();
-    let mut plan: Vec<u8> = Vec::new(); // 0 temp, 1 hotspot, 2 mem_temp, 3 load, 4 vram, 5 info
+    let mut plan: Vec<u8> = Vec::new(); // 0 temp, 1 hotspot, 2 mem_temp, 3 load, 4 vram, 5 info, 6 fans
     if show("temp") {
         for kind in 0..3 {
             constraints.push(Constraint::Length(1));
@@ -844,6 +858,10 @@ fn draw_gpu(
     if !pairs.is_empty() {
         constraints.push(Constraint::Length(1));
         plan.push(5);
+    }
+    if fans_shown {
+        constraints.push(Constraint::Length(1));
+        plan.push(6);
     }
     if constraints.is_empty() {
         return;
@@ -880,8 +898,51 @@ fn draw_gpu(
             ),
             3 => gauge_for_slot(frame, *row, "Load", ctx, &gpu.load, 100.0, Metric::Load),
             4 => draw_vram_gauge(frame, *row, ctx, gpu),
+            6 => draw_gpu_fans(frame, *row, ctx, gpu),
             _ => widgets::info_line(frame, *row, &pairs, ctx.theme, ctx.stale),
         }
+    }
+}
+
+/// One line with every fan on the card: `Fan 1 1205 RPM  Fan 2 1180 RPM`
+/// (single-fan cards keep the compact `Fan` label).
+fn draw_gpu_fans(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindings) {
+    if area.height == 0 || gpu.fans.is_empty() {
+        return;
+    }
+    let multi = gpu.fans.len() > 1;
+    let labels: Vec<String> = gpu
+        .fans
+        .iter()
+        .enumerate()
+        .map(|(index, row)| fan_label(&row.fan.label, index, multi))
+        .collect();
+    let pairs: Vec<(&str, String)> = labels
+        .iter()
+        .zip(&gpu.fans)
+        .map(|(label, row)| {
+            (
+                label.as_str(),
+                slot_display(ctx.snapshot, &Some(row.fan.clone())),
+            )
+        })
+        .collect();
+    widgets::info_line(frame, area, &pairs, ctx.theme, ctx.stale);
+}
+
+/// `GPU Fan 2` → `Fan 2`; single-fan cards stay `Fan`.
+fn fan_label(name: &str, index: usize, multi: bool) -> String {
+    if !multi {
+        return "Fan".to_string();
+    }
+    let digits = name
+        .rsplit(|c: char| !c.is_ascii_digit())
+        .next()
+        .unwrap_or("");
+    if digits.is_empty() {
+        format!("Fan {}", index + 1)
+    } else {
+        format!("Fan {digits}")
     }
 }
 

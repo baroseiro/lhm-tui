@@ -18,7 +18,7 @@ expression: out
 │● GPU │  s                  Cycle table sort                           │      │
 │ VRAM │  r                  Reload config                              │64 MB │
 │ Power│  m                  Reset LHM min/max                          │      │
-╰──────│  a                  Toggle ASCII rendering                     │──────╯
+╰ Fan  │  a                  Toggle ASCII rendering                     │──────╯
 ╭ Memor│  d                  Debug overlay                              │──────╮
 │⠁⠁⠁⠁⠁⠁│  t                  Toggle temperatures table                  │⠁⠁⠁⠁⠁⠁│
 │⠄⠄⠄⠄⠄⠄│  c                  Toggle charts                              │⠄⠄⠄⠄⠄⠌│

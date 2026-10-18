@@ -130,6 +130,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - SPEC §9 documents `--dump` as a public machine surface (timestamps as Unix seconds) and the
   `--once` no-alternate-screen/colour behaviour.
+- GPU panels list **every fan on the card** (`Fan 1 … Fan 2 …`, paired with their controls by
+  name; single-fan cards keep the compact `Fan` label; `gpu.<n>.fan` pins one). Fans moved to
+  their own row, and panel heights account for it.
+- `panels.gpu.show` gains `clock` in the defaults (the show-gating in P4 had silently hidden GPU
+  clocks, which SPEC §6.3 lists as part of the panel).
 
 ### Changed
 

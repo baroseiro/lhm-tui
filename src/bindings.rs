@@ -46,7 +46,9 @@ pub struct GpuBindings {
     pub mem_temp: Option<Slot>,
     pub power: Option<Slot>,
     pub clock: Option<Slot>,
-    pub fan: Option<Slot>,
+    /// Every fan on the card (multi-fan GPUs), paired with its control by
+    /// name. A `gpu.<n>.fan` override pins a single fan.
+    pub fans: Vec<FanRow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,9 +368,36 @@ fn gpu_bindings(
     let clock = find_slot(snapshot, hardware, overrides, &key("clock"), || {
         find_named(hardware, &SensorKind::Clock, &["GPU Core", "GFX Core"])
     });
-    let fan = find_slot(snapshot, hardware, overrides, &key("fan"), || {
-        find_named(hardware, &SensorKind::Fan, &["GPU Fan", "Fan #1"])
-    });
+    // All fans on the card; `gpu.<n>.fan` pins a single one (T2.2 extension).
+    let fans = if let Some(rule) = overrides.get(&key("fan")) {
+        resolve_override(snapshot, rule)
+            .map(|(hardware, sensor)| {
+                vec![FanRow {
+                    hardware_id: hardware.id.clone(),
+                    fan: slot_of(hardware, sensor),
+                    control: None,
+                }]
+            })
+            .unwrap_or_default()
+    } else {
+        hardware
+            .sensors()
+            .filter(|sensor| sensor.kind == SensorKind::Fan)
+            .map(|sensor| {
+                let control = hardware
+                    .sensors()
+                    .find(|candidate| {
+                        candidate.kind == SensorKind::Control && candidate.name == sensor.name
+                    })
+                    .map(|control| slot_of(hardware, control));
+                FanRow {
+                    hardware_id: hardware.id.clone(),
+                    fan: slot_of(hardware, sensor),
+                    control,
+                }
+            })
+            .collect()
+    };
 
     GpuBindings {
         hardware_id: hardware.id.clone(),
@@ -382,7 +411,7 @@ fn gpu_bindings(
         mem_temp,
         power,
         clock,
-        fan,
+        fans,
     }
 }
 

@@ -106,7 +106,8 @@
         "memory",
         "temp",
         "power",
-        "fan"
+        "fan",
+        "clock"
       ]
     },
     "memory": {

@@ -368,7 +368,7 @@ hardware order in the tree (stable within a session). Slots:
 | `power`       | Power       | `GPU Package`, `GPU Power`, first `Power`                       |
 | `clock_gfx`   | Clock       | `GPU Core`, `GFX Core`                                          |
 | `clock_mem`   | Clock       | `GPU Memory`, `Mem Core`                                        |
-| `fan`         | Fan         | `GPU Fan`, `Fan #1`                                             |
+| `fan`         | Fan         | **all** fans on the card, paired with Controls by name (`GPU Fan 1`, `GPU Fan 2`, …); `gpu.<n>.fan` override pins a single fan |
 
 **Memory panel** — hardware `Memory` (RAM):
 
@@ -449,7 +449,7 @@ Responsive rules:
 | Key           | Contents                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
 | `cpu`         | temp graph + total-load graph (dual series), per-core bars, clock/power gauges   |
-| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + power/clock/fan gauges |
+| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + power/clock gauges + a row with every fan |
 | `memory`      | used/available gauge + used-load graph + optional page file/virtual gauges       |
 | `thermal`     | table of all temperature sensors, sorted desc (hidden by default; `t` or list it in `ui.layout`) |
 | `fans`        | table of fans (+control % column)                                                 |
@@ -650,7 +650,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   "panels": {
     "cpu":  { "enabled": true, "show": ["temp", "load", "core_loads", "clock", "power"] },
     "gpu":  { "enabled": true, "include": ["GpuNvidia", "GpuAmd", "GpuIntel"], "per_row": 2,
-              "show": ["load", "memory", "temp", "power", "fan"] },
+              "show": ["load", "memory", "temp", "power", "fan", "clock"] },
     "memory": { "enabled": true, "show": ["used", "load", "virtual"] },
     "thermal": { "enabled": true },
     "fans":   { "enabled": false },

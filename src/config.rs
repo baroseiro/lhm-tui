@@ -337,7 +337,7 @@ impl Default for GpuPanel {
                 .map(String::from)
                 .to_vec(),
             per_row: 2,
-            show: ["load", "memory", "temp", "power", "fan"]
+            show: ["load", "memory", "temp", "power", "fan", "clock"]
                 .map(String::from)
                 .to_vec(),
         }

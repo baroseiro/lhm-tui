@@ -58,7 +58,8 @@ fn reference_fixture_slots() {
         "no memory junction in this fixture"
     );
     assert_eq!(slot_id(&gpu.power), Some("/nvidiagpu/0/power/1"));
-    assert_eq!(slot_id(&gpu.fan), Some("/nvidiagpu/0/fan/0"));
+    assert_eq!(gpu.fans.len(), 1, "single fan in this fixture");
+    assert_eq!(gpu.fans[0].fan.sensor_id, "/nvidiagpu/0/fan/0");
 
     // Memory: primary = /ram, no virtual in this fixture.
     let memory = bindings.memory.as_ref().expect("memory binding");
@@ -114,10 +115,15 @@ fn live_fixture_dual_gpu_machine() {
         slot_label(&snapshot, &nvidia.mem_load).as_deref(),
         Some("GPU Memory")
     );
-    assert_eq!(
-        slot_label(&snapshot, &nvidia.fan).as_deref(),
-        Some("GPU Fan 1")
-    );
+    // Multi-fan cards: both NVIDIA fans bind, each paired with its control.
+    let nvidia_fan_labels: Vec<&str> = nvidia
+        .fans
+        .iter()
+        .map(|row| row.fan.label.as_str())
+        .collect();
+    assert_eq!(nvidia_fan_labels, vec!["GPU Fan 1", "GPU Fan 2"]);
+    assert!(nvidia.fans.iter().all(|row| row.control.is_some()));
+    assert_eq!(amd.fans.len(), 1, "AMD card reports a single fan");
     assert_eq!(
         slot_label(&snapshot, &nvidia.mem_temp).as_deref(),
         Some("GPU Memory Junction"),
@@ -320,10 +326,11 @@ fn layout_rows_and_auto_height() {
     );
 
     // Auto-height distributes spare rows to chart panels, and side-by-side
-    // GPUs share one row (never counted twice).
+    // GPUs share one row (never counted twice). Live GPUs have fans → the GPU
+    // panel carries one extra fixed row (chart + VRAM + info + fans + borders).
     let rows = presets::layout_rows(&panels, 2);
     let heights = presets::fit_heights(&panels, &bindings, &cfg, 50, true, &rows);
-    let base_total = cfg.charts.height + 5 + (cfg.charts.height + 4) + (cfg.charts.height + 4);
+    let base_total = cfg.charts.height + 5 + (cfg.charts.height + 5) + (cfg.charts.height + 4);
     let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
     assert_eq!(row_total, 50, "fills the available height: {heights:?}");
     assert!(row_total > base_total);
@@ -332,7 +339,11 @@ fn layout_rows_and_auto_height() {
     // Overflow squeezes chart rows down to the minimum first.
     let heights = presets::fit_heights(&panels, &bindings, &cfg, 20, true, &rows);
     assert_eq!(heights[0], 5 + 4, "cpu at minimum chart height");
-    assert_eq!(heights[1], 4 + 4, "gpu at minimum chart height");
+    assert_eq!(
+        heights[1],
+        5 + 4,
+        "gpu at minimum chart height (fans row fixed)"
+    );
     assert_eq!(heights[3], 4 + 4, "memory at minimum chart height");
 
     // auto_height off keeps base heights.
