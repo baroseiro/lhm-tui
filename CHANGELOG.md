@@ -85,8 +85,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overflow — also fixing a row double-counting bug that needlessly squeezed side-by-side GPUs.
 - Chart polish: series shorter than the pixel width right-align, so live charts grow from the
   right edge instead of stretching one sample across the screen.
-- Tests: 112 total, including layout-row grouping, auto-height distribution, right-aligned
-  decimation, and the `t`/`c` toggle keys.
+- Tests: layout-row grouping, auto-height distribution, right-aligned decimation, and the `t`/`c`
+  toggle keys.
+- Config depth (P4) completed:
+  - `panels.*.show` lists now really control CPU/GPU/memory panel rows (temps, load, core bars,
+    VRAM, clock, power, fan, virtual memory, …) and panel heights follow the selection.
+  - Full config validation with actionable errors: sensor-override slot keys, show-list slots,
+    `gpu.include` kinds, custom-widget sensor sources and regexes, theme names/colors, and key
+    actions/specs/conflicts — all collected and exit 2; typos are no longer silent.
+  - Custom panels (T4.2) render for real: `graph`, `gauge`, `bars`, `sparkline` and `table`
+    widgets with exact `sensor` ids or `match` rules, filters for tables/bars, palette-or-hex
+    colors and unit overrides; unknown sensors render `n/a`.
+  - Themes (T4.3): built-in palettes `default`/`gruvbox`/`nord`/`mono` with per-field overrides,
+    automatic truecolor → 256 → 16 downgrades for the detected terminal, working
+    `NO_COLOR`/`--no-color` plain rendering, and `--theme <name|file>` (theme files are validated
+    like the main config).
+  - Key remapping hardened (T4.4) and the `?` help overlay shows the live, remapped keymap.
+  - `schema/lhm-tui.schema.json` ships complete (T4.5) and is enforced in tests against the
+    example config, plus negative tests proving it rejects broken configs.
+  - Startup config warnings surface as a 12 s toast in the TUI (T4.6); validation output has a
+    snapshot test.
+- Key matching ignores the SHIFT bit for character keys (fixes `?` on terminals that report
+  `shift+/`), and `--theme` accepts built-in names or a theme file path.
 
 ### Changed
 

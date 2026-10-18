@@ -9,7 +9,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
-use crate::config::{PanelsConfig, SensorOverride};
+use crate::config::{PanelsConfig, SensorMatch, SensorOverride};
 use crate::lhm::model::{Hardware, HardwareKind, Sensor, SensorKind, Snapshot};
 
 /// A resolved slot: which sensor feeds a panel element.
@@ -579,15 +579,34 @@ fn resolve_override<'a>(
     snapshot: &'a Snapshot,
     rule: &SensorOverride,
 ) -> Option<(&'a Hardware, &'a Sensor)> {
-    if let Some(id) = &rule.sensor {
+    resolve_sensor_ref(snapshot, rule.sensor.as_deref(), rule.matcher.as_ref())
+}
+
+/// Resolve a sensor reference (exact id or match rule) — used by
+/// `panels.sensor_overrides` and custom-panel widgets.
+pub fn resolve_sensor_ref<'a>(
+    snapshot: &'a Snapshot,
+    sensor_id: Option<&str>,
+    matcher: Option<&SensorMatch>,
+) -> Option<(&'a Hardware, &'a Sensor)> {
+    if let Some(id) = sensor_id {
         return snapshot
             .all_hardware()
             .into_iter()
             .find_map(|hardware| hardware.sensor(id).map(|sensor| (hardware, sensor)));
     }
+    resolve_matcher(snapshot, matcher?)
+}
 
-    let matcher = rule.matcher.as_ref()?;
+fn resolve_matcher<'a>(
+    snapshot: &'a Snapshot,
+    matcher: &SensorMatch,
+) -> Option<(&'a Hardware, &'a Sensor)> {
     let hardware_kind = matcher.hardware.as_deref().and_then(parse_hardware_kind);
+    let hardware_id = matcher
+        .hardware
+        .as_deref()
+        .filter(|value| value.starts_with('/'));
     let sensor_kind = matcher.sensor_type.as_deref().map(parse_sensor_kind);
     let name_regex = matcher
         .name_regex
@@ -596,6 +615,9 @@ fn resolve_override<'a>(
 
     snapshot.all_hardware().into_iter().find_map(|hardware| {
         if hardware_kind.is_some_and(|kind| hardware.kind != kind) {
+            return None;
+        }
+        if hardware_id.is_some_and(|id| hardware.id != id) {
             return None;
         }
         hardware
@@ -612,6 +634,11 @@ fn resolve_override<'a>(
             })
             .map(|sensor| (hardware, sensor))
     })
+}
+
+/// Build a [`Slot`] from a resolved hardware/sensor pair.
+pub fn slot_for(hardware: &Hardware, sensor: &Sensor) -> Slot {
+    slot_of(hardware, sensor)
 }
 
 fn normalize(text: &str) -> String {

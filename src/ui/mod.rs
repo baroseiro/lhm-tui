@@ -14,7 +14,7 @@ use std::time::Instant;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, BorderType, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{AppState, LinkStatus};
@@ -25,7 +25,13 @@ use crate::ui::presets::PanelCtx;
 use crate::util::human_bytes;
 
 pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
-    let theme = Theme::from_config(&cfg.theme);
+    let mut theme = Theme::from_config(&cfg.theme);
+    // NO_COLOR (environment) and `--no-color`/`ui.no_color` strip colours;
+    // RGB values are then downgraded for the terminal's colour depth (T4.3).
+    if cfg.ui.no_color || std::env::var_os("NO_COLOR").is_some() {
+        theme = Theme::plain();
+    }
+    theme = theme.downgraded(crate::theme::detect_color_depth());
     let area = frame.area();
 
     if area.width < 60 || area.height < 20 {
@@ -33,8 +39,9 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
         return;
     }
 
-    let [header, body, footer] = Layout::vertical([
+    let [header, toast, body, footer] = Layout::vertical([
         Constraint::Length(1),
+        Constraint::Length(u16::from(app.toast.is_some())),
         Constraint::Min(3),
         Constraint::Length(1),
     ])
@@ -42,6 +49,12 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
 
     if cfg.ui.show_header {
         frame.render_widget(header_line(app, cfg, area), header);
+    }
+    if let Some((message, _)) = &app.toast {
+        frame.render_widget(
+            Paragraph::new(Span::styled(message.clone(), Style::new().fg(theme.warn))),
+            toast,
+        );
     }
 
     let stale = matches!(app.link, LinkStatus::Stale | LinkStatus::Reconnecting)
@@ -57,6 +70,44 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
     if cfg.ui.show_footer {
         frame.render_widget(footer_line(app, cfg), footer);
     }
+    if app.help_visible {
+        render_help(frame, area, cfg, &theme);
+    }
+}
+
+/// `?` overlay: remapped keys with their action descriptions (T4.4).
+fn render_help(frame: &mut Frame, area: Rect, cfg: &Config, theme: &Theme) {
+    let width = area.width.saturating_sub(8).clamp(30, 66);
+    let height = (crate::config::KNOWN_ACTIONS.len() as u16 + 4)
+        .min(area.height.saturating_sub(2))
+        .max(6);
+    let popup = Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, popup);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(" Help — any key closes ")
+        .border_style(Style::new().fg(theme.accent));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let mut lines: Vec<Line> = Vec::new();
+    for (action, description) in crate::config::KNOWN_ACTIONS {
+        let keys = cfg
+            .keys
+            .get(*action)
+            .map(|specs| specs.join(", "))
+            .unwrap_or_else(|| "-".to_string());
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {keys:<18} "), Style::new().fg(theme.muted)),
+            Span::styled((*description).to_string(), Style::new().fg(theme.text)),
+        ]));
+    }
+    frame.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 fn render_too_small(frame: &mut Frame, area: Rect, theme: &Theme) {

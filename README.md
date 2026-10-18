@@ -162,6 +162,9 @@ Common things people change:
 | Remap keys                          | `keys`                                                                  |
 | Turn charts off                     | `charts.enabled: false` (or run with `--no-charts`, or press `c`)       |
 | Show the temperatures table         | Press `t`, or add `"thermal"` to `ui.layout`                            |
+| Switch theme                        | `theme.name`: `default`, `gruvbox`, `nord` or `mono`                    |
+| Custom theme file                   | `lhm-tui --theme path/to/theme.json` (same shape as the `theme` block)  |
+| Strip all colors                    | `NO_COLOR=1 lhm-tui` or `--no-color`                                    |
 
 CLI flags beat environment variables, which beat the config file.
 

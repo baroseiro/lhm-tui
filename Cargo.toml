@@ -29,6 +29,7 @@ unicode-width = "0.2"
 
 [dev-dependencies]
 insta = "1"
+jsonschema = { version = "0.59", default-features = false }
 
 [profile.release]
 lto = "thin"

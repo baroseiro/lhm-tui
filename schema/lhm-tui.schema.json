@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/baroseiro/lhm-tui/main/schema/lhm-tui.schema.json",
+  "title": "lhm-tui configuration",
+  "description": "Configuration for the lhm-tui LibreHardwareMonitor dashboard. Every field is optional; omitted fields use the built-in defaults (see lhm-tui.example.json).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "default": "http://127.0.0.1:8085" },
+        "username": { "type": ["string", "null"] },
+        "password": { "type": ["string", "null"] },
+        "password_env": { "type": ["string", "null"] },
+        "password_file": { "type": ["string", "null"] },
+        "poll_interval_ms": { "type": "integer", "minimum": 250, "maximum": 60000, "default": 1000 },
+        "request_timeout_ms": { "type": "integer", "minimum": 100, "default": 2000 },
+        "gzip": { "type": "boolean", "default": true },
+        "verify_version": { "type": "boolean", "default": true },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "initial_ms": { "type": "integer", "minimum": 50, "default": 500 },
+            "max_ms": { "type": "integer", "minimum": 1000, "default": 30000 },
+            "factor": { "type": "number", "minimum": 1.0, "default": 2.0 },
+            "jitter": { "type": "number", "minimum": 0.0, "maximum": 0.5, "default": 0.1 }
+          }
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "window_s": { "type": "integer", "minimum": 60, "maximum": 86400, "default": 900 },
+        "max_points_per_series": { "type": "integer", "minimum": 60, "default": 3600 }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fps": { "type": "integer", "minimum": 1, "maximum": 60, "default": 30 },
+        "layout": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["cpu", "gpu", "memory"]
+        },
+        "show_header": { "type": "boolean", "default": true },
+        "show_footer": { "type": "boolean", "default": true },
+        "max_height": { "type": "integer", "minimum": 4, "default": 12 },
+        "auto_height": { "type": "boolean", "default": true },
+        "table_sort": { "enum": ["value_desc", "value_asc", "name", "none"], "default": "value_desc" },
+        "ascii": { "type": "boolean", "default": false },
+        "no_color": { "type": "boolean", "default": false },
+        "pause_position": { "type": "boolean", "default": false }
+      }
+    },
+    "charts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "marker": { "enum": ["braille", "halfblock", "ascii"], "default": "braille" },
+        "height": { "type": "integer", "minimum": 3, "default": 8 },
+        "window": { "type": "string", "default": "5m" },
+        "window_cycle": { "type": "array", "items": { "type": "string" } },
+        "y_mode": { "enum": ["auto", "percent", "fixed"], "default": "auto" },
+        "y_min": { "type": ["number", "null"] },
+        "y_max": { "type": ["number", "null"] },
+        "min_span": { "type": "number", "minimum": 0.0, "default": 1.0 },
+        "grid": { "type": "boolean", "default": true },
+        "legend": { "type": "boolean", "default": true },
+        "blend_overlap": { "type": "boolean", "default": false }
+      }
+    },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "default": "default" },
+        "accent": { "type": "string" },
+        "text": { "type": "string" },
+        "muted": { "type": "string" },
+        "warn": { "type": "string" },
+        "crit": { "type": "string" },
+        "cpu": { "type": "string" },
+        "gpu": { "type": "string" },
+        "memory": { "type": "string" },
+        "network": { "type": "string" },
+        "storage": { "type": "string" },
+        "thresholds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "temperature": { "$ref": "#/$defs/threshold" },
+            "load": { "$ref": "#/$defs/threshold" },
+            "gpu_memory": { "$ref": "#/$defs/threshold" }
+          }
+        }
+      }
+    },
+    "panels": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "show": { "type": "array", "items": { "enum": ["temp", "load", "core_loads", "clock", "power"] } }
+          }
+        },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "include": { "type": "array", "items": { "type": "string" } },
+            "per_row": { "type": "integer", "minimum": 1, "default": 2 },
+            "show": { "type": "array", "items": { "enum": ["load", "memory", "temp", "power", "fan", "clock"] } }
+          }
+        },
+        "memory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "show": { "type": "array", "items": { "enum": ["used", "load", "virtual"] } }
+          }
+        },
+        "thermal": { "$ref": "#/$defs/toggle" },
+        "fans": { "$ref": "#/$defs/toggle" },
+        "power": { "$ref": "#/$defs/toggle" },
+        "storage": { "$ref": "#/$defs/toggle" },
+        "network": { "$ref": "#/$defs/toggle" },
+        "sensor_overrides": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/sensor_override" }
+        },
+        "custom": { "type": "array", "items": { "$ref": "#/$defs/custom_panel" } }
+      }
+    },
+    "keys": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } },
+      "description": "Action → key specs (e.g. q, ctrl+c, shift+tab, f5). See AGENTS.md/SPEC for valid action names."
+    }
+  },
+  "$defs": {
+    "threshold": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "warn": { "type": "number" },
+        "crit": { "type": "number" }
+      }
+    },
+    "toggle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "sensor_match": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hardware": { "type": ["string", "null"] },
+        "type": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "name_regex": { "type": ["string", "null"] }
+      }
+    },
+    "sensor_override": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sensor": { "type": ["string", "null"] },
+        "match": { "oneOf": [{ "$ref": "#/$defs/sensor_match" }, { "type": "null" }] }
+      }
+    },
+    "widget_filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hardware": { "type": ["string", "null"] },
+        "types": { "type": "array", "items": { "type": "string" } },
+        "name_regex": { "type": ["string", "null"] }
+      }
+    },
+    "custom_widget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["graph", "gauge", "bars", "table", "sparkline"] },
+        "sensor": { "type": ["string", "null"] },
+        "match": { "oneOf": [{ "$ref": "#/$defs/sensor_match" }, { "type": "null" }] },
+        "label": { "type": ["string", "null"] },
+        "unit": { "type": ["string", "null"] },
+        "color": { "type": ["string", "null"] },
+        "y_mode": { "oneOf": [{ "enum": ["auto", "percent", "fixed"] }, { "type": "null" }] },
+        "filter": {
+          "oneOf": [{ "$ref": "#/$defs/widget_filter" }, { "type": "null" }]
+        }
+      }
+    },
+    "custom_panel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": ["string", "null"] },
+        "widgets": { "type": "array", "items": { "$ref": "#/$defs/custom_widget" } }
+      }
+    }
+  }
+}

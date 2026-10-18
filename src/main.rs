@@ -73,7 +73,7 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    match app::run(&loaded.config).await {
+    match app::run(&loaded.config, &loaded.warnings).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => fail(&err),
     }

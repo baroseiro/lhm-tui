@@ -408,25 +408,68 @@ pub struct CustomPanel {
     pub widgets: Vec<CustomWidget>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct CustomWidget {
     pub kind: WidgetKind,
+    /// Exact LHM SensorId (single-sensor widgets).
     pub sensor: Option<String>,
+    /// Match rule, used when no exact sensor id is fixed.
+    #[serde(rename = "match")]
+    pub matcher: Option<SensorMatch>,
     pub label: Option<String>,
     pub unit: Option<String>,
     pub color: Option<String>,
     pub y_mode: Option<YMode>,
+    /// Sensor-set filter (table and bars widgets).
+    pub filter: Option<WidgetFilter>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WidgetFilter {
+    /// Hardware kind name (`Cpu`, `GpuNvidia`, …) or exact HardwareId.
+    pub hardware: Option<String>,
+    /// Sensor type names (`Temperature`, `Load`, …); empty = any.
+    #[serde(default)]
+    pub types: Vec<String>,
+    /// Regex over the sensor name.
+    pub name_regex: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WidgetKind {
+    #[default]
     Graph,
     Gauge,
     Bars,
     Table,
     Sparkline,
 }
+
+/// Remappable key actions: `(action, description)` — used by validation,
+/// defaults (in `default_keys`) and the in-TUI help overlay (T4.4).
+pub const KNOWN_ACTIONS: &[(&str, &str)] = &[
+    ("quit", "Quit"),
+    ("help", "Help overlay"),
+    ("pause", "Pause / resume polling"),
+    ("window_next", "Chart window forward"),
+    ("window_prev", "Chart window backward"),
+    ("focus_next", "Focus next panel"),
+    ("focus_prev", "Focus previous panel"),
+    ("zoom", "Zoom focused panel (M5)"),
+    ("browser", "Sensor browser (M5)"),
+    ("sort", "Cycle table sort"),
+    ("reload", "Reload config (M5)"),
+    ("reset_minmax", "Reset LHM min/max (M5)"),
+    ("ascii", "Toggle ASCII rendering"),
+    ("debug", "Debug overlay (M5)"),
+    ("toggle_thermal", "Toggle temperatures table"),
+    ("toggle_charts", "Toggle charts"),
+];
+
+/// Built-in theme names (T4.3); `custom` is used for `--theme <file>`.
+pub const BUILTIN_THEMES: &[&str] = &["default", "gruvbox", "nord", "mono", "custom"];
 
 fn default_keys() -> BTreeMap<String, Vec<String>> {
     let entries: [(&str, &[&str]); 16] = [
@@ -639,7 +682,27 @@ fn apply_cli_overrides(config: &mut Config, cli: &Cli, errors: &mut Vec<String>)
         }
     }
     if let Some(theme) = &cli.theme {
-        config.theme.name = theme.clone();
+        let path = std::path::PathBuf::from(theme);
+        if path.is_file() {
+            match std::fs::read_to_string(&path) {
+                Ok(text) => match serde_json::from_str::<ThemeConfig>(&text) {
+                    Ok(mut parsed) => {
+                        parsed.name = "custom".to_string();
+                        config.theme = parsed;
+                    }
+                    Err(err) => errors.push(format!(
+                        "--theme {}: invalid theme file: {err}",
+                        path.display()
+                    )),
+                },
+                Err(err) => errors.push(format!(
+                    "--theme {}: cannot read theme file: {err}",
+                    path.display()
+                )),
+            }
+        } else {
+            config.theme.name = theme.clone();
+        }
     }
     if cli.ascii {
         config.ui.ascii = true;
@@ -801,7 +864,235 @@ pub fn validate(config: &Config) -> Vec<String> {
         }
     }
 
+    // Panel slot lists and GPU include kinds (T4.1).
+    const CPU_SLOTS: &[&str] = &["temp", "load", "core_loads", "clock", "power"];
+    const GPU_SLOTS: &[&str] = &["load", "memory", "temp", "power", "fan", "clock"];
+    const MEMORY_SLOTS: &[&str] = &["used", "load", "virtual"];
+    for (list, valid, label) in [
+        (&config.panels.cpu.show, CPU_SLOTS, "panels.cpu.show"),
+        (&config.panels.gpu.show, GPU_SLOTS, "panels.gpu.show"),
+        (
+            &config.panels.memory.show,
+            MEMORY_SLOTS,
+            "panels.memory.show",
+        ),
+    ] {
+        for entry in list {
+            if !valid.contains(&entry.as_str()) {
+                errors.push(format!(
+                    "{label}: unknown slot `{entry}` (expected one of {})",
+                    valid.join(", ")
+                ));
+            }
+        }
+    }
+    for entry in &config.panels.gpu.include {
+        if crate::bindings::parse_hardware_kind(entry).is_none() {
+            errors.push(format!(
+                "panels.gpu.include: unknown hardware kind `{entry}` (e.g. GpuNvidia, GpuAmd, GpuIntel)"
+            ));
+        }
+    }
+
+    // Sensor overrides: known slot keys + compilable regexes (T4.1).
+    for (key, rule) in &config.panels.sensor_overrides {
+        if !is_known_slot_key(key) {
+            errors.push(format!(
+                "panels.sensor_overrides: unknown slot `{key}` (expected cpu.<{}>, gpu.<n>.<{}>, memory.<{}>)",
+                CPU_OVERRIDE_SLOTS.join("|"),
+                GPU_OVERRIDE_SLOTS.join("|"),
+                MEMORY_OVERRIDE_SLOTS.join("|"),
+            ));
+        }
+        if let Some(pattern) = rule
+            .matcher
+            .as_ref()
+            .and_then(|matcher| matcher.name_regex.as_ref())
+        {
+            if regex::Regex::new(pattern).is_err() {
+                errors.push(format!(
+                    "panels.sensor_overrides.{key}: invalid name_regex `{pattern}`"
+                ));
+            }
+        }
+    }
+
+    // Custom panels (T4.2): unique ids, widget sensor sources, regexes.
+    let mut seen_ids: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    for panel in &config.panels.custom {
+        if panel.id.trim().is_empty() {
+            errors.push("panels.custom: id must not be empty".to_string());
+        } else if !seen_ids.insert(panel.id.as_str()) {
+            errors.push(format!("panels.custom: duplicate panel id `{}`", panel.id));
+        }
+        for (index, widget) in panel.widgets.iter().enumerate() {
+            let base = format!("panels.custom[{}, widget {index}]", panel.id);
+            match widget.kind {
+                WidgetKind::Table => {
+                    if widget.filter.is_none() {
+                        errors.push(format!("{base}: table widgets need a `filter`"));
+                    }
+                }
+                _ => {
+                    if widget.sensor.is_none()
+                        && widget.matcher.is_none()
+                        && widget.filter.is_none()
+                    {
+                        errors.push(format!("{base}: needs `sensor`, `match` or `filter`"));
+                    }
+                }
+            }
+            let regexes = [
+                widget
+                    .filter
+                    .as_ref()
+                    .and_then(|filter| filter.name_regex.as_ref()),
+                widget
+                    .matcher
+                    .as_ref()
+                    .and_then(|matcher| matcher.name_regex.as_ref()),
+            ];
+            for pattern in regexes.into_iter().flatten() {
+                if regex::Regex::new(pattern).is_err() {
+                    errors.push(format!("{base}: invalid name_regex `{pattern}`"));
+                }
+            }
+            if let Some(filter) = &widget.filter {
+                if let Some(hardware) = &filter.hardware {
+                    if crate::bindings::parse_hardware_kind(hardware).is_none()
+                        && !hardware.starts_with('/')
+                    {
+                        errors.push(format!(
+                            "{base}.filter.hardware: `{hardware}` is neither a hardware kind nor a `/id`"
+                        ));
+                    }
+                }
+                for sensor_type in &filter.types {
+                    if let crate::lhm::model::SensorKind::Other(name) =
+                        crate::bindings::parse_sensor_kind(sensor_type)
+                    {
+                        if name == *sensor_type {
+                            errors.push(format!(
+                                "{base}.filter.types: unknown sensor type `{sensor_type}` (e.g. Temperature, Load, Fan)"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Key remapping (T4.4): known actions, parseable specs, no conflicts.
+    let action_names: Vec<&str> = KNOWN_ACTIONS.iter().map(|(action, _)| *action).collect();
+    let mut seen_bindings: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    for (action, specs) in &config.keys {
+        if !action_names.contains(&action.as_str()) {
+            errors.push(format!(
+                "keys.{action}: unknown action (valid: {})",
+                action_names.join(", ")
+            ));
+        }
+        for spec in specs {
+            match crate::app::parse_key_spec(spec) {
+                None => errors.push(format!(
+                    "keys.{action}: invalid key spec `{spec}` (e.g. q, ctrl+c, shift+tab, f5)"
+                )),
+                Some(key) => {
+                    if let Some(canonical) = canonical_key_spec(&key) {
+                        if let Some(other) = seen_bindings.insert(canonical, action.clone()) {
+                            if other != *action {
+                                errors.push(format!(
+                                    "keys: `{spec}` is bound to both `{other}` and `{action}`"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Theme colours and built-in name (T4.3).
+    if !BUILTIN_THEMES.contains(&config.theme.name.as_str()) {
+        errors.push(format!(
+            "theme.name: unknown theme `{}` (built-ins: {}; use --theme <file> for custom themes)",
+            config.theme.name,
+            BUILTIN_THEMES.join(", ")
+        ));
+    }
+    for (field, value) in [
+        ("accent", &config.theme.accent),
+        ("text", &config.theme.text),
+        ("muted", &config.theme.muted),
+        ("warn", &config.theme.warn),
+        ("crit", &config.theme.crit),
+        ("cpu", &config.theme.cpu),
+        ("gpu", &config.theme.gpu),
+        ("memory", &config.theme.memory),
+        ("network", &config.theme.network),
+        ("storage", &config.theme.storage),
+    ] {
+        if crate::theme::parse_color(value).is_none() {
+            errors.push(format!(
+                "theme.{field}: invalid color `{value}` (name or #RRGGBB)"
+            ));
+        }
+    }
+
     errors
+}
+
+const CPU_OVERRIDE_SLOTS: &[&str] = &["load", "temp", "clock", "power", "core_loads"];
+const GPU_OVERRIDE_SLOTS: &[&str] = &[
+    "load",
+    "mem_load",
+    "mem_used",
+    "mem_total",
+    "temp",
+    "hotspot",
+    "mem_temp",
+    "power",
+    "clock",
+    "fan",
+];
+const MEMORY_OVERRIDE_SLOTS: &[&str] = &[
+    "used",
+    "available",
+    "load",
+    "virtual_used",
+    "virtual_available",
+];
+
+fn is_known_slot_key(key: &str) -> bool {
+    let Some((prefix, rest)) = key.split_once('.') else {
+        return false;
+    };
+    match prefix {
+        "cpu" => CPU_OVERRIDE_SLOTS.contains(&rest),
+        "memory" => MEMORY_OVERRIDE_SLOTS.contains(&rest),
+        "gpu" => {
+            let Some((index, slot)) = rest.split_once('.') else {
+                return false;
+            };
+            index.parse::<u32>().is_ok() && GPU_OVERRIDE_SLOTS.contains(&slot)
+        }
+        _ => false,
+    }
+}
+
+/// Canonical spelling of a parsed key for conflict detection (Shift+Tab and
+/// BackTab are the same physical key).
+fn canonical_key_spec(key: &ratatui::crossterm::event::KeyEvent) -> Option<String> {
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+    let (mut code, mut modifiers) = (key.code, key.modifiers);
+    if code == KeyCode::Tab && modifiers.contains(KeyModifiers::SHIFT) {
+        code = KeyCode::BackTab;
+    }
+    if code == KeyCode::BackTab {
+        modifiers.remove(KeyModifiers::SHIFT);
+    }
+    Some(format!("{code:?}+{modifiers:?}"))
 }
 
 fn is_known_panel(key: &str, panels: &PanelsConfig) -> bool {
@@ -1071,6 +1362,224 @@ mod tests {
         apply_cli_overrides(&mut config, &cli, &mut errors);
         assert!(config.charts.enabled, "--charts re-enables them");
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn override_slot_keys_are_validated() {
+        let mut config = Config::default();
+        config
+            .panels
+            .sensor_overrides
+            .insert("cpu.laod".to_string(), SensorOverride::default());
+        let errors = validate(&config);
+        assert!(
+            errors.iter().any(|error| error.contains("cpu.laod")),
+            "{errors:?}"
+        );
+
+        config.panels.sensor_overrides.clear();
+        config
+            .panels
+            .sensor_overrides
+            .insert("gpu.0.load".to_string(), SensorOverride::default());
+        config
+            .panels
+            .sensor_overrides
+            .insert("memory.virtual_used".to_string(), SensorOverride::default());
+        assert_eq!(validate(&config), Vec::<String>::new());
+
+        config
+            .panels
+            .sensor_overrides
+            .insert("memory.swap".to_string(), SensorOverride::default());
+        assert!(validate(&config)
+            .iter()
+            .any(|error| error.contains("memory.swap")));
+    }
+
+    #[test]
+    fn show_lists_are_validated() {
+        let mut config = Config::default();
+        config.panels.cpu.show.push("temperatures".to_string());
+        config.panels.gpu.show.push("watts".to_string());
+        config.panels.memory.show.push("swap".to_string());
+        let errors = validate(&config);
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("panels.cpu.show") && error.contains("temperatures")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("panels.gpu.show") && error.contains("watts")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("panels.memory.show") && error.contains("swap")));
+
+        config.panels.gpu.include = vec!["Radeon".to_string()];
+        assert!(validate(&config)
+            .iter()
+            .any(|error| error.contains("panels.gpu.include")));
+    }
+
+    #[test]
+    fn key_map_is_validated() {
+        let mut config = Config::default();
+        config
+            .keys
+            .insert("fire_lasers".to_string(), vec!["x".to_string()]);
+        let errors = validate(&config);
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("fire_lasers") && error.contains("valid: quit")));
+
+        let mut config = Config::default();
+        config
+            .keys
+            .get_mut("quit")
+            .expect("quit")
+            .push("ctrl+".to_string());
+        assert!(validate(&config)
+            .iter()
+            .any(|error| error.contains("invalid key spec")));
+
+        let mut config = Config::default();
+        config
+            .keys
+            .insert("sort".to_string(), vec!["p".to_string()]);
+        let errors = validate(&config);
+        assert!(
+            errors.iter().any(|error| error.contains("bound to both")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn custom_panels_are_validated() {
+        let mut config = Config::default();
+        config.panels.custom.push(CustomPanel {
+            id: "dup".to_string(),
+            title: None,
+            widgets: Vec::new(),
+        });
+        config.panels.custom.push(CustomPanel {
+            id: "dup".to_string(),
+            title: None,
+            widgets: vec![
+                CustomWidget::default(), // graph without sensor/match/filter
+                CustomWidget {
+                    kind: WidgetKind::Table,
+                    ..Default::default()
+                }, // table without filter
+                CustomWidget {
+                    kind: WidgetKind::Gauge,
+                    sensor: Some("/x".to_string()),
+                    ..Default::default()
+                },
+                CustomWidget {
+                    kind: WidgetKind::Gauge,
+                    matcher: Some(SensorMatch {
+                        name_regex: Some("[".to_string()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            ],
+        });
+        let errors = validate(&config);
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("duplicate panel id")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("needs `sensor`, `match` or `filter`")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("table widgets need a `filter`")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("invalid name_regex")));
+
+        let mut config = Config::default();
+        config.panels.custom.push(CustomPanel {
+            id: "nvme".to_string(),
+            title: Some("NVMe".to_string()),
+            widgets: vec![
+                CustomWidget {
+                    kind: WidgetKind::Graph,
+                    sensor: Some("/nvme/0/temperature/0".to_string()),
+                    ..Default::default()
+                },
+                CustomWidget {
+                    kind: WidgetKind::Table,
+                    filter: Some(WidgetFilter {
+                        hardware: Some("/nvme/0".to_string()),
+                        types: vec!["Temperature".to_string()],
+                        name_regex: None,
+                    }),
+                    ..Default::default()
+                },
+            ],
+        });
+        config.ui.layout.push("custom:nvme".to_string());
+        assert_eq!(validate(&config), Vec::<String>::new());
+    }
+
+    #[test]
+    fn theme_is_validated() {
+        let mut config = Config::default();
+        config.theme.name = "neon".to_string();
+        assert!(validate(&config)
+            .iter()
+            .any(|error| error.contains("unknown theme")));
+
+        let mut config = Config::default();
+        config.theme.accent = "#12".to_string();
+        assert!(validate(&config)
+            .iter()
+            .any(|error| error.contains("theme.accent")));
+
+        let mut config = Config::default();
+        config.theme.name = "gruvbox".to_string();
+        assert_eq!(validate(&config), Vec::<String>::new());
+    }
+
+    #[test]
+    fn cli_theme_accepts_files_and_names() {
+        let mut config = Config::default();
+        let mut errors = Vec::new();
+        let cli = cli_from(&["lhm-tui", "--theme", "nord"]);
+        apply_cli_overrides(&mut config, &cli, &mut errors);
+        assert!(errors.is_empty());
+        assert_eq!(config.theme.name, "nord");
+        assert_eq!(validate(&config), Vec::<String>::new());
+
+        let path = std::env::temp_dir().join(format!("lhm-tui-theme-{}.json", std::process::id()));
+        std::fs::write(&path, r##"{"accent": "#112233", "cpu": "red"}"##).expect("write theme");
+        let mut config = Config::default();
+        let mut errors = Vec::new();
+        let cli = cli_from(&["lhm-tui", "--theme", path.to_str().expect("utf8 path")]);
+        apply_cli_overrides(&mut config, &cli, &mut errors);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(config.theme.name, "custom");
+        assert_eq!(config.theme.accent, "#112233");
+        assert_eq!(config.theme.cpu, "red");
+        assert_eq!(
+            validate(&config),
+            Vec::<String>::new(),
+            "file themes validate (incl. name)"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn validation_errors_snapshot() {
+        let mut config = Config::default();
+        config.server.poll_interval_ms = 100;
+        config.panels.cpu.show.push("temperatures".to_string());
+        config
+            .keys
+            .insert("fire_lasers".to_string(), vec!["x".to_string()]);
+        config.theme.name = "neon".to_string();
+        insta::assert_debug_snapshot!(validate(&config));
     }
 
     #[test]

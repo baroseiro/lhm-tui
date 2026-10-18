@@ -16,9 +16,9 @@ use ratatui::Frame;
 
 use crate::bindings::{self, Bindings, CpuBindings, GpuBindings, MemoryBindings, Slot};
 use crate::charts::{self, ChartsState, GraphSpec, Series};
-use crate::config::{Config, Marker, TableSort, YMode};
+use crate::config::{Config, CustomPanel, CustomWidget, Marker, TableSort, WidgetKind, YMode};
 use crate::history::History;
-use crate::lhm::model::{Sensor, Snapshot};
+use crate::lhm::model::{Sensor, SensorKind, Snapshot};
 use crate::theme::{with_dim, Metric, Theme};
 use crate::ui::format;
 use crate::ui::widgets;
@@ -164,10 +164,21 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
             }
             other => {
                 if let Some(id) = other.strip_prefix("custom:") {
+                    let scrollable = cfg
+                        .panels
+                        .custom
+                        .iter()
+                        .find(|panel| panel.id == id)
+                        .is_some_and(|panel| {
+                            panel
+                                .widgets
+                                .iter()
+                                .any(|widget| widget.kind == WidgetKind::Table)
+                        });
                     panels.push(PanelSpec {
                         id: other.to_string(),
                         kind: PanelKind::Custom(id.to_string()),
-                        scrollable: false,
+                        scrollable,
                     });
                 }
             }
@@ -223,32 +234,72 @@ pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config, charts_
     };
     match &spec.kind {
         PanelKind::Cpu(_) => {
-            if charts_on {
-                chart + 5 // chart + core bars (2) + info (1) + borders
+            let show = &cfg.panels.cpu.show;
+            let bars = if shows(show, "core_loads") { 2 } else { 0 };
+            let info = u16::from(shows(show, "clock") || shows(show, "power"));
+            let content = if charts_on {
+                let graphs = u16::from(shows(show, "load")) + u16::from(shows(show, "temp"));
+                if graphs > 0 {
+                    chart + bars + info
+                } else {
+                    bars + info
+                }
             } else {
-                7
-            }
+                u16::from(shows(show, "temp")) + u16::from(shows(show, "load")) + bars + info
+            };
+            (content + 2).max(3)
         }
         PanelKind::Gpu(_) => {
-            if charts_on {
-                chart + 4 // chart + VRAM gauge + info + borders
+            let show = &cfg.panels.gpu.show;
+            let vram = u16::from(shows(show, "memory"));
+            let info =
+                u16::from(shows(show, "power") || shows(show, "fan") || shows(show, "clock"));
+            let content = if charts_on {
+                let graphs = u16::from(shows(show, "load") || shows(show, "memory"))
+                    + u16::from(shows(show, "temp"));
+                if graphs > 0 {
+                    chart + vram + info
+                } else {
+                    vram + info
+                }
             } else {
-                8 // temp, hotspot, mem temp, load, VRAM, info
-            }
+                let temps = if shows(show, "temp") { 3 } else { 0 };
+                let load = u16::from(shows(show, "load"));
+                temps + load + vram + info
+            };
+            (content + 2).max(3)
         }
         PanelKind::Memory => {
-            if charts_on {
-                chart + 4 // chart + used gauge + virtual line + borders
+            let show = &cfg.panels.memory.show;
+            let used = u16::from(shows(show, "used"));
+            let virtual_row = u16::from(shows(show, "virtual"));
+            let content = if charts_on {
+                if shows(show, "load") {
+                    chart + used + virtual_row
+                } else {
+                    used + virtual_row
+                }
             } else {
-                6
-            }
+                used + u16::from(shows(show, "load")) + virtual_row
+            };
+            (content + 2).max(3)
         }
         PanelKind::Thermal => (bindings.thermal.len() + 3).clamp(4, max) as u16,
         PanelKind::Fans => (bindings.fans.len() + 3).clamp(4, max) as u16,
         PanelKind::Power => (bindings.power.len() + 4).clamp(4, max) as u16,
         PanelKind::Storage => (bindings.storage.len() + 3).clamp(4, max) as u16,
         PanelKind::Network => (bindings.network.len() + 3).clamp(4, max) as u16,
-        PanelKind::Custom(_) => 5,
+        PanelKind::Custom(id) => match cfg.panels.custom.iter().find(|panel| panel.id == *id) {
+            Some(panel) => {
+                let widgets: u16 = panel
+                    .widgets
+                    .iter()
+                    .map(|widget| custom_widget_height(widget.kind, cfg, charts_on))
+                    .sum();
+                (widgets + 2).max(3)
+            }
+            None => 5,
+        },
     }
 }
 
@@ -375,16 +426,16 @@ pub fn draw_panel(frame: &mut Frame, area: Rect, spec: &PanelSpec, ctx: &mut Pan
         PanelKind::Storage => draw_storage(frame, area, ctx),
         PanelKind::Network => draw_network(frame, area, ctx),
         PanelKind::Custom(id) => {
-            let block = panel_block(format!("custom:{id}"), ctx.theme, ctx.stale, ctx.focused);
-            let inner = block.inner(area);
-            frame.render_widget(block, area);
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    "custom panels land in M4 (T4.2)",
-                    with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
-                ))),
-                inner,
-            );
+            if let Some(panel) = ctx
+                .cfg
+                .panels
+                .custom
+                .iter()
+                .find(|panel| panel.id == *id)
+                .cloned()
+            {
+                draw_custom(frame, area, &panel, ctx);
+            }
         }
     }
 }
@@ -528,97 +579,132 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
         return;
     }
 
-    if ctx.charts_on() && inner.height >= MIN_CHART_HEIGHT + 3 {
-        // Chart block (load graph over temp graph), core bars, info line.
-        let chart_height = inner.height.saturating_sub(3).max(MIN_CHART_HEIGHT);
-        let sections = Layout::vertical([
-            Constraint::Length(chart_height),
-            Constraint::Length(2),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-        let graphs =
-            Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(sections[0]);
-
-        let load_series: Vec<Series> = series_for(ctx, &cpu.load_total, ctx.theme.cpu)
-            .into_iter()
-            .collect();
-        draw_metric_graph(
-            frame,
-            graphs[0],
-            ctx,
-            format!("{panel_key}:load"),
-            load_series,
-            YMode::Percent,
-        );
-        let temp_series: Vec<Series> = series_for(ctx, &cpu.temp, ctx.theme.warn)
-            .into_iter()
-            .collect();
-        draw_metric_graph(
-            frame,
-            graphs[1],
-            ctx,
-            format!("{panel_key}:temp"),
-            temp_series,
-            YMode::Auto,
-        );
-
-        let core_values: Vec<Option<f64>> = cpu
-            .core_loads
-            .iter()
-            .map(|slot| bindings::slot_sensor(ctx.snapshot, slot).and_then(|sensor| sensor.value))
-            .collect();
-        widgets::bars(frame, sections[1], &core_values, ctx.theme, ctx.stale);
-
-        let pairs: Vec<(&str, String)> = [("Clock", &cpu.clock), ("Power", &cpu.power)]
-            .into_iter()
-            .filter(|(_, slot)| slot.is_some())
-            .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
-            .collect();
-        widgets::info_line(frame, sections[2], &pairs, ctx.theme, ctx.stale);
-        return;
-    }
-
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(2),
-        Constraint::Length(1),
-    ])
-    .areas::<4>(inner);
-
-    gauge_for_slot(
-        frame,
-        rows[0],
-        "Temp",
-        ctx,
-        &cpu.temp,
-        100.0,
-        Metric::Temperature,
-    );
-    gauge_for_slot(
-        frame,
-        rows[1],
-        "Load",
-        ctx,
-        &cpu.load_total,
-        100.0,
-        Metric::Load,
-    );
-
+    let show = |slot: &str| shows(&ctx.cfg.panels.cpu.show, slot);
     let core_values: Vec<Option<f64>> = cpu
         .core_loads
         .iter()
         .map(|slot| bindings::slot_sensor(ctx.snapshot, slot).and_then(|sensor| sensor.value))
         .collect();
-    widgets::bars(frame, rows[2], &core_values, ctx.theme, ctx.stale);
-
     let pairs: Vec<(&str, String)> = [("Clock", &cpu.clock), ("Power", &cpu.power)]
         .into_iter()
-        .filter(|(_, slot)| slot.is_some())
+        .filter(|(label, slot)| slot.is_some() && show(&label.to_ascii_lowercase()))
         .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
         .collect();
-    widgets::info_line(frame, rows[3], &pairs, ctx.theme, ctx.stale);
+    let bars_shown = show("core_loads") && !core_values.is_empty();
+
+    if ctx.charts_on() {
+        let mut graphs: Vec<(String, Vec<Series>, YMode)> = Vec::new();
+        if show("load") {
+            let series: Vec<Series> = series_for(ctx, &cpu.load_total, ctx.theme.cpu)
+                .into_iter()
+                .collect();
+            if !series.is_empty() {
+                graphs.push((format!("{panel_key}:load"), series, YMode::Percent));
+            }
+        }
+        if show("temp") {
+            let series: Vec<Series> = series_for(ctx, &cpu.temp, ctx.theme.warn)
+                .into_iter()
+                .collect();
+            if !series.is_empty() {
+                graphs.push((format!("{panel_key}:temp"), series, YMode::Auto));
+            }
+        }
+        if !graphs.is_empty() || bars_shown || !pairs.is_empty() {
+            let reserved = u16::from(bars_shown) * 2 + u16::from(!pairs.is_empty());
+            let chart_height = if graphs.is_empty() {
+                0
+            } else {
+                inner.height.saturating_sub(reserved).max(MIN_CHART_HEIGHT)
+            };
+            let mut offset = 0u16;
+            if !graphs.is_empty() {
+                let chart_rect = Rect {
+                    x: inner.x,
+                    y: inner.y,
+                    width: inner.width,
+                    height: chart_height,
+                };
+                let graph_rects = Layout::vertical(vec![
+                    Constraint::Ratio(1, graphs.len() as u32);
+                    graphs.len()
+                ])
+                .split(chart_rect);
+                for (graph_index, (key, series, y_mode)) in graphs.into_iter().enumerate() {
+                    draw_metric_graph(frame, graph_rects[graph_index], ctx, key, series, y_mode);
+                }
+                offset += chart_height;
+            }
+            if bars_shown {
+                let bars_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 2,
+                };
+                widgets::bars(frame, bars_rect, &core_values, ctx.theme, ctx.stale);
+                offset += 2;
+            }
+            if !pairs.is_empty() {
+                let info_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 1,
+                };
+                widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
+            }
+            return;
+        }
+    }
+
+    // Gauge fallback (charts off, or nothing chartable).
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut plan: Vec<u8> = Vec::new(); // 0 temp, 1 load, 2 bars, 3 info
+    if show("temp") {
+        constraints.push(Constraint::Length(1));
+        plan.push(0);
+    }
+    if show("load") {
+        constraints.push(Constraint::Length(1));
+        plan.push(1);
+    }
+    if bars_shown {
+        constraints.push(Constraint::Length(2));
+        plan.push(2);
+    }
+    if !pairs.is_empty() {
+        constraints.push(Constraint::Length(1));
+        plan.push(3);
+    }
+    if constraints.is_empty() {
+        return;
+    }
+    let areas = Layout::vertical(constraints).split(inner);
+    for (kind, row) in plan.iter().zip(areas.iter()) {
+        match kind {
+            0 => gauge_for_slot(
+                frame,
+                *row,
+                "Temp",
+                ctx,
+                &cpu.temp,
+                100.0,
+                Metric::Temperature,
+            ),
+            1 => gauge_for_slot(
+                frame,
+                *row,
+                "Load",
+                ctx,
+                &cpu.load_total,
+                100.0,
+                Metric::Load,
+            ),
+            2 => widgets::bars(frame, *row, &core_values, ctx.theme, ctx.stale),
+            _ => widgets::info_line(frame, *row, &pairs, ctx.theme, ctx.stale),
+        }
+    }
 }
 
 // ------------------------------------------------------------------ GPU
@@ -643,115 +729,160 @@ fn draw_gpu(
         return;
     }
 
-    if ctx.charts_on() && inner.height >= MIN_CHART_HEIGHT + 2 {
-        // Load graph (load + memory %) over temperature graph (core/hotspot/
-        // memory junction), then VRAM gauge and info line.
-        let chart_height = inner.height.saturating_sub(2).max(MIN_CHART_HEIGHT);
-        let sections = Layout::vertical([
-            Constraint::Length(chart_height),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
-        let graphs =
-            Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(sections[0]);
-
-        let load_series: Vec<Series> = [
-            series_for(ctx, &gpu.load, ctx.theme.gpu),
-            series_for(ctx, &gpu.mem_load, ctx.theme.memory),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        draw_metric_graph(
-            frame,
-            graphs[0],
-            ctx,
-            format!("{panel_key}:load"),
-            load_series,
-            YMode::Percent,
-        );
-        let temp_series: Vec<Series> = [
-            series_for(ctx, &gpu.temp, ctx.theme.warn),
-            series_for(ctx, &gpu.hotspot, ctx.theme.crit),
-            series_for(ctx, &gpu.mem_temp, ctx.theme.network),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        draw_metric_graph(
-            frame,
-            graphs[1],
-            ctx,
-            format!("{panel_key}:temp"),
-            temp_series,
-            YMode::Auto,
-        );
-
-        draw_vram_gauge(frame, sections[1], ctx, gpu);
-        let pairs: Vec<(&str, String)> = [
-            ("Power", &gpu.power),
-            ("Fan", &gpu.fan),
-            ("Clock", &gpu.clock),
-        ]
-        .into_iter()
-        .filter(|(_, slot)| slot.is_some())
-        .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
-        .collect();
-        widgets::info_line(frame, sections[2], &pairs, ctx.theme, ctx.stale);
-        return;
-    }
-
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .areas::<6>(inner);
-
-    gauge_for_slot(
-        frame,
-        rows[0],
-        "Temp",
-        ctx,
-        &gpu.temp,
-        100.0,
-        Metric::Temperature,
-    );
-    gauge_for_slot(
-        frame,
-        rows[1],
-        "Hot Spot",
-        ctx,
-        &gpu.hotspot,
-        100.0,
-        Metric::Temperature,
-    );
-    gauge_for_slot(
-        frame,
-        rows[2],
-        "Mem Temp",
-        ctx,
-        &gpu.mem_temp,
-        100.0,
-        Metric::Temperature,
-    );
-    gauge_for_slot(frame, rows[3], "Load", ctx, &gpu.load, 100.0, Metric::Load);
-    draw_vram_gauge(frame, rows[4], ctx, gpu);
-
+    let show = |slot: &str| shows(&ctx.cfg.panels.gpu.show, slot);
     let pairs: Vec<(&str, String)> = [
         ("Power", &gpu.power),
         ("Fan", &gpu.fan),
         ("Clock", &gpu.clock),
     ]
     .into_iter()
-    .filter(|(_, slot)| slot.is_some())
+    .filter(|(label, slot)| slot.is_some() && show(&label.to_ascii_lowercase()))
     .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
     .collect();
-    widgets::info_line(frame, rows[5], &pairs, ctx.theme, ctx.stale);
+    let vram_shown = show("memory");
+
+    if ctx.charts_on() {
+        let mut graphs: Vec<(String, Vec<Series>, YMode)> = Vec::new();
+        if show("load") || show("memory") {
+            let series: Vec<Series> = [
+                if show("load") {
+                    series_for(ctx, &gpu.load, ctx.theme.gpu)
+                } else {
+                    None
+                },
+                if show("memory") {
+                    series_for(ctx, &gpu.mem_load, ctx.theme.memory)
+                } else {
+                    None
+                },
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            if !series.is_empty() {
+                graphs.push((format!("{panel_key}:load"), series, YMode::Percent));
+            }
+        }
+        if show("temp") {
+            let series: Vec<Series> = [
+                series_for(ctx, &gpu.temp, ctx.theme.warn),
+                series_for(ctx, &gpu.hotspot, ctx.theme.crit),
+                series_for(ctx, &gpu.mem_temp, ctx.theme.network),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            if !series.is_empty() {
+                graphs.push((format!("{panel_key}:temp"), series, YMode::Auto));
+            }
+        }
+        if !graphs.is_empty() || vram_shown || !pairs.is_empty() {
+            let reserved = u16::from(vram_shown) + u16::from(!pairs.is_empty());
+            let chart_height = if graphs.is_empty() {
+                0
+            } else {
+                inner.height.saturating_sub(reserved).max(MIN_CHART_HEIGHT)
+            };
+            let mut offset = 0u16;
+            if !graphs.is_empty() {
+                let chart_rect = Rect {
+                    x: inner.x,
+                    y: inner.y,
+                    width: inner.width,
+                    height: chart_height,
+                };
+                let graph_rects = Layout::vertical(vec![
+                    Constraint::Ratio(1, graphs.len() as u32);
+                    graphs.len()
+                ])
+                .split(chart_rect);
+                for (graph_index, (key, series, y_mode)) in graphs.into_iter().enumerate() {
+                    draw_metric_graph(frame, graph_rects[graph_index], ctx, key, series, y_mode);
+                }
+                offset += chart_height;
+            }
+            if vram_shown {
+                let vram_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 1,
+                };
+                draw_vram_gauge(frame, vram_rect, ctx, gpu);
+                offset += 1;
+            }
+            if !pairs.is_empty() {
+                let info_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 1,
+                };
+                widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
+            }
+            return;
+        }
+    }
+
+    // Gauge fallback (charts off, or nothing chartable).
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut plan: Vec<u8> = Vec::new(); // 0 temp, 1 hotspot, 2 mem_temp, 3 load, 4 vram, 5 info
+    if show("temp") {
+        for kind in 0..3 {
+            constraints.push(Constraint::Length(1));
+            plan.push(kind);
+        }
+    }
+    if show("load") {
+        constraints.push(Constraint::Length(1));
+        plan.push(3);
+    }
+    if vram_shown {
+        constraints.push(Constraint::Length(1));
+        plan.push(4);
+    }
+    if !pairs.is_empty() {
+        constraints.push(Constraint::Length(1));
+        plan.push(5);
+    }
+    if constraints.is_empty() {
+        return;
+    }
+    let areas = Layout::vertical(constraints).split(inner);
+    for (kind, row) in plan.iter().zip(areas.iter()) {
+        match kind {
+            0 => gauge_for_slot(
+                frame,
+                *row,
+                "Temp",
+                ctx,
+                &gpu.temp,
+                100.0,
+                Metric::Temperature,
+            ),
+            1 => gauge_for_slot(
+                frame,
+                *row,
+                "Hot Spot",
+                ctx,
+                &gpu.hotspot,
+                100.0,
+                Metric::Temperature,
+            ),
+            2 => gauge_for_slot(
+                frame,
+                *row,
+                "Mem Temp",
+                ctx,
+                &gpu.mem_temp,
+                100.0,
+                Metric::Temperature,
+            ),
+            3 => gauge_for_slot(frame, *row, "Load", ctx, &gpu.load, 100.0, Metric::Load),
+            4 => draw_vram_gauge(frame, *row, ctx, gpu),
+            _ => widgets::info_line(frame, *row, &pairs, ctx.theme, ctx.stale),
+        }
+    }
 }
 
 fn draw_vram_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindings) {
@@ -810,49 +941,92 @@ fn draw_memory(frame: &mut Frame, area: Rect, memory: &MemoryBindings, ctx: &mut
         return;
     }
 
-    if ctx.charts_on() && inner.height >= MIN_CHART_HEIGHT + 2 {
-        let chart_height = inner.height.saturating_sub(2).max(MIN_CHART_HEIGHT);
-        let sections = Layout::vertical([
-            Constraint::Length(chart_height),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(inner);
+    let show = |slot: &str| shows(&ctx.cfg.panels.memory.show, slot);
+    let usage_shown = show("load");
+    let virtual_shown = show("virtual");
 
-        let usage = memory_usage_series(ctx, memory);
-        draw_metric_graph(
-            frame,
-            sections[0],
-            ctx,
-            "memory:usage".to_string(),
-            usage.into_iter().collect(),
-            YMode::Percent,
-        );
-
-        draw_memory_used_gauge(frame, sections[1], ctx, memory);
-        draw_virtual_line(frame, sections[2], ctx, memory);
-        return;
+    if ctx.charts_on() {
+        let usage = if usage_shown {
+            memory_usage_series(ctx, memory)
+                .into_iter()
+                .collect::<Vec<Series>>()
+        } else {
+            Vec::new()
+        };
+        if !usage.is_empty() || show("used") || virtual_shown {
+            let reserved = u16::from(show("used")) + u16::from(virtual_shown);
+            let chart_height = if usage.is_empty() {
+                0
+            } else {
+                inner.height.saturating_sub(reserved).max(MIN_CHART_HEIGHT)
+            };
+            let mut offset = 0u16;
+            if !usage.is_empty() {
+                let chart_rect = Rect {
+                    x: inner.x,
+                    y: inner.y,
+                    width: inner.width,
+                    height: chart_height,
+                };
+                draw_metric_graph(
+                    frame,
+                    chart_rect,
+                    ctx,
+                    "memory:usage".to_string(),
+                    usage,
+                    YMode::Percent,
+                );
+                offset += chart_height;
+            }
+            if show("used") {
+                let used_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 1,
+                };
+                draw_memory_used_gauge(frame, used_rect, ctx, memory);
+                offset += 1;
+            }
+            if virtual_shown {
+                let virtual_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 1,
+                };
+                draw_virtual_line(frame, virtual_rect, ctx, memory);
+            }
+            return;
+        }
     }
 
-    let rows = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Min(0),
-    ])
-    .areas::<4>(inner);
-
-    draw_memory_used_gauge(frame, rows[0], ctx, memory);
-    gauge_for_slot(
-        frame,
-        rows[1],
-        "Load",
-        ctx,
-        &memory.load,
-        100.0,
-        Metric::Load,
-    );
-    draw_virtual_line(frame, rows[2], ctx, memory);
+    // Gauge fallback (charts off, or nothing chartable).
+    let mut constraints: Vec<Constraint> = Vec::new();
+    let mut plan: Vec<u8> = Vec::new(); // 0 used, 1 load, 2 virtual
+    if show("used") {
+        constraints.push(Constraint::Length(1));
+        plan.push(0);
+    }
+    if show("load") {
+        constraints.push(Constraint::Length(1));
+        plan.push(1);
+    }
+    if virtual_shown {
+        constraints.push(Constraint::Length(1));
+        plan.push(2);
+    }
+    if constraints.is_empty() {
+        return;
+    }
+    let areas = Layout::vertical(constraints).split(inner);
+    for (kind, row) in plan.iter().zip(areas.iter()) {
+        match kind {
+            0 => draw_memory_used_gauge(frame, *row, ctx, memory),
+            1 => gauge_for_slot(frame, *row, "Load", ctx, &memory.load, 100.0, Metric::Load),
+            _ => draw_virtual_line(frame, *row, ctx, memory),
+        }
+    }
 }
 
 /// Memory usage percentage series: the `Memory` load sensor when present,
@@ -964,6 +1138,306 @@ fn draw_virtual_line(frame: &mut Frame, area: Rect, ctx: &PanelCtx, memory: &Mem
         ),
     ];
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// True when a `panels.<preset>.show` list includes `slot` (case-insensitive).
+fn shows(list: &[String], slot: &str) -> bool {
+    list.iter().any(|entry| entry.eq_ignore_ascii_case(slot))
+}
+
+// ------------------------------------------------------------- custom panels
+
+fn custom_widget_height(kind: WidgetKind, cfg: &Config, charts_on: bool) -> u16 {
+    match kind {
+        WidgetKind::Graph if charts_on => cfg.charts.height as u16,
+        WidgetKind::Table => (cfg.ui.max_height.clamp(4, 40) as u16).min(8),
+        _ => 1,
+    }
+}
+
+fn widget_filter_slots(widget: &CustomWidget, snapshot: &Snapshot) -> Vec<Slot> {
+    let Some(filter) = widget.filter.as_ref() else {
+        return Vec::new();
+    };
+    let kinds: Vec<SensorKind> = filter
+        .types
+        .iter()
+        .map(|name| bindings::parse_sensor_kind(name))
+        .collect();
+    let name_regex = filter
+        .name_regex
+        .as_ref()
+        .and_then(|pattern| regex::Regex::new(pattern).ok());
+    let hardware_kind = filter
+        .hardware
+        .as_deref()
+        .and_then(bindings::parse_hardware_kind);
+    let hardware_id = filter
+        .hardware
+        .as_deref()
+        .filter(|value| value.starts_with('/'));
+
+    let mut slots = Vec::new();
+    for hardware in snapshot.all_hardware() {
+        if hardware_kind.is_some_and(|kind| hardware.kind != kind) {
+            continue;
+        }
+        if hardware_id.is_some_and(|id| hardware.id != id) {
+            continue;
+        }
+        for sensor in hardware.sensors() {
+            if !kinds.is_empty() && !kinds.contains(&sensor.kind) {
+                continue;
+            }
+            if name_regex
+                .as_ref()
+                .is_some_and(|regex| !regex.is_match(&sensor.name))
+            {
+                continue;
+            }
+            slots.push(bindings::slot_for(hardware, sensor));
+        }
+    }
+    slots
+}
+
+fn widget_slot(widget: &CustomWidget, snapshot: &Snapshot) -> Option<Slot> {
+    if widget.sensor.is_some() || widget.matcher.is_some() {
+        let (hardware, sensor) = bindings::resolve_sensor_ref(
+            snapshot,
+            widget.sensor.as_deref(),
+            widget.matcher.as_ref(),
+        )?;
+        return Some(bindings::slot_for(hardware, sensor));
+    }
+    widget_filter_slots(widget, snapshot).into_iter().next()
+}
+
+/// Display text honouring an optional unit override.
+fn widget_display(sensor: &Sensor, unit: Option<&str>) -> String {
+    match (unit, sensor.value) {
+        (Some(unit), Some(value)) => format!("{value:.1} {unit}"),
+        (Some(_), None) => "—".to_string(),
+        (None, _) => format::sensor_value(sensor),
+    }
+}
+
+fn widget_ratio(kind: &SensorKind, value: f64) -> f64 {
+    match kind {
+        SensorKind::Temperature | SensorKind::Load | SensorKind::Control | SensorKind::Level => {
+            (value / 100.0).clamp(0.0, 1.0)
+        }
+        _ => 0.0,
+    }
+}
+
+fn draw_custom(frame: &mut Frame, area: Rect, panel: &CustomPanel, ctx: &mut PanelCtx) {
+    let title = panel
+        .title
+        .clone()
+        .unwrap_or_else(|| format!("custom:{}", panel.id));
+    let block = panel_block(title, ctx.theme, ctx.stale, ctx.focused);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.height == 0 || panel.widgets.is_empty() {
+        return;
+    }
+    let heights: Vec<u16> = panel
+        .widgets
+        .iter()
+        .map(|widget| custom_widget_height(widget.kind, ctx.cfg, ctx.charts_on()))
+        .collect();
+    let constraints: Vec<Constraint> = heights
+        .iter()
+        .map(|height| Constraint::Length(*height))
+        .collect();
+    let areas = Layout::vertical(constraints).split(inner);
+    for (index, (widget, rect)) in panel.widgets.iter().zip(areas.iter()).enumerate() {
+        let key = format!("custom:{}:w{index}", panel.id);
+        draw_custom_widget(frame, *rect, widget, &key, ctx);
+    }
+}
+
+fn draw_custom_widget(
+    frame: &mut Frame,
+    area: Rect,
+    widget: &CustomWidget,
+    key: &str,
+    ctx: &mut PanelCtx,
+) {
+    if area.height == 0 || area.width < 12 {
+        return;
+    }
+    let color = ctx.theme.widget_color(widget.color.as_deref());
+    let missing = |frame: &mut Frame, ctx: &PanelCtx| {
+        widgets::gauge(
+            frame,
+            area,
+            widget.label.as_deref().unwrap_or("sensor"),
+            "n/a",
+            0.0,
+            with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
+            ctx.theme,
+            ctx.stale,
+        );
+    };
+
+    match widget.kind {
+        WidgetKind::Graph => {
+            let Some(slot) = widget_slot(widget, ctx.snapshot) else {
+                missing(frame, ctx);
+                return;
+            };
+            if ctx.charts_on() {
+                let points = ctx
+                    .history
+                    .map(|history| history.window(&slot.sensor_id, ctx.window_points()))
+                    .unwrap_or_default();
+                let (latest_text, latest_style) = match bindings::slot_sensor(ctx.snapshot, &slot) {
+                    Some(sensor) => (
+                        widget_display(sensor, widget.unit.as_deref()),
+                        ctx.theme.sensor_style(&sensor.kind, sensor.value),
+                    ),
+                    None => ("n/a".to_string(), Style::new().fg(ctx.theme.muted)),
+                };
+                let series = Series {
+                    label: widget.label.clone().unwrap_or_else(|| slot.label.clone()),
+                    color,
+                    latest_text,
+                    latest_style,
+                    points,
+                };
+                draw_metric_graph(
+                    frame,
+                    area,
+                    ctx,
+                    key.to_string(),
+                    vec![series],
+                    widget.y_mode.unwrap_or(YMode::Auto),
+                );
+            } else {
+                draw_custom_gauge(frame, area, widget, &slot, color, ctx);
+            }
+        }
+        WidgetKind::Gauge => match widget_slot(widget, ctx.snapshot) {
+            Some(slot) => draw_custom_gauge(frame, area, widget, &slot, color, ctx),
+            None => missing(frame, ctx),
+        },
+        WidgetKind::Bars => {
+            let slots = if widget.filter.is_some() {
+                widget_filter_slots(widget, ctx.snapshot)
+            } else {
+                widget_slot(widget, ctx.snapshot).into_iter().collect()
+            };
+            let values: Vec<Option<f64>> = slots
+                .iter()
+                .map(|slot| {
+                    bindings::slot_sensor(ctx.snapshot, slot).and_then(|sensor| sensor.value)
+                })
+                .collect();
+            widgets::bars(frame, area, &values, ctx.theme, ctx.stale);
+        }
+        WidgetKind::Sparkline => {
+            if let Some(slot) = widget_slot(widget, ctx.snapshot) {
+                let points: Vec<f64> = ctx
+                    .history
+                    .map(|history| history.window(&slot.sensor_id, ctx.window_points()))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .flatten()
+                    .map(f64::from)
+                    .collect();
+                widgets::sparkline(
+                    frame,
+                    area,
+                    &points,
+                    with_dim(Style::new().fg(color), ctx.stale),
+                    ctx.stale,
+                );
+            }
+        }
+        WidgetKind::Table => {
+            let slots = widget_filter_slots(widget, ctx.snapshot);
+            let labels: Vec<String> = slots.iter().map(|slot| slot.label.clone()).collect();
+            let duplicated = duplicate_labels(&labels);
+            let mut rows: Vec<Row<'static>> = Vec::new();
+            for (slot, duplicated) in slots.iter().zip(duplicated) {
+                let Some(sensor) = bindings::slot_sensor(ctx.snapshot, slot) else {
+                    continue;
+                };
+                let hardware_name = ctx
+                    .snapshot
+                    .hardware(&slot.hardware_id)
+                    .map(|hardware| hardware.name.clone())
+                    .unwrap_or_default();
+                let name = distinct_label(&slot.label, &hardware_name, duplicated);
+                let style = with_dim(
+                    ctx.theme.sensor_style(&sensor.kind, sensor.value),
+                    ctx.stale,
+                );
+                rows.push(
+                    Row::new(vec![
+                        Cell::from(name),
+                        widgets::right_cell(widget_display(sensor, widget.unit.as_deref()), style),
+                        widgets::right_cell(
+                            format::stat(&sensor.kind, sensor.min),
+                            with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
+                        ),
+                        widgets::right_cell(
+                            format::stat(&sensor.kind, sensor.max),
+                            with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
+                        ),
+                    ])
+                    .style(style),
+                );
+            }
+            let widths = vec![
+                Constraint::Min(12),
+                Constraint::Length(12),
+                Constraint::Length(9),
+                Constraint::Length(9),
+            ];
+            widgets::table(
+                frame,
+                area,
+                Block::default(),
+                &["Sensor", "Value", "Min", "Max"],
+                widths,
+                rows,
+                ctx.scroll,
+                ctx.theme,
+                ctx.stale,
+            );
+        }
+    }
+}
+
+fn draw_custom_gauge(
+    frame: &mut Frame,
+    area: Rect,
+    widget: &CustomWidget,
+    slot: &Slot,
+    color: Color,
+    ctx: &PanelCtx,
+) {
+    let Some(sensor) = bindings::slot_sensor(ctx.snapshot, slot) else {
+        return;
+    };
+    let label = widget.label.clone().unwrap_or_else(|| slot.label.clone());
+    let display = widget_display(sensor, widget.unit.as_deref());
+    let ratio = sensor
+        .value
+        .map_or(0.0, |value| widget_ratio(&sensor.kind, value));
+    widgets::gauge(
+        frame,
+        area,
+        &label,
+        &display,
+        ratio,
+        with_dim(Style::new().fg(color), ctx.stale),
+        ctx.theme,
+        ctx.stale,
+    );
 }
 
 // ------------------------------------------------------------------ tables

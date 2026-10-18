@@ -211,6 +211,7 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Goal:** `charts.marker = braille|halfblock|ascii`; auto-downgrade when the environment can't render braille (legacy conhost detection via `WT_SESSION`/`TERM` heuristics documented in code); `a` key overrides globally.
 **Files:** `src/charts.rs`, `src/theme.rs` (env detection), `src/app.rs`.
 **Notes:** ASCII mode uses the `_ - =` glyph set; braille and halfblock are implemented, forced modes are snapshot-tested, legacy-conhost sniffing is not (the `a` toggle and `charts.marker` cover it — manual QA matrix pending).
+**Done early:** the `?` help overlay from T5.1 shipped with T4.4 (it lists the live, remapped keymap).
 **Done when:** Manual QA on conhost and tmux; forced modes snapshot-tested.
 
 **Exit checklist P3:** charts live on real hardware (incl. 2 GPUs); bench + CPU budget met; no allocations in steady-state render path beyond scratch reuse.

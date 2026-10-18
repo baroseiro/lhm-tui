@@ -1,0 +1,30 @@
+---
+source: tests/widgets.rs
+expression: out
+---
+ lhm-tui v0.0.1  ● live   80×26   http://127.0.0.1:8085
+╭ CPU · AMD Ryzen 7 7800X3D ───────────────────────────────────────────────────╮
+│⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠│
+│● CPU ╭ Help — any key closes ─────────────────────────────────────────╮      │
+│⠀⠀⠀⠀⠀⠀│  q, esc, ctrl+c     Quit                                       │⠀⠀⠀⠀⠀⠐│
+│● Core│  ?                  Help overlay                               │      │
+│ ▅▁   │  p, space           Pause / resume polling                     │      │
+│      │  g                  Chart window forward                       │      │
+╰ Clock│  G                  Chart window backward                      │──────╯
+╭ GPU 0│  tab                Focus next panel                           │──────╮
+│⠀⠀⠀⠀⠀⠀│  shift+tab, backtab Focus previous panel                       │⠀⠀⠀⠀⠀⠰│
+│● GPU │  enter              Zoom focused panel (M5)                    │      │
+│⠀⠀⠀⠀⠀⠀│  b                  Sensor browser (M5)                        │⠀⠀⠀⠀⠀⢐│
+│● GPU │  s                  Cycle table sort                           │      │
+│ VRAM │  r                  Reload config (M5)                         │64 MB │
+│ Power│  m                  Reset LHM min/max (M5)                     │      │
+╰──────│  a                  Toggle ASCII rendering                     │──────╯
+╭ Memor│  d                  Debug overlay (M5)                         │──────╮
+│⠁⠁⠁⠁⠁⠁│  t                  Toggle temperatures table                  │⠁⠁⠁⠁⠁⠁│
+│⠄⠄⠄⠄⠄⠄│  c                  Toggle charts                              │⠄⠄⠄⠄⠄⠌│
+│⡀⡀⡀⡀⡀⡀│                                                                │⡀⡀⡀⡀⡀⡀│
+│● Memo│                                                                │      │
+│ Used ╰────────────────────────────────────────────────────────────────╯.0 GB │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ q quit   ·   p pause   ·   tab focus   ·   s sort   ·   j/k scroll   ·   g wind

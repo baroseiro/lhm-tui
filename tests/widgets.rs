@@ -563,6 +563,211 @@ fn thermal_panel_snapshot() {
 }
 
 #[test]
+fn custom_panel_snapshot() {
+    let mut cfg = Config::default();
+    cfg.panels.custom.push(lhm_tui::config::CustomPanel {
+        id: "nvme".to_string(),
+        title: Some("NVMe".to_string()),
+        widgets: vec![
+            lhm_tui::config::CustomWidget {
+                kind: lhm_tui::config::WidgetKind::Graph,
+                sensor: Some("/nvme/0/temperature/0".to_string()),
+                label: Some("Temp".to_string()),
+                unit: Some("°C".to_string()),
+                color: Some("storage".to_string()),
+                ..Default::default()
+            },
+            lhm_tui::config::CustomWidget {
+                kind: lhm_tui::config::WidgetKind::Gauge,
+                sensor: Some("/nvme/0/load/0".to_string()),
+                label: Some("Activity".to_string()),
+                unit: Some("%".to_string()),
+                y_mode: Some(lhm_tui::config::YMode::Percent),
+                ..Default::default()
+            },
+        ],
+    });
+    cfg.ui.layout.push("custom:nvme".to_string());
+
+    let snapshot = fixture_snapshot("lhm-0.9.6.json");
+    let mut history = History::new(300, 1000, 3600);
+    history.append_snapshot(&snapshot);
+    let bindings = bindings::resolve(&snapshot, &cfg.panels);
+    let theme = theme();
+    let mut charts = ChartsState::new();
+    let spec = PanelSpec {
+        id: "custom:nvme".to_string(),
+        kind: PanelKind::Custom("nvme".to_string()),
+        scrollable: false,
+    };
+    let out = render(64, 11, |frame| {
+        draw_preset(
+            frame,
+            frame.area(),
+            &spec,
+            &snapshot,
+            &bindings,
+            &cfg,
+            &theme,
+            &mut charts,
+            Some(&history),
+            0,
+            false,
+        );
+    });
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn custom_panel_missing_sensor_snapshot() {
+    let mut cfg = Config::default();
+    cfg.panels.custom.push(lhm_tui::config::CustomPanel {
+        id: "ghost".to_string(),
+        title: None,
+        widgets: vec![
+            lhm_tui::config::CustomWidget {
+                kind: lhm_tui::config::WidgetKind::Gauge,
+                sensor: Some("/nope/0".to_string()),
+                ..Default::default()
+            },
+            lhm_tui::config::CustomWidget {
+                kind: lhm_tui::config::WidgetKind::Sparkline,
+                sensor: Some("/nope/1".to_string()),
+                ..Default::default()
+            },
+        ],
+    });
+    cfg.ui.layout.push("custom:ghost".to_string());
+
+    let snapshot = fixture_snapshot("lhm-0.9.6.json");
+    let bindings = bindings::resolve(&snapshot, &cfg.panels);
+    let theme = theme();
+    let mut charts = ChartsState::new();
+    let spec = PanelSpec {
+        id: "custom:ghost".to_string(),
+        kind: PanelKind::Custom("ghost".to_string()),
+        scrollable: false,
+    };
+    let out = render(56, 5, |frame| {
+        draw_preset(
+            frame,
+            frame.area(),
+            &spec,
+            &snapshot,
+            &bindings,
+            &cfg,
+            &theme,
+            &mut charts,
+            None,
+            0,
+            false,
+        );
+    });
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn custom_table_snapshot() {
+    let mut cfg = Config::default();
+    cfg.panels.custom.push(lhm_tui::config::CustomPanel {
+        id: "drives".to_string(),
+        title: Some("Drive temps".to_string()),
+        widgets: vec![lhm_tui::config::CustomWidget {
+            kind: lhm_tui::config::WidgetKind::Table,
+            filter: Some(lhm_tui::config::WidgetFilter {
+                hardware: Some("/nvme/0".to_string()),
+                types: vec!["Temperature".to_string()],
+                name_regex: None,
+            }),
+            ..Default::default()
+        }],
+    });
+    cfg.ui.layout.push("custom:drives".to_string());
+
+    let snapshot = fixture_snapshot("lhm-0.9.6.json");
+    let bindings = bindings::resolve(&snapshot, &cfg.panels);
+    let theme = theme();
+    let mut charts = ChartsState::new();
+    let spec = PanelSpec {
+        id: "custom:drives".to_string(),
+        kind: PanelKind::Custom("drives".to_string()),
+        scrollable: true,
+    };
+    let out = render(64, 11, |frame| {
+        draw_preset(
+            frame,
+            frame.area(),
+            &spec,
+            &snapshot,
+            &bindings,
+            &cfg,
+            &theme,
+            &mut charts,
+            None,
+            0,
+            false,
+        );
+    });
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn cpu_show_subset_snapshot() {
+    let mut cfg = Config::default();
+    cfg.charts.enabled = false;
+    cfg.panels.cpu.show = vec!["temp".to_string()];
+    let snapshot = fixture_snapshot("lhm-0.9.6.json");
+    let bindings = bindings::resolve(&snapshot, &cfg.panels);
+    let theme = theme();
+    let mut charts = ChartsState::new();
+    let spec = PanelSpec {
+        id: "cpu:0".to_string(),
+        kind: PanelKind::Cpu(0),
+        scrollable: false,
+    };
+    let out = render(60, 3, |frame| {
+        draw_preset(
+            frame,
+            frame.area(),
+            &spec,
+            &snapshot,
+            &bindings,
+            &cfg,
+            &theme,
+            &mut charts,
+            None,
+            0,
+            false,
+        );
+    });
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn help_overlay_snapshot() {
+    use lhm_tui::app::{AppState, PollEvent};
+    use lhm_tui::lhm::client::Fetched;
+    use std::sync::Arc;
+
+    let cfg = Config::default();
+    let snapshot = fixture_snapshot("lhm-0.9.6.json");
+    let mut app = AppState::new();
+    app.apply_poll_event(
+        PollEvent::Snapshot(Arc::new(Fetched {
+            snapshot,
+            latency: Duration::from_millis(5),
+            bytes: 74_000,
+        })),
+        &cfg,
+    );
+    app.help_visible = true;
+
+    let out = render(80, 26, |frame| {
+        lhm_tui::ui::draw(frame, &mut app, &cfg);
+    });
+    insta::assert_snapshot!(out);
+}
+#[test]
 fn fans_power_storage_panels_snapshot() {
     let mut cfg = Config::default();
     cfg.charts.enabled = false;

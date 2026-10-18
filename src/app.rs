@@ -82,6 +82,10 @@ pub struct AppState {
     pub thermal_override: Option<bool>,
     /// `c` key override for `charts.enabled`.
     pub charts_override: Option<bool>,
+    /// `?` help overlay visibility (any key press closes it).
+    pub help_visible: bool,
+    /// Startup warnings shown as a toast (unknown config keys, …).
+    pub toast: Option<(String, Instant)>,
     /// Chart autoscale state (hysteresis per graph).
     pub charts: ChartsState,
 }
@@ -110,6 +114,8 @@ impl AppState {
             ascii_override: None,
             thermal_override: None,
             charts_override: None,
+            help_visible: false,
+            toast: None,
             charts: ChartsState::new(),
         }
     }
@@ -240,16 +246,20 @@ impl Default for AppState {
 }
 
 /// Run the TUI until the user quits. Owns the terminal lifecycle, including
-/// restore on every exit path (SPEC §4.2 shutdown).
-pub async fn run(cfg: &Config) -> Result<()> {
+/// restore on every exit path (SPEC §4.2 shutdown). Startup config warnings
+/// are surfaced as a toast (T4.6).
+pub async fn run(cfg: &Config, warnings: &[String]) -> Result<()> {
     let mut terminal = ratatui::init();
-    let result = run_loop(&mut terminal, cfg).await;
+    let result = run_loop(&mut terminal, cfg, warnings).await;
     ratatui::restore();
     result
 }
 
-async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
+async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config, warnings: &[String]) -> Result<()> {
     let mut app = AppState::new();
+    if !warnings.is_empty() {
+        app.toast = Some((warnings.join("  ·  "), Instant::now()));
+    }
     let frame_ms = u64::from(1000 / cfg.ui.fps.max(1)).max(1);
     let mut tick = tokio::time::interval(Duration::from_millis(frame_ms));
 
@@ -263,8 +273,15 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config) -> Result<()> {
     while !app.should_quit {
         tokio::select! {
             _ = tick.tick() => {
-                // Age ticker: refresh stale/paused status once a second.
-                let unstable = app.link != LinkStatus::Live || app.paused;
+                // Toast expiry.
+                if let Some((_, started)) = &app.toast {
+                    if started.elapsed() >= Duration::from_secs(12) {
+                        app.toast = None;
+                        app.dirty = true;
+                    }
+                }
+                // Age ticker: refresh stale/paused/toast status once a second.
+                let unstable = app.link != LinkStatus::Live || app.paused || app.toast.is_some();
                 if !app.dirty && unstable && last_status_redraw.elapsed() >= Duration::from_secs(1) {
                     app.dirty = true;
                     last_status_redraw = Instant::now();
@@ -408,12 +425,22 @@ fn spawn_input_thread(tx: tokio::sync::mpsc::UnboundedSender<Event>) {
     });
 }
 
-/// Handle a UI event: quit, pause, focus cycling, sort cycling and scrolling.
+/// Handle a UI event: help overlay, quit, pause, focus cycling, sort cycling
+/// and scrolling.
 pub fn handle_event(app: &mut AppState, event: Event, cfg: &Config) {
     match event {
         Event::Resize(_, _) => app.dirty = true,
         Event::Key(key) if key.kind != KeyEventKind::Release => {
-            if action_matches(cfg, "quit", &key) {
+            // The help overlay is closed by any key press.
+            if app.help_visible {
+                app.help_visible = false;
+                app.dirty = true;
+                return;
+            }
+            if action_matches(cfg, "help", &key) {
+                app.help_visible = true;
+                app.dirty = true;
+            } else if action_matches(cfg, "quit", &key) {
                 app.should_quit = true;
             } else if action_matches(cfg, "pause", &key) {
                 app.paused = !app.paused;
@@ -538,12 +565,12 @@ pub fn key_matches(key: &KeyEvent, spec: &str) -> bool {
         return false;
     }
 
-    // Terminals are inconsistent about reporting Shift for uppercase letters.
-    if let KeyCode::Char(c) = actual_code {
-        if c.is_ascii_uppercase() {
-            expected_mods.remove(KeyModifiers::SHIFT);
-            actual_mods.remove(KeyModifiers::SHIFT);
-        }
+    // Character keys encode their case in the code itself; terminals differ
+    // on whether they also report SHIFT (e.g. `?` = shift+/), so ignore the
+    // SHIFT bit for characters on both sides.
+    if let KeyCode::Char(_) = actual_code {
+        expected_mods.remove(KeyModifiers::SHIFT);
+        actual_mods.remove(KeyModifiers::SHIFT);
     }
     actual_mods == expected_mods
 }
@@ -785,6 +812,25 @@ mod tests {
         let mut app = AppState::new();
         app.apply_poll_event(PollEvent::Snapshot(empty_fetched()), &disabled);
         assert!(app.history.is_some(), "collected even with charts disabled");
+    }
+
+    #[test]
+    fn help_overlay_toggles_and_consumes_keys() {
+        let cfg = Config::default();
+        let mut app = AppState::new();
+        let question = KeyEvent::new(KeyCode::Char('?'), KeyModifiers::SHIFT);
+        handle_event(&mut app, Event::Key(question), &cfg);
+        assert!(app.help_visible);
+
+        // Any key — including `q` — just closes the overlay.
+        let q = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        handle_event(&mut app, Event::Key(q), &cfg);
+        assert!(!app.help_visible);
+        assert!(!app.should_quit, "q closed the help, not the app");
+
+        // q quits once the overlay is closed.
+        handle_event(&mut app, Event::Key(q), &cfg);
+        assert!(app.should_quit);
     }
 
     #[test]

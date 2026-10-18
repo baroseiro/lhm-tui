@@ -463,7 +463,7 @@ Responsive rules:
 | Keys                     | Action                                                          |
 | ------------------------ | --------------------------------------------------------------- |
 | `q`, `Esc`, `Ctrl+C`     | Quit                                                            |
-| `?`                      | Help overlay (keymap + config path + LHM URL)                    |
+| `?`                      | Help overlay (live keymap with remaps)                           |
 | `p`, `Space`             | Pause / resume polling (charts keep rendering last data)         |
 | `g` / `G`                | Cycle chart window forward/backward through `charts.window_cycle` |
 | `Tab` / `Shift+Tab`      | Move focus to next/previous panel                               |
@@ -488,6 +488,9 @@ Key conflicts after remapping → config validation error listing offending acti
 - Thresholds: values ≥ `warn` → `theme.warn`, ≥ `crit` → `theme.crit`; applies to gauges, bars, tables and graph line/latest-value marker. Defaults: 80/95 °C, 90/98 % load, GPU mem 90/97 %.
 - Numbers right-aligned, `tabular`-friendly fixed decimals: temps `69.5 °C`, loads `41.2 %`, memory `20.1 / 32.0 GB`, clocks `5.42 GHz`, fans `1205 RPM`, power `142 W`.
 - `NO_COLOR` env or `--no-color`: honor by dropping colors but keeping bold/dim and bar glyphs.
+  RGB theme colors are downgraded automatically to the terminal's detected color depth
+  (truecolor → 256 → 16); built-in palettes: `default`, `gruvbox`, `nord`, `mono` (or a theme
+  file via `--theme <path>`).
 
 ---
 
@@ -568,8 +571,10 @@ Env overrides: `LHM_TUI_URL`, `LHM_TUI_USERNAME`, `LHM_TUI_PASSWORD`, `LHM_TUI_C
 Format rules: strict JSON (RFC 8259 — **no comments, no trailing commas**). A `$schema` key pointing
 at `schema/lhm-tui.schema.json` is allowed and ignored. Unknown keys are collected and reported as
 warnings (typo protection: `"pol_interval_ms"` must not be silently ignored); `--strict-config`
-escalates them to errors. Malformed JSON or type errors → exit code 2 with a `serde_path_to_error`
-path (e.g. `charts.window: invalid duration "5x"`).
+escalates them to errors. Semantic references are validated with actionable errors: sensor-override
+slot keys, `panels.*.show` slots, `gpu.include` kinds, custom-widget sensor sources and regexes,
+theme names/colors, and key actions/specs/conflicts. Malformed JSON or type errors → exit code 2
+with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 
 ### 8.2 Annotated example
 
@@ -695,16 +700,17 @@ path (e.g. `charts.window: invalid duration "5x"`).
 | `charts.marker`                   | enum            | `braille`        | Fallback automatically if glyph unsupported  |
 | `charts.window(_cycle)`           | duration/string | `"5m"`/`[1m,5m,15m]` | Window > `history.window_s` clamps       |
 | `theme.*`                         | color/float     | see example      | Names or `#RRGGBB`; downgraded for 256/16 colors |
-| `panels.*.show` / `enabled`       | per preset      | all/true         | Preset-specific slot names as documented     |
+| `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors |
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
 | `keys.*`                          | string[]        | see §6.4         | Validated for conflicts                      |
 
 ### 8.4 Config JSON Schema
 
-`schema/lhm-tui.schema.json` (hand-maintained, abridged in Appendix C) ships in the repo and is
-referenced by `lhm-tui.example.json` via `$schema`. It enables editor completion/validation. CI
-validates the example against the schema (small `schema` crate test).
+`schema/lhm-tui.schema.json` (hand-maintained; Appendix C is an abridged excerpt) ships in the
+repo and is referenced by `lhm-tui.example.json` via `$schema`. It enables editor validation and
+completion, mirrors the runtime validation (including `additionalProperties: false`), and is
+enforced by `tests/schema.rs` — which also proves the schema rejects broken configs.
 
 ---
 
