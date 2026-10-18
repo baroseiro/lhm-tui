@@ -119,6 +119,106 @@ fn t_and_c_keys_toggle_thermal_and_charts() {
 }
 
 #[test]
+fn enter_toggles_zoom() {
+    let (mut app, cfg) = live_app();
+    handle_event(&mut app, key(KeyCode::Enter), &cfg);
+    assert!(app.zoomed);
+    handle_event(&mut app, key(KeyCode::Enter), &cfg);
+    assert!(!app.zoomed);
+}
+
+#[test]
+fn d_toggles_debug_overlay() {
+    let (mut app, cfg) = live_app();
+    handle_event(&mut app, key(KeyCode::Char('d')), &cfg);
+    assert!(app.debug_visible);
+    handle_event(&mut app, key(KeyCode::Char('d')), &cfg);
+    assert!(!app.debug_visible);
+}
+
+#[test]
+fn browser_filters_selects_and_graphs() {
+    let (mut app, cfg) = live_app();
+    handle_event(&mut app, key(KeyCode::Char('b')), &cfg);
+    assert!(app.browser_open);
+
+    for character in "gpu core".chars() {
+        handle_event(&mut app, key(KeyCode::Char(character)), &cfg);
+    }
+    assert_eq!(app.browser_query, "gpu core");
+    let matches = app.browser_matches();
+    assert!(!matches.is_empty(), "query should match GPU Core sensors");
+    assert!(matches
+        .iter()
+        .all(|(_, label)| label.to_ascii_lowercase().contains("gpu core")));
+
+    handle_event(&mut app, key(KeyCode::Char('j')), &cfg);
+    assert_eq!(app.browser_selected, 1);
+
+    handle_event(&mut app, key(KeyCode::Enter), &cfg);
+    assert!(!app.browser_open, "enter closes the browser");
+    let picked = app.adhoc_sensor.clone().expect("sensor picked");
+    assert!(picked.contains("/gpu-"), "picked {picked}");
+
+    // q closes the ad-hoc view instead of quitting.
+    handle_event(&mut app, key(KeyCode::Char('q')), &cfg);
+    assert!(app.adhoc_sensor.is_none());
+    assert!(!app.should_quit);
+
+    // Backspace edits the filter.
+    handle_event(&mut app, key(KeyCode::Char('b')), &cfg);
+    handle_event(&mut app, key(KeyCode::Char('x')), &cfg);
+    handle_event(&mut app, key(KeyCode::Backspace), &cfg);
+    assert!(app.browser_query.is_empty());
+    handle_event(&mut app, key(KeyCode::Esc), &cfg);
+    assert!(!app.browser_open);
+}
+
+#[test]
+fn reload_applies_valid_config_and_keeps_old_on_error() {
+    use clap::Parser;
+
+    let dir = std::env::temp_dir().join(format!("lhm-tui-reload-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("config.json");
+
+    let (mut app, mut cfg) = live_app();
+
+    // Valid reload: layout changes and a toast confirms.
+    std::fs::write(&path, r##"{"ui":{"layout":["cpu","memory"]}}"##).expect("write config");
+    let cli = lhm_tui::cli::Cli::parse_from(["lhm-tui", "--config", path.to_str().expect("utf8")]);
+    app.cli = Some(cli.clone());
+    handle_event(&mut app, key(KeyCode::Char('r')), &cfg);
+    assert!(app.pending_reload, "run_loop performs the reload");
+    lhm_tui::app::reload_config(&mut app, &mut cfg, Some(cli.clone()));
+    assert_eq!(cfg.ui.layout, vec!["cpu", "memory"]);
+    assert!(app.toast.as_ref().expect("toast").0.contains("reloaded"));
+
+    // Broken reload: previous config stays, toast reports the error.
+    std::fs::write(&path, "{ not json").expect("write bad config");
+    lhm_tui::app::reload_config(&mut app, &mut cfg, Some(cli));
+    assert_eq!(cfg.ui.layout, vec!["cpu", "memory"], "old config kept");
+    assert!(app
+        .toast
+        .as_ref()
+        .expect("toast")
+        .0
+        .contains("reload failed"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn reset_minmax_is_a_noop_without_notice_channel() {
+    let (mut app, cfg) = live_app();
+    // Unit tests have no tokio runtime / notice channel: pressing `m` must
+    // not panic and must not fabricate a toast.
+    let before = app.toast.clone();
+    handle_event(&mut app, key(KeyCode::Char('m')), &cfg);
+    assert_eq!(app.toast, before);
+}
+
+#[test]
 fn sort_key_cycles_modes() {
     let (mut app, cfg) = live_app();
     assert_eq!(

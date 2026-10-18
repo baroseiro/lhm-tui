@@ -87,6 +87,7 @@ assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust task
 **Goal:** `tracing` to file only (SPEC §10.2): default path per platform, `--log` override, `-v` levels, 10 MB rotation keeping 3 files.
 **Files:** `src/util.rs` (log init), `src/main.rs`.
 **Notes:** Use `tracing-subscriber` with an `EnvFilter` built from verbosity (`RUST_LOG` overrides). 10 MB × 3 rotation needs a small hand-rolled writer — `tracing-appender` only rotates by time.
+**Shipped:** overlay implemented as a centered popup with live poll stats (T5.1).
 **Done when:** Log file appears with startup lines; no output leaks to the TUI.
 
 **Exit checklist P0:** placeholder app runs; `--print-config`/`--init-config` implemented; CI green; log file written.
@@ -273,12 +274,14 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Files:** `src/app.rs` (focus/zoom), `src/ui/mod.rs`, `src/ui/widgets.rs` (list filter).
 **Notes:** Ad-hoc graph is ephemeral (not persisted). Focus handling must survive layout changes (resize, panels appearing).
 **Done when:** Key-path tests; snapshot of browser; zoom across all presets.
+**Shipped:** zoom keeps the focus ring active while zoomed; the browser filters on a case-insensitive substring over `hardware name sensor name SensorId`, `enter` opens the ad-hoc graph, `q`/`esc`/`b` close it.
 
 #### T5.3 — Reload + reset min/max
 **Goal:** `r` reload config from the same path (re-validate; on error keep old config + toast; success applies layout/theme/keys live, keeps history); `m` calls `GET /ResetAllMinMax` with confirmation toast; failure → banner.
 **Files:** `src/app.rs`, `src/lhm/client.rs` (second endpoint fn).
 **Notes:** Reload must not touch the poller's interval if unchanged, and vice versa if changed — restart just the interval timer.
 **Done when:** Manual test matrix (valid reload / invalid reload / LHM down); integration test for `/ResetAllMinMax` via mock.
+**Shipped:** reload re-runs the full discovery + precedence chain via the stored CLI handle; bindings are recomputed immediately (no empty-panel flash) and history survives. Server-level changes (URL/interval/auth/retry) respawn the poller automatically (`pending_poller_restart`). `/ResetAllMinMax` results land as toasts.
 
 #### T5.4 — Responsive rules + ascii + too-small screen
 **Goal:** Implement SPEC §6.1 rules fully: 120/80/60 col breakpoints; `<60×20` dedicated screen; `a` toggle ascii; tables drop min/max columns at narrow widths.
@@ -291,18 +294,21 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Files:** `src/main.rs`, `src/ui/mod.rs` (headless render), `tests/golden.rs`.
 **Notes:** `--dump` is the machine-readable product surface — document it in SPEC §9 note + README; golden test on fixture is the contract.
 **Done when:** Golden JSON stable via `insta`; `--once` output snapshot; works with `--poll` and auth flags.
+**Shipped:** `tests/dump.rs` goldens pin the normalized JSON (timestamp fixed); `--once` renders a fixed-viewport frame without alternate-screen/raw-mode and forces `no_color` when stdout is not a TTY (best-effort; pseudo-terminals always look like TTYs).
 
 #### T5.6 — TUI snapshot suite consolidation + soak harness
 **Goal:** Consolidate all `TestBackend` snapshots (layouts × themes × states: live/stale/error/paused/help/zoom/narrow), add a longest-path soak script (`scripts/soak.ps1` + `.sh`: run 1 h against local LHM, log RSS/CPU every 60 s).
 **Files:** `tests/snapshots/`, `scripts/soak.*`.
 **Notes:** Snapshot updates via `cargo insta review`; CI fails on unreviewed changes.
 **Done when:** Suite runs < 15 s; soak results recorded in the M5 issue (memory flat ±2 MB, no fd leak).
+**Shipped:** `tests/frames.rs` renders full frames at 160/120/80/60 columns across live/stale/disconnected/paused/zoom/debug/browser/adhoc states; `scripts/soak.ps1` + `scripts/soak.sh` sample RSS/CPU per minute into a CSV (execution happens on a real session, see `docs/qa-matrix.md`).
 
 #### T5.7 — Manual QA matrix (SPEC §12.4)
 **Goal:** Execute and record the QA matrix on real hardware/terminals: Windows Terminal + conhost, WSL2, tmux/SSH, kitty; AMD+NVIDIA, Intel iGPU, no-GPU, 2-GPU; LHM 0.9.5/0.9.6; auth on/off.
 **Files:** `docs/qa-matrix.md` (checked list with dates/versions).
 **Notes:** File bugs as issues with `--probe` output; fix or explicitly defer to v0.1.x before closing P5.
 **Done when:** Every row executed; deferrals listed in release notes.
+**Shipped:** matrix template lives at `docs/qa-matrix.md` with a per-row checklist; execution happens before tagging v0.1.0 (P6).
 
 **Exit checklist P5:** QA matrix complete; soak passed; `--once`/`--dump` documented; no known S1/S2 bugs.
 

@@ -1140,6 +1140,18 @@ fn draw_virtual_line(frame: &mut Frame, area: Rect, ctx: &PanelCtx, memory: &Mem
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/// Single-graph helper for ad-hoc views (T5.2).
+pub(crate) fn draw_series_graph(
+    frame: &mut Frame,
+    area: Rect,
+    ctx: &mut PanelCtx,
+    key: String,
+    series: Vec<Series>,
+    y_mode: YMode,
+) {
+    draw_metric_graph(frame, area, ctx, key, series, y_mode);
+}
+
 /// True when a `panels.<preset>.show` list includes `slot` (case-insensitive).
 fn shows(list: &[String], slot: &str) -> bool {
     list.iter().any(|entry| entry.eq_ignore_ascii_case(slot))
@@ -1477,6 +1489,7 @@ fn sort_table_rows(sort: TableSort, rows: &mut Vec<(Option<f64>, String, Row<'st
 }
 
 fn draw_thermal(frame: &mut Frame, area: Rect, ctx: &PanelCtx) {
+    let narrow = area.width < 80; // drop Min/Max columns (SPEC §6.1)
     let block = panel_block(
         "Temperatures".to_string(),
         ctx.theme,
@@ -1508,41 +1521,44 @@ fn draw_thermal(frame: &mut Frame, area: Rect, ctx: &PanelCtx) {
                 ctx.theme.sensor_style(&sensor.kind, sensor.value),
                 ctx.stale,
             );
-            let row = Row::new(vec![
+            let mut cells = vec![
                 Cell::from(name.clone()),
                 widgets::right_cell(format::sensor_value(sensor), style),
-                widgets::right_cell(
+            ];
+            if !narrow {
+                cells.push(widgets::right_cell(
                     format::stat(&sensor.kind, sensor.min),
                     with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
-                ),
-                widgets::right_cell(
+                ));
+                cells.push(widgets::right_cell(
                     format::stat(&sensor.kind, sensor.max),
                     with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
-                ),
-            ])
-            .style(style);
-            Some((sensor.value, name, row))
+                ));
+            }
+            Some((sensor.value, name, Row::new(cells).style(style)))
         })
         .collect();
 
     sort_table_rows(ctx.sort, &mut rows);
     let rows: Vec<Row<'static>> = rows.into_iter().map(|(_, _, row)| row).collect();
-    let widths = vec![
-        Constraint::Min(12),
-        Constraint::Length(12),
-        Constraint::Length(9),
-        Constraint::Length(9),
-    ];
+    let (headers, widths): (&[&str], Vec<Constraint>) = if narrow {
+        (
+            &["Sensor", "Value"],
+            vec![Constraint::Min(12), Constraint::Length(12)],
+        )
+    } else {
+        (
+            &["Sensor", "Value", "Min", "Max"],
+            vec![
+                Constraint::Min(12),
+                Constraint::Length(12),
+                Constraint::Length(9),
+                Constraint::Length(9),
+            ],
+        )
+    };
     widgets::table(
-        frame,
-        area,
-        block,
-        &["Sensor", "Value", "Min", "Max"],
-        widths,
-        rows,
-        ctx.scroll,
-        ctx.theme,
-        ctx.stale,
+        frame, area, block, headers, widths, rows, ctx.scroll, ctx.theme, ctx.stale,
     );
 }
 

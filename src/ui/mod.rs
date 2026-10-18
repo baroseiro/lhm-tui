@@ -12,13 +12,14 @@ pub mod widgets;
 use std::time::Instant;
 
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{AppState, LinkStatus};
 use crate::bindings::Bindings;
+use crate::charts::Series;
 use crate::config::Config;
 use crate::theme::Theme;
 use crate::ui::presets::PanelCtx;
@@ -48,7 +49,7 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
     .areas(area);
 
     if cfg.ui.show_header {
-        frame.render_widget(header_line(app, cfg, area), header);
+        frame.render_widget(header_line(app, cfg, area, &theme), header);
     }
     if let Some((message, _)) = &app.toast {
         frame.render_widget(
@@ -61,18 +62,301 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
         && app.last_fetch.is_some();
     let has_panels =
         app.snapshot().is_some() && app.bindings.as_ref().is_some_and(Bindings::has_any);
-    if has_panels {
+    if let Some(sensor_id) = app.adhoc_sensor.clone() {
+        render_adhoc(frame, body, app, cfg, &theme, &sensor_id);
+    } else if has_panels {
         render_panels(frame, body, app, cfg, &theme, stale);
     } else {
         frame.render_widget(status_paragraph(app, cfg, &theme), body);
     }
 
     if cfg.ui.show_footer {
-        frame.render_widget(footer_line(app, cfg), footer);
+        frame.render_widget(footer_line(app, cfg, &theme), footer);
     }
     if app.help_visible {
         render_help(frame, area, cfg, &theme);
     }
+    if app.debug_visible {
+        render_debug(frame, area, app, cfg, &theme);
+    }
+    if app.browser_open {
+        render_browser(frame, area, app, &theme);
+    }
+}
+
+/// Ad-hoc fullscreen graph for a sensor picked in the browser (T5.2).
+fn render_adhoc(
+    frame: &mut Frame,
+    area: Rect,
+    app: &mut AppState,
+    cfg: &Config,
+    theme: &Theme,
+    sensor_id: &str,
+) {
+    let Some(fetched) = app.last_fetch.clone() else {
+        return;
+    };
+    let snapshot = &fetched.snapshot;
+    let mut found = None;
+    for hardware in snapshot.all_hardware() {
+        if let Some(sensor) = hardware.sensor(sensor_id) {
+            found = Some((
+                format!("{} · {}", hardware.name, sensor.name),
+                sensor.clone(),
+            ));
+            break;
+        }
+    }
+
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(format!(" Sensor · {sensor_id} "))
+        .border_style(Style::new().fg(theme.accent));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.height == 0 {
+        return;
+    }
+
+    let Some((label, sensor)) = found else {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "sensor not found in the current snapshot",
+                Style::new().fg(theme.warn),
+            )),
+            inner,
+        );
+        return;
+    };
+
+    let (window, window_label) = app.effective_window(cfg);
+    let poll_ms = cfg.server.poll_interval_ms.max(1);
+    let points = app
+        .history
+        .as_ref()
+        .map(|history| {
+            history.window(
+                sensor_id,
+                (window.as_millis() / u128::from(poll_ms)).max(1) as usize,
+            )
+        })
+        .unwrap_or_default();
+
+    if cfg.charts.enabled && !points.is_empty() && inner.height >= 4 {
+        let empty_bindings = crate::bindings::Bindings::default();
+        let ascii = app.effective_ascii(cfg);
+        let mut ctx = PanelCtx {
+            snapshot,
+            bindings: &empty_bindings,
+            cfg,
+            theme,
+            history: app.history.as_ref(),
+            charts: &mut app.charts,
+            charts_enabled: cfg.charts.enabled,
+            stale: false,
+            ascii,
+            focused: false,
+            sort: cfg.ui.table_sort,
+            scroll: 0,
+            window,
+            window_label,
+            now: Instant::now(),
+        };
+        let series = Series {
+            label,
+            color: theme.accent,
+            latest_text: format::sensor_value(&sensor),
+            latest_style: theme.sensor_style(&sensor.kind, sensor.value),
+            points,
+        };
+        presets::draw_series_graph(
+            frame,
+            inner,
+            &mut ctx,
+            format!("adhoc:{sensor_id}"),
+            vec![series],
+            crate::config::YMode::Auto,
+        );
+        return;
+    }
+
+    let lines = vec![
+        Line::from(Span::styled(label, Style::new().fg(theme.muted))),
+        Line::from(""),
+        Line::from(Span::styled(
+            format::sensor_value(&sensor),
+            Style::new().fg(theme.accent).bold(),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "LHM min {} · max {}",
+                format::stat(&sensor.kind, sensor.min),
+                format::stat(&sensor.kind, sensor.max)
+            ),
+            Style::new().fg(theme.muted),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "enable charts (c) for a live graph",
+            Style::new().fg(theme.muted),
+        )),
+    ];
+    frame.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Sensor browser overlay: filter, navigate, Enter graphs (T5.2).
+fn render_browser(frame: &mut Frame, area: Rect, app: &AppState, theme: &Theme) {
+    let width = area.width.saturating_sub(10).clamp(40, 90);
+    let height = area.height.saturating_sub(6).clamp(8, 30);
+    let popup = Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, popup);
+    let matches = app.browser_matches();
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(format!(" Sensors — {} match(es) ", matches.len()))
+        .border_style(Style::new().fg(theme.accent));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+    if inner.height == 0 {
+        return;
+    }
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(vec![
+        Span::styled(" filter: ", Style::new().fg(theme.muted)),
+        Span::styled(
+            format!("{}▏", app.browser_query),
+            Style::new().fg(theme.accent),
+        ),
+    ]));
+    let visible = inner.height.saturating_sub(1) as usize;
+    let start = app
+        .browser_selected
+        .saturating_sub(visible / 2)
+        .min(matches.len().saturating_sub(visible.max(1)));
+    for (index, (_, label)) in matches.iter().enumerate().skip(start).take(visible) {
+        let selected = index == app.browser_selected;
+        let style = if selected {
+            Style::new().fg(theme.accent).bold()
+        } else {
+            Style::new().fg(theme.text)
+        };
+        lines.push(Line::from(Span::styled(
+            format!(" {} {}", if selected { "▶" } else { " " }, label),
+            style,
+        )));
+    }
+    if matches.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " no sensors match the filter",
+            Style::new().fg(theme.muted),
+        )));
+    }
+    frame.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+/// Debug overlay: poll stats, history sizes, last error (T5.1).
+fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, theme: &Theme) {
+    let width = area.width.saturating_sub(12).clamp(40, 72);
+    let rows = app.last_fetch.iter().count() + 14;
+    let height = (rows as u16 + 2).min(area.height.saturating_sub(4));
+    let popup = Rect {
+        x: area.x + (area.width - width) / 2,
+        y: area.y + (area.height - height) / 2,
+        width,
+        height,
+    };
+    frame.render_widget(Clear, popup);
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .title(" Debug — d closes ")
+        .border_style(Style::new().fg(theme.accent));
+    let inner = block.inner(popup);
+    frame.render_widget(block, popup);
+
+    let key_style = Style::new().fg(theme.muted);
+    let value_style = Style::new().fg(theme.text);
+    let mut lines: Vec<Line> = Vec::new();
+    let mut push = |key: &str, value: String| {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} ", crate::ui::widgets::pad_display(key, 14)),
+                key_style,
+            ),
+            Span::styled(value, value_style),
+        ]));
+    };
+
+    push("version", env!("CARGO_PKG_VERSION").to_string());
+    push("link", format!("{:?}", app.link));
+    push(
+        "flags",
+        format!(
+            "paused={} charts={} ascii={} zoom={} help={}",
+            app.paused,
+            app.effective_charts(cfg),
+            app.effective_ascii(cfg),
+            app.zoomed,
+            app.help_visible
+        ),
+    );
+    push("url", cfg.server.url.clone());
+    push(
+        "poll interval",
+        format!("{} ms", cfg.server.poll_interval_ms),
+    );
+    push("window", app.effective_window(cfg).1);
+    push(
+        "uptime",
+        format!("{} s", app.started_at.elapsed().as_secs()),
+    );
+    if let Some(fetched) = &app.last_fetch {
+        let snapshot = &fetched.snapshot;
+        push("last poll", format!("{} ms", fetched.latency.as_millis()));
+        push("payload", human_bytes(fetched.bytes));
+        push(
+            "lhm version",
+            snapshot
+                .lhm_version
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+        );
+        push(
+            "hardware",
+            format!(
+                "{} items · {} sensors · {} skipped",
+                snapshot.hardware_count(),
+                snapshot.sensor_count(),
+                snapshot.skipped_nodes
+            ),
+        );
+    }
+    push(
+        "history",
+        match app.history.as_ref() {
+            Some(history) => format!(
+                "{} series · cap {} pts",
+                history.series_count(),
+                history.capacity()
+            ),
+            None => "not collected yet".to_string(),
+        },
+    );
+    push("chart axes", format!("{} tracked", app.charts.len()));
+    push("failed polls", app.failed_attempts.to_string());
+    if let Some(error) = &app.last_error {
+        push("last error", error.clone());
+    }
+    if let Some((message, _)) = &app.toast {
+        push("toast", message.clone());
+    }
+
+    frame.render_widget(Paragraph::new(Text::from(lines)), inner);
 }
 
 /// `?` overlay: remapped keys with their action descriptions (T4.4).
@@ -128,58 +412,58 @@ fn render_too_small(frame: &mut Frame, area: Rect, theme: &Theme) {
     frame.render_widget(Paragraph::new(text).alignment(Alignment::Center), inner);
 }
 
-fn dot(app: &AppState) -> Span<'static> {
+fn dot(app: &AppState, theme: &Theme) -> Span<'static> {
     match app.link {
-        LinkStatus::Connecting => Span::styled("○ ", Style::new().fg(Color::DarkGray)),
-        LinkStatus::Live => Span::styled("● ", Style::new().fg(Color::Green)),
-        LinkStatus::Stale => Span::styled("● ", Style::new().fg(Color::Yellow)),
-        LinkStatus::Reconnecting => Span::styled("● ", Style::new().fg(Color::Red)),
+        LinkStatus::Connecting => Span::styled("○ ", Style::new().fg(theme.muted)),
+        LinkStatus::Live => Span::styled("● ", Style::new().fg(theme.ok)),
+        LinkStatus::Stale => Span::styled("● ", Style::new().fg(theme.warn)),
+        LinkStatus::Reconnecting => Span::styled("● ", Style::new().fg(theme.crit)),
     }
 }
 
-fn link_label(app: &AppState) -> Span<'static> {
+fn link_label(app: &AppState, theme: &Theme) -> Span<'static> {
     match app.link {
-        LinkStatus::Connecting => Span::styled("connecting", Style::new().fg(Color::DarkGray)),
-        LinkStatus::Live => Span::styled("live", Style::new().fg(Color::Green)),
+        LinkStatus::Connecting => Span::styled("connecting", Style::new().fg(theme.muted)),
+        LinkStatus::Live => Span::styled("live", Style::new().fg(theme.ok)),
         LinkStatus::Stale => Span::styled(
             format!("stale {}s", app.seconds_since_live()),
-            Style::new().fg(Color::Yellow),
+            Style::new().fg(theme.warn),
         ),
         LinkStatus::Reconnecting => Span::styled(
             format!("reconnecting… (retry in {}s)", app.retry_seconds()),
-            Style::new().fg(Color::Red),
+            Style::new().fg(theme.crit),
         ),
     }
 }
 
-fn header_line(app: &AppState, cfg: &Config, size: Rect) -> Paragraph<'static> {
+fn header_line(app: &AppState, cfg: &Config, size: Rect, theme: &Theme) -> Paragraph<'static> {
     let (dot_span, label) = if app.paused {
         (
-            Span::styled("○ ", Style::new().fg(Color::DarkGray)),
-            Span::styled("paused", Style::new().fg(Color::DarkGray)),
+            Span::styled("○ ", Style::new().fg(theme.muted)),
+            Span::styled("paused", Style::new().fg(theme.muted)),
         )
     } else {
-        (dot(app), link_label(app))
+        (dot(app, theme), link_label(app, theme))
     };
     let line = Line::from(vec![
-        Span::styled(" lhm-tui ", Style::new().bold().fg(Color::Cyan)),
+        Span::styled(" lhm-tui ", Style::new().bold().fg(theme.accent)),
         Span::styled(
             concat!("v", env!("CARGO_PKG_VERSION"), "  "),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(theme.muted),
         ),
         dot_span,
         label,
         Span::styled(
             format!("   {}×{}", size.width, size.height),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(theme.muted),
         ),
         Span::styled("   ", Style::new()),
-        Span::styled(cfg.server.url.clone(), Style::new().fg(Color::DarkGray)),
+        Span::styled(cfg.server.url.clone(), Style::new().fg(theme.muted)),
     ]);
     Paragraph::new(line)
 }
 
-fn footer_line(app: &AppState, cfg: &Config) -> Paragraph<'static> {
+fn footer_line(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'static> {
     let first = |action: &str| {
         cfg.keys
             .get(action)
@@ -189,8 +473,8 @@ fn footer_line(app: &AppState, cfg: &Config) -> Paragraph<'static> {
     };
     let window = app.effective_window(cfg).1;
     let line = Line::from(vec![
-        Span::styled(format!(" {} ", first("quit")), Style::new().bold().fg(Color::Cyan)),
-        Span::styled("quit", Style::new().fg(Color::DarkGray)),
+        Span::styled(format!(" {} ", first("quit")), Style::new().bold().fg(theme.accent)),
+        Span::styled("quit", Style::new().fg(theme.muted)),
         Span::styled(
             format!(
                 "   ·   {} pause   ·   {} focus   ·   {} sort   ·   j/k scroll   ·   {} window({window})   ·   {} temps   ·   {} charts",
@@ -201,7 +485,7 @@ fn footer_line(app: &AppState, cfg: &Config) -> Paragraph<'static> {
                 first("toggle_thermal"),
                 first("toggle_charts"),
             ),
-            Style::new().fg(Color::DarkGray),
+            Style::new().fg(theme.muted),
         ),
     ]);
     Paragraph::new(line)
@@ -226,8 +510,8 @@ fn status_paragraph(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'s
             if let Some(fetched) = &app.last_fetch {
                 let snapshot = &fetched.snapshot;
                 lines.push(Line::from(vec![
-                    Span::styled("● ", Style::new().fg(Color::Green)),
-                    Span::styled("Live", Style::new().bold().fg(Color::Green)),
+                    Span::styled("● ", Style::new().fg(theme.ok)),
+                    Span::styled("Live", Style::new().bold().fg(theme.ok)),
                 ]));
                 lines.push(Line::from(Span::styled(
                     format!(
@@ -253,22 +537,22 @@ fn status_paragraph(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'s
         }
         LinkStatus::Stale => {
             lines.push(Line::from(vec![
-                Span::styled("● ", Style::new().fg(Color::Yellow)),
+                Span::styled("● ", Style::new().fg(theme.warn)),
                 Span::styled(
                     format!(
                         "No data for {}s — showing last values",
                         app.seconds_since_live()
                     ),
-                    Style::new().fg(Color::Yellow),
+                    Style::new().fg(theme.warn),
                 ),
             ]));
         }
         LinkStatus::Reconnecting => {
             lines.push(Line::from(vec![
-                Span::styled("● ", Style::new().fg(Color::Red)),
+                Span::styled("● ", Style::new().fg(theme.crit)),
                 Span::styled(
                     "Cannot reach LibreHardwareMonitor",
-                    Style::new().fg(Color::Red),
+                    Style::new().fg(theme.crit),
                 ),
             ]));
             lines.push(Line::from(Span::styled(
@@ -286,7 +570,7 @@ fn status_paragraph(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'s
         if app.link != LinkStatus::Live {
             lines.push(Line::from(Span::styled(
                 error.clone(),
-                Style::new().fg(Color::Red),
+                Style::new().fg(theme.crit),
             )));
         }
     }
@@ -321,6 +605,7 @@ fn render_panels(
     let sort = app.effective_sort(cfg);
     let ascii = app.effective_ascii(cfg);
     let charts_on = app.effective_charts(cfg);
+    let zoomed = app.zoomed;
     let overrides = presets::PanelOverrides {
         thermal: Some(app.effective_thermal(cfg)),
     };
@@ -349,6 +634,32 @@ fn render_panels(
     if panels.is_empty() {
         return;
     }
+    let focused_index = *focus % panels.len();
+
+    // Zoomed: the focused panel owns the whole body (T5.2).
+    if zoomed {
+        let spec = &panels[focused_index];
+        let scroll = scrolls.get(&spec.id).copied().unwrap_or(0);
+        let mut ctx = PanelCtx {
+            snapshot,
+            bindings,
+            cfg,
+            theme,
+            history: history.as_ref(),
+            charts: &mut *charts,
+            charts_enabled: charts_on,
+            stale,
+            ascii,
+            focused: true,
+            sort,
+            scroll,
+            window,
+            window_label: window_label.clone(),
+            now,
+        };
+        presets::draw_panel(frame, area, spec, &mut ctx);
+        return;
+    }
 
     let per_row = if area.width >= 120 {
         cfg.panels.gpu.per_row.max(1) as usize
@@ -364,7 +675,6 @@ fn render_panels(
         .map(|height| Constraint::Length(*height))
         .collect();
     let row_areas = Layout::vertical(constraints).split(area);
-    let focused_index = *focus % panels.len();
 
     for (row, row_area) in rows.iter().zip(row_areas.iter()) {
         let columns: Vec<Rect> = if row.len() == 1 {

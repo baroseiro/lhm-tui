@@ -59,6 +59,15 @@ impl ChartsState {
         Self::default()
     }
 
+    /// Number of tracked axis states (debug overlay).
+    pub fn len(&self) -> usize {
+        self.scales.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.scales.is_empty()
+    }
+
     /// Axis bounds for `key`: grow immediately, shrink only when the
     /// candidate range fits inside ≤ 90 % of the current one and has stayed
     /// that way for ≥ 5 s.

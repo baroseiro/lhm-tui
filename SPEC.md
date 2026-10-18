@@ -745,9 +745,13 @@ lhm-tui [OPTIONS]
 ```
 
 Exit codes: `0` success · `1` runtime failure · `2` config error · `3` connection failure
-(`--probe`/`--once`) · `4` auth failure (`--probe`/`--once`).
+(`--probe`/`--once`/`--dump`) · `4` auth failure (`--probe`/`--once`/`--dump`).
 
 `--once`/`--dump` are CI-friendly: `--probe` doubles as a health check for the LHM server.
+`--dump` writes the normalized snapshot (stable field order; `fetched_at` as Unix seconds) —
+treat it as a public machine surface. `--once` renders a single frame without entering the
+alternate screen, restoring the cursor, and disables colours when stdout is not a TTY
+(best effort: pseudo-terminals always report as TTYs).
 
 ---
 

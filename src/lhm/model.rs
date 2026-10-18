@@ -2,13 +2,18 @@
 //!
 //! Identity is always the LHM `SensorId`/`HardwareId` string (SPEC Q3);
 //! node `id` values from `data.json` are request-scoped and never used.
+//! The types serialize to a stable JSON shape for `--dump` (T5.5).
 
 use std::fmt;
 use std::time::SystemTime;
 
+use serde::ser::Serializer;
+use serde::Serialize;
+
 /// One parsed `/data.json` response.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Snapshot {
+    #[serde(serialize_with = "serialize_system_time")]
     pub fetched_at: SystemTime,
     pub lhm_version: Option<String>,
     pub hardware: Vec<Hardware>,
@@ -16,7 +21,25 @@ pub struct Snapshot {
     pub skipped_nodes: usize,
 }
 
-#[derive(Debug, Clone)]
+/// Serialize a timestamp as whole seconds since the Unix epoch (stable,
+/// timezone-free dump format).
+fn serialize_system_time<S: Serializer>(
+    time: &SystemTime,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let seconds = time
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    serializer.serialize_u64(seconds)
+}
+
+/// Stable normalized snapshot JSON for `--dump` (a public machine surface).
+pub fn dump_json(snapshot: &Snapshot) -> Result<String, serde_json::Error> {
+    serde_json::to_string_pretty(snapshot)
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Hardware {
     /// LHM hardware id, e.g. `/amdcpu/0`.
     pub id: String,
@@ -30,13 +53,13 @@ pub struct Hardware {
     pub sub: Vec<Hardware>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SensorGroup {
     pub name: String,
     pub sensors: Vec<Sensor>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Sensor {
     /// LHM sensor id, e.g. `/amdcpu/0/temperature/2`.
     pub id: String,
@@ -102,7 +125,8 @@ impl Snapshot {
 
 /// Hardware classification, derived from the icon and the id prefix
 /// because `data.json` has no hardware-type field (SPEC Q5).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HardwareKind {
     Cpu,
     GpuNvidia,
@@ -158,7 +182,8 @@ impl fmt::Display for HardwareKind {
 
 /// Sensor category as sent in `Type` (SPEC Appendix B). Unknown values are
 /// preserved so future LHM sensors still render (SPEC Q6).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SensorKind {
     Voltage,
     Current,

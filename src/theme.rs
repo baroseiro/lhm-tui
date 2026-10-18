@@ -227,6 +227,7 @@ struct Palette {
     accent: Color,
     text: Color,
     muted: Color,
+    ok: Color,
     warn: Color,
     crit: Color,
     cpu: Color,
@@ -242,6 +243,7 @@ fn builtin_palette(name: &str) -> Palette {
             accent: Color::Rgb(0x83, 0xa5, 0x98),
             text: Color::Rgb(0xeb, 0xdb, 0xb2),
             muted: Color::Rgb(0x92, 0x83, 0x74),
+            ok: Color::Rgb(0xb8, 0xbb, 0x26),
             warn: Color::Rgb(0xfa, 0xbd, 0x2f),
             crit: Color::Rgb(0xfb, 0x49, 0x34),
             cpu: Color::Rgb(0x83, 0xa5, 0x98),
@@ -254,6 +256,7 @@ fn builtin_palette(name: &str) -> Palette {
             accent: Color::Rgb(0x88, 0xc0, 0xd0),
             text: Color::Rgb(0xd8, 0xde, 0xe9),
             muted: Color::Rgb(0x4c, 0x56, 0x6a),
+            ok: Color::Rgb(0xa3, 0xbe, 0x8c),
             warn: Color::Rgb(0xeb, 0xcb, 0x8b),
             crit: Color::Rgb(0xbf, 0x61, 0x6a),
             cpu: Color::Rgb(0x88, 0xc0, 0xd0),
@@ -266,6 +269,7 @@ fn builtin_palette(name: &str) -> Palette {
             accent: Color::Gray,
             text: Color::White,
             muted: Color::DarkGray,
+            ok: Color::Gray,
             warn: Color::Gray,
             crit: Color::White,
             cpu: Color::Gray,
@@ -283,6 +287,7 @@ fn builtin_palette(name: &str) -> Palette {
                 accent: parse(&defaults.accent, Color::Cyan),
                 text: parse(&defaults.text, Color::Gray),
                 muted: parse(&defaults.muted, Color::DarkGray),
+                ok: Color::Green,
                 warn: parse(&defaults.warn, Color::Yellow),
                 crit: parse(&defaults.crit, Color::Red),
                 cpu: parse(&defaults.cpu, Color::Cyan),
@@ -300,6 +305,8 @@ pub struct Theme {
     pub accent: Color,
     pub text: Color,
     pub muted: Color,
+    /// Connection-ok colour (header status dot).
+    pub ok: Color,
     pub warn: Color,
     pub crit: Color,
     pub cpu: Color,
@@ -327,6 +334,7 @@ impl Theme {
             accent: pick(&config.accent, &defaults.accent, palette.accent),
             text: pick(&config.text, &defaults.text, palette.text),
             muted: pick(&config.muted, &defaults.muted, palette.muted),
+            ok: palette.ok,
             warn: pick(&config.warn, &defaults.warn, palette.warn),
             crit: pick(&config.crit, &defaults.crit, palette.crit),
             cpu: pick(&config.cpu, &defaults.cpu, palette.cpu),
@@ -345,6 +353,7 @@ impl Theme {
             accent: reset,
             text: reset,
             muted: reset,
+            ok: reset,
             warn: reset,
             crit: reset,
             cpu: reset,
@@ -361,6 +370,7 @@ impl Theme {
         self.accent = downgrade_color(self.accent, depth);
         self.text = downgrade_color(self.text, depth);
         self.muted = downgrade_color(self.muted, depth);
+        self.ok = downgrade_color(self.ok, depth);
         self.warn = downgrade_color(self.warn, depth);
         self.crit = downgrade_color(self.crit, depth);
         self.cpu = downgrade_color(self.cpu, depth);
@@ -552,6 +562,7 @@ mod tests {
         for color in [
             theme.accent,
             theme.text,
+            theme.ok,
             theme.warn,
             theme.crit,
             theme.cpu,

@@ -1,0 +1,311 @@
+---
+source: tests/dump.rs
+expression: json
+---
+{
+  "fetched_at": 1700000000,
+  "lhm_version": "0.9.6",
+  "hardware": [
+    {
+      "id": "/amdcpu/0",
+      "name": "AMD Ryzen 7 7800X3D",
+      "kind": "cpu",
+      "groups": [
+        {
+          "name": "Temperatures",
+          "sensors": [
+            {
+              "id": "/amdcpu/0/temperature/2",
+              "name": "Core (Tctl/Tdie)",
+              "kind": "temperature",
+              "value": 46.9,
+              "value_text": "46.9 °C",
+              "min": 43.5,
+              "max": 77.3
+            },
+            {
+              "id": "/amdcpu/0/temperature/0",
+              "name": "Core Max",
+              "kind": "temperature",
+              "value": null,
+              "value_text": "",
+              "min": null,
+              "max": null
+            }
+          ]
+        },
+        {
+          "name": "Load",
+          "sensors": [
+            {
+              "id": "/amdcpu/0/load/0",
+              "name": "CPU Total",
+              "kind": "load",
+              "value": 41.2,
+              "value_text": "41.2 %",
+              "min": 2.0,
+              "max": 100.0
+            },
+            {
+              "id": "/amdcpu/0/load/1",
+              "name": "CPU Core #1",
+              "kind": "load",
+              "value": 58.4,
+              "value_text": "58.4 %",
+              "min": 3.0,
+              "max": 100.0
+            },
+            {
+              "id": "/amdcpu/0/load/2",
+              "name": "CPU Core #2",
+              "kind": "load",
+              "value": 12.5,
+              "value_text": "12.5 %",
+              "min": 1.0,
+              "max": 98.0
+            }
+          ]
+        },
+        {
+          "name": "Clocks",
+          "sensors": [
+            {
+              "id": "/amdcpu/0/clock/1",
+              "name": "Cores (Average)",
+              "kind": "clock",
+              "value": 4275.0,
+              "value_text": "4275.0 MHz",
+              "min": 2987.0,
+              "max": 5050.0
+            }
+          ]
+        },
+        {
+          "name": "Powers",
+          "sensors": [
+            {
+              "id": "/amdcpu/0/power/0",
+              "name": "Package",
+              "kind": "power",
+              "value": 42.5,
+              "value_text": "42.5 W",
+              "min": 12.4,
+              "max": 89.0
+            }
+          ]
+        }
+      ],
+      "sub": []
+    },
+    {
+      "id": "/nvidiagpu/0",
+      "name": "NVIDIA GeForce RTX 4090",
+      "kind": "gpu_nvidia",
+      "groups": [
+        {
+          "name": "Temperatures",
+          "sensors": [
+            {
+              "id": "/nvidiagpu/0/temperature/0",
+              "name": "GPU Core",
+              "kind": "temperature",
+              "value": 52.0,
+              "value_text": "52.0 °C",
+              "min": 38.0,
+              "max": 71.0
+            },
+            {
+              "id": "/nvidiagpu/0/temperature/2",
+              "name": "GPU Hot Spot",
+              "kind": "temperature",
+              "value": 61.5,
+              "value_text": "61.5 °C",
+              "min": 42.0,
+              "max": 83.0
+            }
+          ]
+        },
+        {
+          "name": "Load",
+          "sensors": [
+            {
+              "id": "/nvidiagpu/0/load/0",
+              "name": "GPU Core",
+              "kind": "load",
+              "value": 78.0,
+              "value_text": "78.0 %",
+              "min": 0.0,
+              "max": 100.0
+            },
+            {
+              "id": "/nvidiagpu/0/load/1",
+              "name": "GPU Memory",
+              "kind": "load",
+              "value": 34.2,
+              "value_text": "34.2 %",
+              "min": 0.0,
+              "max": 100.0
+            }
+          ]
+        },
+        {
+          "name": "SmallData",
+          "sensors": [
+            {
+              "id": "/nvidiagpu/0/smalldata/1",
+              "name": "GPU Memory Used",
+              "kind": "small_data",
+              "value": 8619.9,
+              "value_text": "8619.9 MB",
+              "min": 120.0,
+              "max": 10240.0
+            },
+            {
+              "id": "/nvidiagpu/0/smalldata/0",
+              "name": "GPU Memory Total",
+              "kind": "small_data",
+              "value": 24564.0,
+              "value_text": "24564.0 MB",
+              "min": 24564.0,
+              "max": 24564.0
+            }
+          ]
+        },
+        {
+          "name": "Powers",
+          "sensors": [
+            {
+              "id": "/nvidiagpu/0/power/1",
+              "name": "GPU Package",
+              "kind": "power",
+              "value": 142.0,
+              "value_text": "142.0 W",
+              "min": 18.0,
+              "max": 450.0
+            }
+          ]
+        },
+        {
+          "name": "Fans",
+          "sensors": [
+            {
+              "id": "/nvidiagpu/0/fan/0",
+              "name": "GPU Fan",
+              "kind": "fan",
+              "value": 1205.0,
+              "value_text": "1205 RPM",
+              "min": 0.0,
+              "max": 2400.0
+            }
+          ]
+        }
+      ],
+      "sub": []
+    },
+    {
+      "id": "/ram/0",
+      "name": "Generic Memory",
+      "kind": "memory",
+      "groups": [
+        {
+          "name": "Load",
+          "sensors": [
+            {
+              "id": "/ram/0/load/0",
+              "name": "Memory",
+              "kind": "load",
+              "value": 62.8,
+              "value_text": "62.8 %",
+              "min": 12.0,
+              "max": 91.0
+            }
+          ]
+        },
+        {
+          "name": "Data",
+          "sensors": [
+            {
+              "id": "/ram/0/data/0",
+              "name": "Memory Used",
+              "kind": "data",
+              "value": 20.1,
+              "value_text": "20.1 GB",
+              "min": 4.1,
+              "max": 29.1
+            },
+            {
+              "id": "/ram/0/data/1",
+              "name": "Memory Available",
+              "kind": "data",
+              "value": 11.9,
+              "value_text": "11.9 GB",
+              "min": 2.9,
+              "max": 27.9
+            }
+          ]
+        }
+      ],
+      "sub": []
+    },
+    {
+      "id": "/nvme/0",
+      "name": "Samsung SSD 990 PRO 2TB",
+      "kind": "storage",
+      "groups": [
+        {
+          "name": "Temperatures",
+          "sensors": [
+            {
+              "id": "/nvme/0/temperature/0",
+              "name": "Temperature",
+              "kind": "temperature",
+              "value": 38.0,
+              "value_text": "38.0 °C",
+              "min": 32.0,
+              "max": 54.0
+            }
+          ]
+        },
+        {
+          "name": "Load",
+          "sensors": [
+            {
+              "id": "/nvme/0/load/0",
+              "name": "Used Space",
+              "kind": "load",
+              "value": 62.1,
+              "value_text": "62.1 %",
+              "min": 61.0,
+              "max": 63.0
+            },
+            {
+              "id": "/nvme/0/load/1",
+              "name": "Total Activity",
+              "kind": "load",
+              "value": 0.5,
+              "value_text": "0.5 %",
+              "min": 0.0,
+              "max": 88.0
+            }
+          ]
+        },
+        {
+          "name": "Throughput",
+          "sensors": [
+            {
+              "id": "/nvme/0/throughput/0",
+              "name": "Read Rate",
+              "kind": "throughput",
+              "value": 12.3,
+              "value_text": "12.3 MB/s",
+              "min": 0.0,
+              "max": 4.1
+            }
+          ]
+        }
+      ],
+      "sub": []
+    }
+  ],
+  "skipped_nodes": 0
+}

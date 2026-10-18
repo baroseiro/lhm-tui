@@ -1,0 +1,34 @@
+---
+source: tests/frames.rs
+expression: "frame_text(&mut app, &cfg, 100, 30)"
+---
+ lhm-tui v0.0.1  ● reconnecting… (retry in 1s)   100×30   http://127.0.0.1:8085
+╭ LibreHardwareMonitor ────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+│                                ● Cannot reach LibreHardwareMonitor                               │
+│                                    retrying in 1s (attempt 1)                                    │
+│     cannot reach LibreHardwareMonitor at http://127.0.0.1:8085/data.json: connection refused     │
+│                                                                                                  │
+│                                GET http://127.0.0.1:8085/data.json                               │
+│                                                                                                  │
+│                                           session up 0s                                          │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ q quit   ·   p pause   ·   tab focus   ·   s sort   ·   j/k scroll   ·   g window(5m)   ·   t temps

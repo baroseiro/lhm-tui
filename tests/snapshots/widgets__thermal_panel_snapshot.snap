@@ -3,10 +3,10 @@ source: tests/widgets.rs
 expression: out
 ---
 ╭ Temperatures ────────────────────────────────────────────────╮
-│Sensor                               Value       Min       Max│
-│GPU Hot Spot                       61.5 °C      42.0      83.0│
-│GPU Core                           52.0 °C      38.0      71.0│
-│Core (Tctl/Tdie)                   46.9 °C      43.5      77.3│
-│Temperature                        38.0 °C      32.0      54.0│
-│Core Max                                 —         —         —│
+│Sensor                                                   Value│
+│GPU Hot Spot                                           61.5 °C│
+│GPU Core                                               52.0 °C│
+│Core (Tctl/Tdie)                                       46.9 °C│
+│Temperature                                            38.0 °C│
+│Core Max                                                     —│
 ╰──────────────────────────────────────────────────────────────╯

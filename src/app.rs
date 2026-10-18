@@ -38,6 +38,13 @@ pub enum PollEvent {
     },
 }
 
+/// Everything `run` needs beyond the merged config (T5.3 reload needs the
+/// original CLI, to re-resolve file/env/flag precedence on `r`).
+pub struct SessionOptions {
+    pub cli: crate::cli::Cli,
+    pub warnings: Vec<String>,
+}
+
 /// Connection status shown in the header (SPEC §10.1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkStatus {
@@ -86,6 +93,25 @@ pub struct AppState {
     pub help_visible: bool,
     /// Startup warnings shown as a toast (unknown config keys, …).
     pub toast: Option<(String, Instant)>,
+    /// Focused-panel fullscreen zoom (`enter`, T5.2).
+    pub zoomed: bool,
+    /// Sensor browser overlay (`b`, T5.2): filter text and selection.
+    pub browser_open: bool,
+    pub browser_query: String,
+    pub browser_selected: usize,
+    /// Ad-hoc fullscreen graph for a sensor chosen in the browser.
+    pub adhoc_sensor: Option<String>,
+    /// Debug overlay (`d`, T5.1).
+    pub debug_visible: bool,
+    /// Set by the `r` key; `run_loop` performs the reload (it owns the config).
+    pub pending_reload: bool,
+    /// Set by `reload_config` when `server.*` changed: the poller must be
+    /// respawned for URL/interval/auth changes to take effect.
+    pub pending_poller_restart: bool,
+    /// CLI handle for reload; `None` in unit tests.
+    pub cli: Option<crate::cli::Cli>,
+    /// Sender for async notices (`m` reset result); `None` in unit tests.
+    pub notice_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     /// Chart autoscale state (hysteresis per graph).
     pub charts: ChartsState,
 }
@@ -116,6 +142,16 @@ impl AppState {
             charts_override: None,
             help_visible: false,
             toast: None,
+            zoomed: false,
+            browser_open: false,
+            browser_query: String::new(),
+            browser_selected: 0,
+            adhoc_sensor: None,
+            debug_visible: false,
+            pending_reload: false,
+            pending_poller_restart: false,
+            cli: None,
+            notice_tx: None,
             charts: ChartsState::new(),
         }
     }
@@ -180,6 +216,34 @@ impl AppState {
         crate::ui::presets::PanelOverrides {
             thermal: Some(self.effective_thermal(cfg)),
         }
+    }
+
+    /// Every sensor as `(sensor_id, "hardware · sensor", lowercase search text)`.
+    pub fn browser_entries(&self) -> Vec<(String, String, String)> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        let mut entries = Vec::new();
+        for hardware in snapshot.all_hardware() {
+            for sensor in hardware.sensors() {
+                entries.push((
+                    sensor.id.clone(),
+                    format!("{} · {}", hardware.name, sensor.name),
+                    format!("{} {} {}", hardware.name, sensor.name, sensor.id).to_ascii_lowercase(),
+                ));
+            }
+        }
+        entries
+    }
+
+    /// Browser entries filtered by the current (case-insensitive) query.
+    pub fn browser_matches(&self) -> Vec<(String, String)> {
+        let query = self.browser_query.to_ascii_lowercase();
+        self.browser_entries()
+            .into_iter()
+            .filter(|(_, _, text)| query.is_empty() || text.contains(&query))
+            .map(|(id, label, _)| (id, label))
+            .collect()
     }
 
     /// Fold a poller event into the UI state (SPEC §10.1 failure matrix).
@@ -248,18 +312,26 @@ impl Default for AppState {
 /// Run the TUI until the user quits. Owns the terminal lifecycle, including
 /// restore on every exit path (SPEC §4.2 shutdown). Startup config warnings
 /// are surfaced as a toast (T4.6).
-pub async fn run(cfg: &Config, warnings: &[String]) -> Result<()> {
+pub async fn run(cfg: &Config, options: SessionOptions) -> Result<()> {
     let mut terminal = ratatui::init();
-    let result = run_loop(&mut terminal, cfg, warnings).await;
+    let result = run_loop(&mut terminal, cfg, options).await;
     ratatui::restore();
     result
 }
 
-async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config, warnings: &[String]) -> Result<()> {
+async fn run_loop(
+    terminal: &mut DefaultTerminal,
+    cfg: &Config,
+    options: SessionOptions,
+) -> Result<()> {
+    let mut cfg = cfg.clone();
     let mut app = AppState::new();
-    if !warnings.is_empty() {
-        app.toast = Some((warnings.join("  ·  "), Instant::now()));
+    app.cli = Some(options.cli.clone());
+    if !options.warnings.is_empty() {
+        app.toast = Some((options.warnings.join("  ·  "), Instant::now()));
     }
+    let (notice_tx, mut notice_rx) = tokio::sync::mpsc::unbounded_channel();
+    app.notice_tx = Some(notice_tx);
     let frame_ms = u64::from(1000 / cfg.ui.fps.max(1)).max(1);
     let mut tick = tokio::time::interval(Duration::from_millis(frame_ms));
 
@@ -287,27 +359,46 @@ async fn run_loop(terminal: &mut DefaultTerminal, cfg: &Config, warnings: &[Stri
                     last_status_redraw = Instant::now();
                 }
                 if app.dirty {
-                    terminal.draw(|frame| ui::draw(frame, &mut app, cfg))?;
+                    terminal.draw(|frame| ui::draw(frame, &mut app, &cfg))?;
                     app.dirty = false;
                 }
             }
             event = rx.recv() => match event {
-                Some(event) => handle_event(&mut app, event, cfg),
+                Some(event) => {
+                    handle_event(&mut app, event, &cfg);
+                    if app.pending_reload {
+                        app.pending_reload = false;
+                        reload_config(&mut app, &mut cfg, Some(options.cli.clone()));
+                        if app.pending_poller_restart {
+                            app.pending_poller_restart = false;
+                            // URL/interval/auth changed: swap in a fresh poller.
+                            poll_events = spawn_poller(&cfg.server, Arc::clone(&app.pause_flag));
+                            poller_alive = true;
+                        }
+                    }
+                }
                 // The input thread ended (stdin closed): do not hang forever.
                 None => app.should_quit = true,
             },
+            Some(message) = notice_rx.recv() => {
+                app.toast = Some((message, Instant::now()));
+                app.dirty = true;
+            }
             changed = poll_events.changed(), if poller_alive => {
                 if changed.is_ok() {
                     let event = poll_events.borrow_and_update().clone();
-                    app.apply_poll_event(event, cfg);
+                    app.apply_poll_event(event, &cfg);
                 } else {
                     // The poller task ended unexpectedly; keep the UI usable.
                     poller_alive = false;
-                    app.apply_poll_event(PollEvent::Failure {
-                        message: "internal poller task stopped".to_string(),
-                        retry_in: Duration::ZERO,
-                        attempt: 0,
-                    }, cfg);
+                    app.apply_poll_event(
+                        PollEvent::Failure {
+                            message: "internal poller task stopped".to_string(),
+                            retry_in: Duration::ZERO,
+                            attempt: 0,
+                        },
+                        &cfg,
+                    );
                 }
             }
         }
@@ -430,55 +521,186 @@ fn spawn_input_thread(tx: tokio::sync::mpsc::UnboundedSender<Event>) {
 pub fn handle_event(app: &mut AppState, event: Event, cfg: &Config) {
     match event {
         Event::Resize(_, _) => app.dirty = true,
-        Event::Key(key) if key.kind != KeyEventKind::Release => {
-            // The help overlay is closed by any key press.
-            if app.help_visible {
-                app.help_visible = false;
-                app.dirty = true;
-                return;
-            }
-            if action_matches(cfg, "help", &key) {
-                app.help_visible = true;
-                app.dirty = true;
-            } else if action_matches(cfg, "quit", &key) {
-                app.should_quit = true;
-            } else if action_matches(cfg, "pause", &key) {
-                app.paused = !app.paused;
-                app.pause_flag.store(app.paused, Ordering::Relaxed);
-                app.dirty = true;
-            } else if action_matches(cfg, "focus_next", &key) {
-                focus_delta(app, cfg, 1);
-            } else if action_matches(cfg, "focus_prev", &key) {
-                focus_delta(app, cfg, -1);
-            } else if action_matches(cfg, "sort", &key) {
-                app.sort_override = next_sort(app.sort_override);
-                app.dirty = true;
-            } else if action_matches(cfg, "window_next", &key) {
-                app.window_next(cfg, 1);
-            } else if action_matches(cfg, "window_prev", &key) {
-                app.window_next(cfg, -1);
-            } else if action_matches(cfg, "ascii", &key) {
-                let current = app.effective_ascii(cfg);
-                app.ascii_override = Some(!current);
-                app.dirty = true;
-            } else if action_matches(cfg, "toggle_thermal", &key) {
-                let current = app.effective_thermal(cfg);
-                app.thermal_override = Some(!current);
-                app.dirty = true;
-            } else if action_matches(cfg, "toggle_charts", &key) {
-                let current = app.effective_charts(cfg);
-                app.charts_override = Some(!current);
-                app.dirty = true;
-            } else if key_matches(&key, "down") || key_matches(&key, "j") {
-                scroll_focused(app, cfg, 1);
-            } else if key_matches(&key, "up") || key_matches(&key, "k") {
-                scroll_focused(app, cfg, -1);
-            } else {
-                app.dirty = true;
-            }
-        }
+        Event::Key(key) if key.kind != KeyEventKind::Release => handle_key(app, key, cfg),
         _ => {}
     }
+}
+
+/// Modal overlays get first refusal on keys (T5.1/T5.2).
+fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
+    if app.browser_open {
+        handle_browser_key(app, key, cfg);
+        return;
+    }
+    if app.help_visible {
+        // The help overlay is closed by any key press.
+        app.help_visible = false;
+        app.dirty = true;
+        return;
+    }
+    if app.adhoc_sensor.is_some() {
+        if action_matches(cfg, "quit", &key)
+            || key_matches(&key, "esc")
+            || action_matches(cfg, "browser", &key)
+        {
+            app.adhoc_sensor = None;
+            app.dirty = true;
+        }
+        return;
+    }
+
+    if action_matches(cfg, "help", &key) {
+        app.help_visible = true;
+        app.dirty = true;
+    } else if action_matches(cfg, "quit", &key) {
+        app.should_quit = true;
+    } else if action_matches(cfg, "pause", &key) {
+        app.paused = !app.paused;
+        app.pause_flag.store(app.paused, Ordering::Relaxed);
+        app.dirty = true;
+    } else if action_matches(cfg, "focus_next", &key) {
+        focus_delta(app, cfg, 1);
+    } else if action_matches(cfg, "focus_prev", &key) {
+        focus_delta(app, cfg, -1);
+    } else if action_matches(cfg, "zoom", &key) {
+        app.zoomed = !app.zoomed;
+        app.dirty = true;
+    } else if action_matches(cfg, "browser", &key) {
+        app.browser_open = true;
+        app.browser_query.clear();
+        app.browser_selected = 0;
+        app.dirty = true;
+    } else if action_matches(cfg, "debug", &key) {
+        app.debug_visible = !app.debug_visible;
+        app.dirty = true;
+    } else if action_matches(cfg, "reload", &key) {
+        app.pending_reload = true; // performed by run_loop (owns the config)
+    } else if action_matches(cfg, "reset_minmax", &key) {
+        reset_min_max(app, cfg);
+    } else if action_matches(cfg, "sort", &key) {
+        app.sort_override = next_sort(app.sort_override);
+        app.dirty = true;
+    } else if action_matches(cfg, "window_next", &key) {
+        app.window_next(cfg, 1);
+    } else if action_matches(cfg, "window_prev", &key) {
+        app.window_next(cfg, -1);
+    } else if action_matches(cfg, "ascii", &key) {
+        let current = app.effective_ascii(cfg);
+        app.ascii_override = Some(!current);
+        app.dirty = true;
+    } else if action_matches(cfg, "toggle_thermal", &key) {
+        let current = app.effective_thermal(cfg);
+        app.thermal_override = Some(!current);
+        app.dirty = true;
+    } else if action_matches(cfg, "toggle_charts", &key) {
+        let current = app.effective_charts(cfg);
+        app.charts_override = Some(!current);
+        app.dirty = true;
+    } else if key_matches(&key, "down") || key_matches(&key, "j") {
+        scroll_focused(app, cfg, 1);
+    } else if key_matches(&key, "up") || key_matches(&key, "k") {
+        scroll_focused(app, cfg, -1);
+    } else {
+        app.dirty = true;
+    }
+}
+
+/// Sensor browser keys: typing filters, arrows move, Enter graphs (T5.2).
+fn handle_browser_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
+    if action_matches(cfg, "browser", &key) || key_matches(&key, "esc") {
+        app.browser_open = false;
+        app.dirty = true;
+        return;
+    }
+    if key_matches(&key, "enter") {
+        if let Some((id, _)) = app.browser_matches().into_iter().nth(app.browser_selected) {
+            app.adhoc_sensor = Some(id);
+            app.browser_open = false;
+            app.dirty = true;
+        }
+        return;
+    }
+    if key_matches(&key, "down") || key_matches(&key, "j") {
+        let last = app.browser_matches().len().saturating_sub(1);
+        app.browser_selected = app.browser_selected.saturating_add(1).min(last);
+        app.dirty = true;
+        return;
+    }
+    if key_matches(&key, "up") || key_matches(&key, "k") {
+        app.browser_selected = app.browser_selected.saturating_sub(1);
+        app.dirty = true;
+        return;
+    }
+    if key_matches(&key, "backspace") {
+        app.browser_query.pop();
+        app.browser_selected = 0;
+        app.dirty = true;
+        return;
+    }
+    if let KeyCode::Char(character) = key.code {
+        if !key.modifiers.contains(KeyModifiers::CONTROL)
+            && !key.modifiers.contains(KeyModifiers::ALT)
+        {
+            app.browser_query.push(character);
+            app.browser_selected = 0;
+            app.dirty = true;
+        }
+    }
+}
+
+/// `m`: fire `GET /ResetAllMinMax` and report the outcome as a toast (T5.3).
+fn reset_min_max(app: &AppState, cfg: &Config) {
+    let Some(tx) = app.notice_tx.clone() else {
+        return; // unit tests / non-TUI contexts
+    };
+    let server = cfg.server.clone();
+    tokio::spawn(async move {
+        let message = match LhmClient::new(&server) {
+            Ok(client) => match client.reset_min_max().await {
+                Ok(()) => "LHM min/max reset".to_string(),
+                Err(err) => format!("reset failed: {err}"),
+            },
+            Err(err) => format!("reset failed: {err:#}"),
+        };
+        let _ = tx.send(message);
+    });
+}
+
+/// `r`: re-resolve the config (file → env → CLI) and apply it live (T5.3).
+/// Keeps history and the last snapshot; on error nothing is replaced and the
+/// previous config stays active.
+pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cli::Cli>) {
+    let Some(cli) = cli else {
+        app.toast = Some((
+            "reload unavailable (no CLI handle)".to_string(),
+            Instant::now(),
+        ));
+        app.dirty = true;
+        return;
+    };
+    match crate::config::load(&cli) {
+        Ok(loaded) => {
+            let previous_server = cfg.server.clone();
+            *cfg = loaded.config;
+            app.pending_poller_restart = cfg.server != previous_server;
+            // Rebind now so panel changes apply without waiting for a poll.
+            let fetched = app.last_fetch.clone();
+            if let Some(fetched) = fetched {
+                app.bindings = Some(bindings::resolve(&fetched.snapshot, &cfg.panels));
+                app.bindings_fingerprint = bindings::fingerprint(&fetched.snapshot);
+            }
+            let mut message = "configuration reloaded".to_string();
+            if !loaded.warnings.is_empty() {
+                message = format!("{message}  ·  {}", loaded.warnings.join("  ·  "));
+            }
+            app.toast = Some((message, Instant::now()));
+        }
+        Err(err) => {
+            let message = format!("reload failed: {}", err.to_string().replace('\n', "  "));
+            app.toast = Some((message, Instant::now()));
+        }
+    }
+    app.dirty = true;
 }
 
 fn next_sort(current: Option<TableSort>) -> Option<TableSort> {

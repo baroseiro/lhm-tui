@@ -13,13 +13,13 @@ expression: out
 ╰ Clock│  G                  Chart window backward                      │──────╯
 ╭ GPU 0│  tab                Focus next panel                           │──────╮
 │⠀⠀⠀⠀⠀⠀│  shift+tab, backtab Focus previous panel                       │⠀⠀⠀⠀⠀⠰│
-│● GPU │  enter              Zoom focused panel (M5)                    │      │
-│⠀⠀⠀⠀⠀⠀│  b                  Sensor browser (M5)                        │⠀⠀⠀⠀⠀⢐│
+│● GPU │  enter              Zoom focused panel                         │      │
+│⠀⠀⠀⠀⠀⠀│  b                  Sensor browser                             │⠀⠀⠀⠀⠀⢐│
 │● GPU │  s                  Cycle table sort                           │      │
-│ VRAM │  r                  Reload config (M5)                         │64 MB │
-│ Power│  m                  Reset LHM min/max (M5)                     │      │
+│ VRAM │  r                  Reload config                              │64 MB │
+│ Power│  m                  Reset LHM min/max                          │      │
 ╰──────│  a                  Toggle ASCII rendering                     │──────╯
-╭ Memor│  d                  Debug overlay (M5)                         │──────╮
+╭ Memor│  d                  Debug overlay                              │──────╮
 │⠁⠁⠁⠁⠁⠁│  t                  Toggle temperatures table                  │⠁⠁⠁⠁⠁⠁│
 │⠄⠄⠄⠄⠄⠄│  c                  Toggle charts                              │⠄⠄⠄⠄⠄⠌│
 │⡀⡀⡀⡀⡀⡀│                                                                │⡀⡀⡀⡀⡀⡀│

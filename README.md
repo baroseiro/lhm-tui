@@ -213,6 +213,9 @@ cargo build --release        # binary in target/release/lhm-tui
 cargo test                   # unit + integration + TUI snapshot tests
 ```
 
+Long-run checks: `pwsh scripts/soak.ps1 -Minutes 30` (or `./scripts/soak.sh 30`) samples RSS/CPU
+per minute into a CSV; the pre-release checklist lives in [`docs/qa-matrix.md`](docs/qa-matrix.md).
+
 MSRV: Rust **1.89** (2021 edition). Cross-compiles cleanly to Linux/macOS for remote monitoring.
 
 ## Contributing

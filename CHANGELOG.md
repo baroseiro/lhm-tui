@@ -107,6 +107,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     snapshot test.
 - Key matching ignores the SHIFT bit for character keys (fixes `?` on terminals that report
   `shift+/`), and `--theme` accepts built-in names or a theme file path.
+- Polish (P5):
+  - Overlays: `d` debug panel (poll latency/payload, hardware/sensor/skipped counts, history
+    sizes, chart axes, failed polls, last error), `enter` zooms the focused panel fullscreen,
+    `b` opens the sensor browser (type to filter hardware/sensor/id, arrows move, `enter` opens
+    an ad-hoc fullscreen graph, `q`/`esc`/`b` close it).
+  - `r` reloads the configuration live (full file → env → CLI re-resolution; bindings rebind
+    immediately; server-level changes respawn the poller; errors keep the old config and appear as
+    toasts). `m` calls `GET /ResetAllMinMax` and toasts the result.
+  - `--once` and `--dump <PATH|->` are implemented (fixed-viewport frame without alternate screen;
+    stable normalized JSON, golden-tested); both follow the SPEC exit codes 3/4.
+  - `NO_COLOR`/`--no-color` now strip the *entire* UI (header, status, footer previously hardcoded
+    their colours); theme palettes gained a dedicated `ok` colour with truecolor → 256 → 16
+    downgrades for all chrome.
+  - Narrow terminals (< 80 columns) drop the Min/Max columns from temperature tables.
+  - `tests/frames.rs` renders full frames at 160/120/80/60 columns across live/stale/disconnected/
+    paused/zoom/debug/browser/adhoc states; `scripts/soak.{ps1,sh}` sample RSS/CPU per minute;
+    `docs/qa-matrix.md` carries the pre-release checklist.
+- Tests: 155 total.
+
+### Changed
+
+- SPEC §9 documents `--dump` as a public machine surface (timestamps as Unix seconds) and the
+  `--once` no-alternate-screen/colour behaviour.
 
 ### Changed
 

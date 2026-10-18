@@ -58,6 +58,30 @@ impl LhmClient {
         &self.base_url
     }
 
+    /// `GET /ResetAllMinMax` (SPEC §3.2; the `m` key).
+    pub async fn reset_min_max(&self) -> Result<(), LhmError> {
+        let url = format!("{}/ResetAllMinMax", self.base_url);
+        let mut request = self.http.get(&url);
+        if let Some(username) = &self.username {
+            request = request.basic_auth(username, self.password.as_deref());
+        }
+        let response = request.send().await.map_err(|source| LhmError::Connect {
+            url: url.clone(),
+            source,
+        })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(LhmError::Auth { url });
+        }
+        if !status.is_success() {
+            return Err(LhmError::Http {
+                url,
+                status: status.as_u16(),
+            });
+        }
+        Ok(())
+    }
+
     /// Fetch and normalize `/data.json` (one poll).
     pub async fn fetch_data_json(&self) -> Result<Fetched, LhmError> {
         let url = format!("{}/data.json", self.base_url);

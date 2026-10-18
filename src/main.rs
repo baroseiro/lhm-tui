@@ -67,82 +67,149 @@ async fn main() -> ExitCode {
     if cli.probe {
         return run_probe(&loaded.config).await;
     }
-
-    if let Some((mode, milestone)) = stub_mode(&cli) {
-        eprintln!("lhm-tui: `{mode}` is not implemented yet (planned in {milestone}; see PLAN.md)");
-        return ExitCode::FAILURE;
+    if let Some(target) = cli.dump.clone() {
+        return run_dump(&loaded.config, &target).await;
+    }
+    if cli.once {
+        return run_once(&loaded.config).await;
     }
 
-    match app::run(&loaded.config, &loaded.warnings).await {
+    match app::run(
+        &loaded.config,
+        app::SessionOptions {
+            cli: cli.clone(),
+            warnings: loaded.warnings.clone(),
+        },
+    )
+    .await
+    {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => fail(&err),
     }
 }
 
-fn stub_mode(cli: &Cli) -> Option<(&'static str, &'static str)> {
-    if cli.once {
-        return Some(("--once", "milestone M5"));
-    }
-    if cli.dump.is_some() {
-        return Some(("--dump", "milestone M5"));
-    }
-    None
-}
-
 /// `--probe`: connectivity/auth check with a report (SPEC §9). Exit codes:
 /// 0 ok · 1 other failures · 3 connection failure · 4 auth failure.
 async fn run_probe(config: &Config) -> ExitCode {
+    let fetched = match fetch_snapshot(config).await {
+        Ok(fetched) => fetched,
+        Err(code) => return code,
+    };
+    let snapshot = &fetched.snapshot;
+    let version = snapshot
+        .lhm_version
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+
+    println!("lhm-tui probe");
+    println!("  url        {}", config.server.url.trim_end_matches('/'));
+    println!("  lhm        {version}");
+    println!(
+        "  payload    {} in {} ms",
+        util::human_bytes(fetched.bytes),
+        fetched.latency.as_millis()
+    );
+    println!(
+        "  totals     {} hardware items · {} sensors",
+        snapshot.hardware_count(),
+        snapshot.sensor_count()
+    );
+    for hardware in snapshot.all_hardware() {
+        println!(
+            "    - {:<22} {:<20} {} sensors",
+            hardware.id,
+            hardware.kind.to_string(),
+            hardware.sensors().count()
+        );
+    }
+    if snapshot.skipped_nodes > 0 {
+        println!("  skipped    {} unrecognized nodes", snapshot.skipped_nodes);
+    }
+    if config.server.verify_version && !model::lhm_version_at_least(&version, (0, 9, 5)) {
+        println!("  warning    LHM {version} is older than 0.9.5 — some fields may be missing");
+    }
+    ExitCode::SUCCESS
+}
+
+/// Shared fetch for one-shot modes with SPEC §9 exit-code mapping.
+async fn fetch_snapshot(config: &Config) -> Result<lhm_tui::lhm::client::Fetched, ExitCode> {
     let client = match LhmClient::new(&config.server) {
         Ok(client) => client,
-        Err(err) => return fail(&err),
-    };
-
-    match client.fetch_data_json().await {
-        Ok(fetched) => {
-            let snapshot = &fetched.snapshot;
-            let version = snapshot
-                .lhm_version
-                .clone()
-                .unwrap_or_else(|| "unknown".to_string());
-
-            println!("lhm-tui probe");
-            println!("  url        {}", client.base_url());
-            println!("  lhm        {version}");
-            println!(
-                "  payload    {} in {} ms",
-                util::human_bytes(fetched.bytes),
-                fetched.latency.as_millis()
-            );
-            println!(
-                "  totals     {} hardware items · {} sensors",
-                snapshot.hardware_count(),
-                snapshot.sensor_count()
-            );
-            for hardware in snapshot.all_hardware() {
-                println!(
-                    "    - {:<22} {:<20} {} sensors",
-                    hardware.id,
-                    hardware.kind.to_string(),
-                    hardware.sensors().count()
-                );
-            }
-            if snapshot.skipped_nodes > 0 {
-                println!("  skipped    {} unrecognized nodes", snapshot.skipped_nodes);
-            }
-            if config.server.verify_version && !model::lhm_version_at_least(&version, (0, 9, 5)) {
-                println!(
-                    "  warning    LHM {version} is older than 0.9.5 — some fields may be missing"
-                );
-            }
-            ExitCode::SUCCESS
+        Err(err) => {
+            eprintln!("error: {err:#}");
+            return Err(ExitCode::FAILURE);
         }
+    };
+    client.fetch_data_json().await.map_err(|err| {
+        eprintln!("error: {err}");
+        match err {
+            LhmError::Connect { .. } => ExitCode::from(3),
+            LhmError::Auth { .. } => ExitCode::from(4),
+            LhmError::Http { .. } | LhmError::BadPayload { .. } => ExitCode::FAILURE,
+        }
+    })
+}
+
+/// `--once`: render one frame to stdout without entering the alternate screen
+/// (colours off when piped), then exit (T5.5).
+async fn run_once(config: &Config) -> ExitCode {
+    use std::io::IsTerminal;
+
+    let fetched = match fetch_snapshot(config).await {
+        Ok(fetched) => fetched,
+        Err(code) => return code,
+    };
+    let mut cfg = config.clone();
+    if !std::io::stdout().is_terminal() {
+        cfg.ui.no_color = true;
+    }
+    let mut app = app::AppState::new();
+    app.apply_poll_event(app::PollEvent::Snapshot(std::sync::Arc::new(fetched)), &cfg);
+
+    let (width, height) = ratatui::crossterm::terminal::size().unwrap_or((120, 40));
+    let backend = ratatui::backend::CrosstermBackend::new(std::io::stdout());
+    let options = ratatui::TerminalOptions {
+        viewport: ratatui::Viewport::Fixed(ratatui::layout::Rect::new(0, 0, width, height)),
+    };
+    let mut terminal = match ratatui::Terminal::with_options(backend, options) {
+        Ok(terminal) => terminal,
         Err(err) => {
             eprintln!("error: {err}");
-            match err {
-                LhmError::Connect { .. } => ExitCode::from(3),
-                LhmError::Auth { .. } => ExitCode::from(4),
-                LhmError::Http { .. } | LhmError::BadPayload { .. } => ExitCode::FAILURE,
-            }
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(err) = terminal.draw(|frame| lhm_tui::ui::draw(frame, &mut app, &cfg)) {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
+    }
+    let _ = terminal.show_cursor();
+    println!();
+    ExitCode::SUCCESS
+}
+
+/// `--dump <PATH|->`: write the normalized snapshot JSON (stable shape), exit
+/// (T5.5; SPEC §9).
+async fn run_dump(config: &Config, target: &str) -> ExitCode {
+    let fetched = match fetch_snapshot(config).await {
+        Ok(fetched) => fetched,
+        Err(code) => return code,
+    };
+    let json = match model::dump_json(&fetched.snapshot) {
+        Ok(json) => format!("{json}\n"),
+        Err(err) => {
+            eprintln!("error: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if target == "-" {
+        print!("{json}");
+        return ExitCode::SUCCESS;
+    }
+    match std::fs::write(target, json) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("error: cannot write {target}: {err}");
+            ExitCode::FAILURE
         }
     }
 }
