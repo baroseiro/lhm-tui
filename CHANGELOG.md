@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Release notes for v0.1.0 polished after the release run: artifact verification notes, the
+  real QA status on the reference rig, and a link to the changelog section.
+
 ## [0.1.0] - 2026-10-18
 
 ### Added

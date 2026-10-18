@@ -1,10 +1,10 @@
 # lhm-tui v0.1.0 — release notes (hand-written body)
 
 <!--
-Paste this into the GitHub Release that cargo-dist creates for `v0.1.0`
-(the workflow generates a body from CHANGELOG.md; replace/prepend it with this
-text). Keep the checklist items honest — tick the QA-matrix rows that were
-actually executed and list what is still pending.
+This is the release body source for the `v0.1.0` GitHub Release (the workflow
+creates the release with the CHANGELOG section; `gh release edit --notes-file`
+sets this text). Keep the "known issues" list honest — it is the part users
+read first.
 -->
 
 **A btop-style terminal dashboard for LibreHardwareMonitor** — CPU, every GPU, memory and all
@@ -40,6 +40,10 @@ localhost or across the network.
    `Options → Remote Web Server → Run` enabled, plus a terminal ≥ 60×20 (80×24 recommended).
 4. Verify downloads against `sha256.sum` (each archive also ships a `.sha256` sidecar).
 
+Artifacts are built by the tag-triggered release workflow; the Windows x64 zip and the Linux musl
+tarball were downloaded back from this release and smoke-tested (`--version`, `--probe` against a
+real LHM instance, `--once` frame — including from WSL2).
+
 ## First run
 
 - No config needed: `lhm-tui` polls `http://127.0.0.1:8085/data.json` every second.
@@ -53,9 +57,12 @@ localhost or across the network.
 - **winget, scoop and crates.io** install channels are deferred to **v0.1.x** (PLAN T6.4/T6.5);
   this release ships via GitHub Releases and `cargo install --git`.
 - **README screenshots/GIF** are a post-release docs task (needs an interactive capture session).
-- **Manual QA matrix** (`docs/qa-matrix.md`): rows executed so far —
-  <!-- fill in: Windows Terminal; 2-GPU AMD+NVIDIA reference box; fan-floor smoke; NO_COLOR; … -->
-  remaining rows (WSL2, tmux/SSH, other GPU vendors, LHM 0.9.5, 24 h soak) are tracked for v0.1.x.
+- **Manual QA matrix** (`docs/qa-matrix.md`): verified on the reference rig — Windows 11 + Windows
+  Terminal, AMD Ryzen 9 5900XT, RTX 3090 + RX 7900 XTX, LHM 0.9.6-era web server — including the
+  fan anti-stop floor holding the 3090's fan control at the configured 45 %, and the AMD card
+  correctly skipped. The published Linux musl artifact also runs under WSL2 against the same LHM
+  instance. Remaining rows (legacy conhost, tmux/SSH, Intel iGPU, AMD-only and no-GPU machines,
+  LHM 0.9.5, NO_COLOR, the 24 h soak) are deferred to v0.1.x validation.
 - **Writes are limited to the fan anti-stop floor** (GPU fan `Control` sensors only, `SetDefault()`
   when released). General fan/pump control with confirmation dialogs is planned for v0.2.
 - Nodes with unusual sensor types are reported as skipped in the `d` debug overlay; please attach
@@ -67,3 +74,7 @@ localhost or across the network.
   tolerant parser also covers the newer numeric `Raw*` format.
 - Windows 10/11 (Windows Terminal recommended), Linux and macOS clients; MSRV Rust 1.89.
 - Checksums: `sha256.sum` in the release assets.
+
+---
+
+Full changelog for this release: [CHANGELOG.md](https://github.com/baroseiro/lhm-tui/blob/v0.1.0/CHANGELOG.md#010---2026-10-18).
