@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI housekeeping: `actions/checkout` bumped to v6 (v4 still targeted Node 20, which GitHub is
+  retiring), runner images pinned to `windows-2022` / `ubuntu-24.04` / `macos-15` (the `-latest`
+  labels migrate between OS versions; `ubuntu-latest` moves to Ubuntu 26 from October 2026), and
+  the workflow now declares `permissions: contents: read`.
 - **Repository published publicly.** The old private visibility made both README badges render
   "repo not found" and blocked anonymous users from downloading release assets or running
   `cargo install --git`. Public now, with a repo description and topics; CI badge, release badge,
