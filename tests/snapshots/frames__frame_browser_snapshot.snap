@@ -31,3 +31,6 @@ expression: "frame_text(&mut app, &cfg, 110, 32)"
 │ Load    │                                                                                        │░ 21.0 % │
 │ Virtual │                                                                                        │         │
 ╰─────────╰────────────────────────────────────────────────────────────────────────────────────────╯─────────╯
+
+
+ fan anti-stop: AMD Radeon RX 7900 XTX left to its driver curve (fans cannot stop)

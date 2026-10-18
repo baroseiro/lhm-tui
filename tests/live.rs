@@ -151,6 +151,33 @@ async fn live_full_dashboard_render() {
 }
 
 #[tokio::test]
+#[ignore = "requires LibreHardwareMonitor on localhost:8085"]
+async fn live_zero_rpm_detection() {
+    let cfg = Config::default();
+    let fetched = live_fetch(&cfg).await;
+    let bindings = bindings::resolve(&fetched.snapshot, &cfg.panels);
+    let views = lhm_tui::fan_guard::views(&fetched.snapshot, &bindings);
+    for view in &views {
+        println!(
+            "live: {} can_park={:?} parked={} eligible={} controls={}",
+            view.name,
+            view.can_park,
+            view.parked,
+            view.zero_rpm_capable(false),
+            view.control_ids.len(),
+        );
+        // Invariant: a card whose control range cannot reach 0 % is never floored.
+        if view.can_park == Some(false) {
+            assert!(
+                !view.zero_rpm_capable(true),
+                "{} must never be floored",
+                view.name
+            );
+        }
+    }
+}
+
+#[tokio::test]
 #[ignore = "requires LibreHardwareMonitor on localhost:8085; writes nothing (unknown sensor id)"]
 async fn live_set_control_rejects_unknown_sensor() {
     let cfg = Config::default();

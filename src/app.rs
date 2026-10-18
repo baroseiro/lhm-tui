@@ -690,14 +690,21 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
         let armed: usize = app
             .fan_guard_state
             .values()
+            .filter(|state| state.eligible)
             .map(|state| state.control_ids.len())
             .sum();
         let message = if current {
             "fan anti-stop OFF — GPU fans are back to automatic".to_string()
         } else if armed == 0 {
-            "fan anti-stop ON — no controllable GPU fans found (LHM needs the Controls \
-             group; run LHM as admin)"
-                .to_string()
+            let target = if cfg.fan_guard.only_auto_stop {
+                "cards whose fans can stop"
+            } else {
+                "any controllable GPU"
+            };
+            format!(
+                "fan anti-stop ON — no auto-stop GPU fans found ({target}; LHM needs the Controls \
+                 group and admin rights)"
+            )
         } else {
             format!(
                 "fan anti-stop ON — {armed} fan control(s): {:.0}% below {:.0}% load / {:.0} °C, auto otherwise",
@@ -795,7 +802,9 @@ fn update_fan_guard(app: &mut AppState, cfg: &Config) {
         .last_fan_notice
         .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(5));
 
-    // Decide first (immutable pass), apply after (mutable pass).
+    // Decide first (immutable pass), apply after (mutable pass). Sticky
+    // zero-RPM eligibility: a floored fan spins, so a card is remembered as
+    // auto-stop capable once its fans were seen parked.
     let mut planned: Vec<(fan_guard::GpuFanView, GuardAction)> = Vec::new();
     for view in views {
         let state = app
@@ -803,14 +812,41 @@ fn update_fan_guard(app: &mut AppState, cfg: &Config) {
             .entry(view.hardware_id.clone())
             .or_default();
         state.control_ids = view.control_ids.clone();
+        state.eligible = view.zero_rpm_capable(state.eligible);
+        let eligible = state.eligible;
         let action = if enabled {
-            fan_guard::decide(&view, state.engaged, &cfg.fan_guard)
+            fan_guard::decide(&view, state.engaged, &cfg.fan_guard, eligible)
         } else if state.engaged {
             GuardAction::Release
         } else {
             GuardAction::Hold
         };
         planned.push((view, action));
+    }
+
+    // Cards that can never stop their fans are left alone; say so once, so
+    // the asymmetry between GPUs is explained (SPEC §7.5).
+    if enabled {
+        let mut skipped: Option<String> = None;
+        for (view, _) in &planned {
+            if view.can_park != Some(false) {
+                continue;
+            }
+            if let Some(state) = app.fan_guard_state.get_mut(&view.hardware_id) {
+                if !state.skip_noticed {
+                    state.skip_noticed = true;
+                    if skipped.is_none() {
+                        skipped = Some(format!(
+                            "fan anti-stop: {} left to its driver curve (fans cannot stop)",
+                            view.name
+                        ));
+                    }
+                }
+            }
+        }
+        if let Some(message) = skipped {
+            app.set_status(message);
+        }
     }
 
     for (view, action) in planned {

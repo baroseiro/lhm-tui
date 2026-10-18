@@ -148,10 +148,11 @@
     },
     "fan_guard": {
       "type": "object",
-      "description": "GPU fan anti-stop floor: holds fans at floor_percent while the GPU is idle and hands control back to the driver as soon as load or temperature rises. The only hardware write lhm-tui performs; on by default (f or enabled: false disables).",
+      "description": "GPU fan anti-stop floor: holds fans at floor_percent while the GPU is idle and hands control back to the driver as soon as load or temperature rises. The only hardware write lhm-tui performs; on by default (f or enabled: false disables). Only GPUs that can park their fans are touched unless only_auto_stop is false.",
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": true },
+        "only_auto_stop": { "type": "boolean", "description": "Skip GPUs whose fan curve can never stop (detected from the fan control's software range and observed stopped fans).", "default": true },
         "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 45 },
         "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },
         "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 65 },

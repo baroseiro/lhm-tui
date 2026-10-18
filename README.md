@@ -30,8 +30,10 @@ live, color-thresholded panels in your terminal:
 - Plus presets for **fans**, **power**, **storage** and **network**
 - **GPU fan anti-stop floor** (on by default) — keeps NVIDIA/AMD fan curves from parking the fans
   at zero-RPM when idle: a 45 % floor while the GPU is idle, automatic driver control the moment
-  load or temperature rises. It is the only feature that writes to hardware, and only ever to the
-  fan controls — press `f` or set `"fan_guard": { "enabled": false }` to turn it off
+  load or temperature rises. Only cards whose fans *can* stop are touched (detected from the fan
+  control's software range), so an AMD that always turns is left alone. It is the only feature that
+  writes to hardware, and only ever to the fan controls — press `f` or set
+  `"fan_guard": { "enabled": false }` to turn it off
   ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default))
 
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
@@ -204,6 +206,7 @@ otherwise use the gateway IP (`ip route | grep default`) or the LAN IP.
 | Braille graphs look broken                | Press `a` for ASCII mode or set `charts.marker` to `halfblock` in the config               |
 | Wrong sensor bound to a chart             | `lhm-tui --probe` prints the binding report; pin the sensor via `panels.sensor_overrides`  |
 | `f` says "no controllable GPU fans"       | LHM needs to run as administrator so the `Controls` group exists (NVIDIA/AMD cards)        |
+| AMD card untouched by the anti-stop floor | Expected: cards whose fan curve can never stop are skipped (`only_auto_stop`; SPEC §7.5)   |
 | Anti-stop floor fights Afterburner/Adrenalin | Stop the vendor tool while the floor is enabled, or leave `fan_guard.enabled` off        |
 
 Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itself).

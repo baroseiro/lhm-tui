@@ -350,12 +350,20 @@ fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, the
     let guard_controls: usize = app
         .fan_guard_state
         .values()
+        .filter(|state| state.eligible)
         .map(|state| state.control_ids.len())
         .sum();
+    let guard_skipped: usize = app
+        .fan_guard_state
+        .values()
+        .filter(|state| !state.eligible && !state.control_ids.is_empty())
+        .count();
     push(
         "fan guard",
         match app.effective_fan_guard(cfg) {
-            true => format!("on · {guard_controls} controls · {guard_engaged} at floor"),
+            true => format!(
+                "on · {guard_controls} controls · {guard_engaged} at floor · {guard_skipped} skipped"
+            ),
             false => "off".to_string(),
         },
     );

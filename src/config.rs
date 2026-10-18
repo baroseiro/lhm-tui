@@ -60,6 +60,10 @@ impl Default for Config {
 pub struct FanGuardConfig {
     /// Off by default — enabling this writes to LHM control sensors.
     pub enabled: bool,
+    /// Only floor GPUs whose fan curve can stop the fans (zero-RPM / auto-stop):
+    /// detected from the fan control's software range and from observed stopped
+    /// fans. Cards that always turn (most AMD models) are left to their driver.
+    pub only_auto_stop: bool,
     /// Duty cycle (%) held while idle (5–100; 0 is rejected so fans never
     /// stop). Defaults to 45 % — clearly spinning audible airflow, while the
     /// driver curve still gets full range back under load.
@@ -81,6 +85,7 @@ impl Default for FanGuardConfig {
             // no way to stop the zero-RPM parking. Disable with `f` or
             // `fan_guard.enabled: false`.
             enabled: true,
+            only_auto_stop: true,
             floor_percent: 45.0,
             idle_load_percent: 10.0,
             idle_temp_c: 65.0,

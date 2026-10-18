@@ -138,6 +138,7 @@
   },
   "fan_guard": {
     "enabled": true,
+    "only_auto_stop": true,
     "floor_percent": 45.0,
     "idle_load_percent": 10.0,
     "idle_temp_c": 65.0,

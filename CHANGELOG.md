@@ -127,8 +127,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GPU fan anti-stop floor** (SPEC §7.5, `T5.8`): guard that holds every controllable GPU
   fan at a software duty cycle while the GPU is idle and hands it back to the driver's automatic
   curve the moment load or temperature rises — the fix for NVIDIA's zero-RPM parking. On by
-  default; `f` toggles it (the message lands on the status line; the debug overlay shows the guard
-  state) and `fan_guard.*` configures it (floor %, idle load/temp, release hysteresis).
+  default and limited to auto-stop capable cards (`only_auto_stop`); `f` toggles it (the message
+  lands on the status line; the debug overlay shows the guard state) and `fan_guard.*` configures
+  it (floor %, idle load/temp, release hysteresis).
   Safety rails: hysteresis instead of flapping, fail-safe to auto when load/temp are
   unknown, back to auto on `f` off and on quit, `floor_percent < 5` rejected (0 % would stop the
   fans the guard exists to keep spinning). Writes use `POST /Sensor?action=Set` with a zero-length
@@ -138,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   popup now also lists the fixed scroll keys.
 - `lhm-tui.example.json` and `schema/lhm-tui.schema.json` gained the `fan_guard` section, and the
   default keymap gained `f` (`toggle_fan_guard`).
-- Tests: 168 total.
+- Tests: 171 total.
 
 ### Changed
 
@@ -147,6 +148,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `charts.enabled: true` for live graphs. History is still collected, so `c` switches instantly.
 - **Default flip: the GPU fan anti-stop floor is on by default.** Idle GPUs are held at the 45 %
   floor automatically; disable per session with `f` or permanently with `fan_guard.enabled: false`.
+- **The anti-stop floor now only touches cards that can stop their fans** (`fan_guard.only_auto_stop`,
+  default true): a fan control whose software range bottoms out above 0 % (most AMD cards — the
+  reference RX 7900 XTX reports 15 %) marks the card as "cannot park", and it is never written to.
+  Capability is also accepted from observed stopped fans (session-sticky, since a floored fan
+  spins). Skipped cards get a one-time status note; the debug overlay reports `N skipped`;
+  `only_auto_stop: false` restores flooring every controllable GPU.
 - **GPU** panels put every fan right-aligned on the power/clock row (their own row when the panel
   is too narrow for both).
 - Short screens: when charts cannot absorb the squeeze (charts off, or table-only layouts), rows

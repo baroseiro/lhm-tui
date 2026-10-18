@@ -36,7 +36,9 @@ failures and list deferrals in the release notes.
 7. Kill/restart LHM mid-session: status goes `stale` then `live` again.
 8. Quit restores the terminal (no raw mode, cursor visible, shell usable).
 9. `--once` and `--dump -` produce output and exit 0.
-10. Fan anti-stop floor (row 14 only): it is on by default — with the GPU idle the fans spin at
-    the floor and LHM's UI shows a manual control value; start a GPU load → the guard releases and
-    the driver curve takes over; stop the load → floor returns; `f` off / quit → LHM shows
-    automatic control again.
+10. Fan anti-stop floor (row 14 only): it is on by default and only touches cards that can park
+    their fans — on a machine with an AMD that always turns, that card must stay untouched (status
+    note says so, `d` overlay reports it skipped). With the GPU idle the fans spin at the floor and
+    LHM's UI shows a manual control value; start a GPU load → the guard releases and the driver
+    curve takes over; stop the load → floor returns; `f` off / quit → LHM shows automatic control
+    again.

@@ -585,8 +585,23 @@ ever touches
 `Control` sensors (LHM `Sensor.Control.SetSoftware` / `SetDefault`) — never tachometers, voltages
 or anything else.
 
+**Only auto-stop capable cards are touched** (`fan_guard.only_auto_stop`, default `true`). Most AMD
+cards keep their fans turning no matter what — the driver curve never reaches 0 % and software
+control bottoms out above 0 % — so flooring them would be wrong:
+
+| Signal (per GPU) | Meaning | Guard behaviour |
+| ---------------- | ------- | --------------- |
+| every bound fan control's software range reaches 0 % (`Control` `Min` ≤ 0.5) | the driver *can* park the fans (zero-RPM / auto-stop) | floor applies |
+| a control bottoms out above 0 % (e.g. AMD's usual 15 %) | the driver can never stop the fans | card skipped, never written to |
+| no control-range data, but a fan was seen at standstill (≤ 50 RPM) | auto-stop observed | floor applies, and the observation is sticky |
+| no range data and never seen parked | unknown | skipped (fail-safe) |
+
+A skipped card gets a one-time status note (`… left to its driver curve (fans cannot stop)`), the
+`d` overlay reports `N skipped`, and `only_auto_stop: false` restores the blanket behaviour (floor
+every controllable GPU). The `f` toggle message counts only eligible controls.
+
 Decision per GPU, evaluated on every applied snapshot (load = bound GPU load; temp = hottest of
-core / hot spot / memory junction):
+core / hot spot / memory junction; eligible cards only):
 
 | GPU state | Guard off | Guard on |
 | --------- | --------- | -------- |
@@ -594,6 +609,7 @@ core / hot spot / memory junction):
 | busy: load > idle + `release_load_margin_percent` or temp > idle + `release_temp_margin_c` | no write | `value=null` → `SetDefault()` (driver curve) |
 | in between | no write | hold current mode (hysteresis, no flapping) |
 | load/temp unknown (sensor missing, stale payload) | no write | release to driver control (fail-safe) |
+| ineligible (`can_park == Some(false)`) | no write | never touched; an engaged floor is released |
 
 - Only transitions write HTTP; steady state stays silent. A failed write surfaces on the status
   line and leaves the GPU tracked as released, so the next idle snapshot retries.
@@ -733,6 +749,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 
   "fan_guard": {
     "enabled": true,                  // on by default; f or false disables (§7.5 writes Control sensors)
+    "only_auto_stop": true,           // skip cards whose fans can never stop (most AMD); false floors all
     "floor_percent": 45.0,            // duty held while idle; 5..=100 (0 would stop the fans)
     "idle_load_percent": 10.0,        // floor engages when load ≤ this …
     "idle_temp_c": 65.0,              // … and the hottest GPU temperature ≤ this
@@ -769,6 +786,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
 | `fan_guard.enabled`               | bool            | `true`           | GPU fan floor; the only hardware write (§7.5) |
+| `fan_guard.only_auto_stop`        | bool            | `true`           | Only cards whose fan curve can stop (zero-RPM); spinners are skipped |
 | `fan_guard.floor_percent`         | float           | `45.0`           | 5–100 (0 rejected)                           |
 | `fan_guard.idle_load_percent` / `idle_temp_c` | float | `10.0` / `65.0` | Engage thresholds; unknown data never engages |
 | `fan_guard.release_*_margin_*`    | float           | `10.0` / `5.0`   | Hysteresis before returning to auto control  |
@@ -1146,6 +1164,7 @@ both covered in fixtures):
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": true },
+        "only_auto_stop": { "type": "boolean", "default": true },
         "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 45 },
         "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },
         "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 65 },

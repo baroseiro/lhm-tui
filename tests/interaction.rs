@@ -209,8 +209,16 @@ fn h_opens_help_and_status_line_keeps_the_last_message() {
     handle_event(&mut app, key(KeyCode::Esc), &cfg);
     assert!(!app.help_visible, "any key closes it");
 
+    // Applying the live fixture already left one note: the AMD card cannot
+    // stop its fans, so the guard skips it (SPEC §7.5).
+    let note = app.status.as_ref().expect("skip note");
+    assert!(
+        note.text.contains("left to its driver curve"),
+        "got: {}",
+        note.text
+    );
+
     // Actions write the bottom status line, highlighted while fresh.
-    assert!(app.status.is_none());
     handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
     let status = app.status.as_ref().expect("status message");
     assert!(status.text.contains("anti-stop"), "got: {}", status.text);
