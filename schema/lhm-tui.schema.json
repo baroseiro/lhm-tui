@@ -154,7 +154,7 @@
         "enabled": { "type": "boolean", "default": false },
         "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 20 },
         "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },
-        "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 50 },
+        "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 65 },
         "release_load_margin_percent": { "type": "number", "minimum": 0, "default": 10 },
         "release_temp_margin_c": { "type": "number", "minimum": 0, "default": 5 }
       }

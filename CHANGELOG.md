@@ -140,6 +140,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `fan_guard.idle_temp_c` default raised 50 → **65 °C**: idle GPU hot spots commonly sit at
+  55–60 °C, so the anti-stop floor engages out of the box instead of waiting for a genuinely
+  cold card.
 - SPEC §9 documents `--dump` as a public machine surface (timestamps as Unix seconds) and the
   `--once` no-alternate-screen/colour behaviour.
 - SPEC sync for the fan floor (T5.8): §1.4 N1 narrowed to "no general sensor writes" (exception:

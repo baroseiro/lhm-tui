@@ -62,8 +62,9 @@ pub struct FanGuardConfig {
     pub enabled: bool,
     /// Duty cycle (%) held while idle (5–100; 0 is rejected so fans never stop).
     pub floor_percent: f32,
-    /// Idle thresholds: floor engages when load ≤ this **and** the hottest
-    /// GPU temperature ≤ `idle_temp_c`.
+    /// Idle thresholds: floor engages when load ≤ `idle_load_percent` **and**
+    /// the hottest GPU temperature ≤ `idle_temp_c` (65 °C by default — typical
+    /// idle hot spots sit at 55–60 °C, so the default engages without tuning).
     pub idle_load_percent: f32,
     pub idle_temp_c: f32,
     /// Hysteresis before returning to automatic control.
@@ -77,7 +78,7 @@ impl Default for FanGuardConfig {
             enabled: false,
             floor_percent: 20.0,
             idle_load_percent: 10.0,
-            idle_temp_c: 50.0,
+            idle_temp_c: 65.0,
             release_load_margin_percent: 10.0,
             release_temp_margin_c: 5.0,
         }
@@ -1265,7 +1266,7 @@ mod tests {
         assert!(!config.fan_guard.enabled, "fan writes off by default");
         assert_eq!(config.fan_guard.floor_percent, 20.0);
         assert_eq!(config.fan_guard.idle_load_percent, 10.0);
-        assert_eq!(config.fan_guard.idle_temp_c, 50.0);
+        assert_eq!(config.fan_guard.idle_temp_c, 65.0);
         assert_eq!(config.fan_guard.release_load_margin_percent, 10.0);
         assert_eq!(config.fan_guard.release_temp_margin_c, 5.0);
     }

@@ -118,13 +118,13 @@ mod tests {
 
     #[test]
     fn engages_when_idle() {
-        let cfg = FanGuardConfig::default(); // 10 %, 50 °C
+        let cfg = FanGuardConfig::default(); // 10 %, 65 °C
         assert_eq!(
             decide(&view(Some(0.0), Some(40.0)), false, &cfg),
             GuardAction::Engage
         );
         assert_eq!(
-            decide(&view(Some(10.0), Some(50.0)), false, &cfg),
+            decide(&view(Some(10.0), Some(65.0)), false, &cfg),
             GuardAction::Engage
         );
         assert_eq!(
@@ -132,28 +132,28 @@ mod tests {
             GuardAction::Hold
         );
         assert_eq!(
-            decide(&view(Some(5.0), Some(52.0)), false, &cfg),
+            decide(&view(Some(5.0), Some(66.0)), false, &cfg),
             GuardAction::Hold
         );
     }
 
     #[test]
     fn holds_within_hysteresis_and_releases_when_hot() {
-        let cfg = FanGuardConfig::default(); // release above 20 % load / 55 °C
+        let cfg = FanGuardConfig::default(); // release above 20 % load / 70 °C
         assert_eq!(
-            decide(&view(Some(15.0), Some(50.0)), true, &cfg),
+            decide(&view(Some(15.0), Some(65.0)), true, &cfg),
             GuardAction::Hold
         );
         assert_eq!(
-            decide(&view(Some(20.0), Some(55.0)), true, &cfg),
+            decide(&view(Some(20.0), Some(70.0)), true, &cfg),
             GuardAction::Hold
         );
         assert_eq!(
-            decide(&view(Some(21.0), Some(50.0)), true, &cfg),
+            decide(&view(Some(21.0), Some(65.0)), true, &cfg),
             GuardAction::Release
         );
         assert_eq!(
-            decide(&view(Some(5.0), Some(56.0)), true, &cfg),
+            decide(&view(Some(5.0), Some(71.0)), true, &cfg),
             GuardAction::Release
         );
     }

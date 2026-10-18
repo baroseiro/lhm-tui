@@ -146,8 +146,8 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
     }
 
     let (app, mut cfg) = live_app();
-    // Idle NVIDIA GPU: 0 % load and every temperature at or below 45 °C
-    // (the fixture ships 0 % load but a 60.5 °C hotspot).
+    // Idle NVIDIA GPU: 0 % load and every temperature pinned at or below 45 °C
+    // (deterministic, independent of the fixture's fluctuating hot spot).
     let mut idle = parse_payload(&support::fixture("lhm-live-5900xt.json")).expect("parses");
     set_sensor(&mut idle, "/gpu-nvidia/0/temperature/0", 45.0);
     set_sensor(&mut idle, "/gpu-nvidia/0/temperature/2", 45.0);

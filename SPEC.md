@@ -723,7 +723,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
     "enabled": false,                 // opt-in GPU fan anti-stop floor (§7.5); writes to Control sensors
     "floor_percent": 20.0,            // duty held while idle; 5..=100 (0 would stop the fans)
     "idle_load_percent": 10.0,        // floor engages when load ≤ this …
-    "idle_temp_c": 50.0,              // … and the hottest GPU temperature ≤ this
+    "idle_temp_c": 65.0,              // … and the hottest GPU temperature ≤ this
     "release_load_margin_percent": 10.0,  // hysteresis: back to auto above idle + margin
     "release_temp_margin_c": 5.0
   },
@@ -758,7 +758,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
 | `fan_guard.enabled`               | bool            | `false`          | Opt-in GPU fan floor; the only hardware write (§7.5) |
 | `fan_guard.floor_percent`         | float           | `20.0`           | 5–100 (0 rejected)                           |
-| `fan_guard.idle_load_percent` / `idle_temp_c` | float | `10.0` / `50.0` | Engage thresholds; unknown data never engages |
+| `fan_guard.idle_load_percent` / `idle_temp_c` | float | `10.0` / `65.0` | Engage thresholds; unknown data never engages |
 | `fan_guard.release_*_margin_*`    | float           | `10.0` / `5.0`   | Hysteresis before returning to auto control  |
 | `keys.*`                          | string[]        | see §6.4         | Validated for conflicts                      |
 
@@ -1136,7 +1136,7 @@ both covered in fixtures):
         "enabled": { "type": "boolean", "default": false },
         "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 20 },
         "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },
-        "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 50 },
+        "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 65 },
         "release_load_margin_percent": { "type": "number", "minimum": 0, "default": 10 },
         "release_temp_margin_c": { "type": "number", "minimum": 0, "default": 5 }
       }
