@@ -297,7 +297,7 @@ fn panel_list_expands_layout() {
         .find(|panel| panel.id == "thermal")
         .expect("thermal");
     assert_eq!(
-        presets::panel_height(&thermal, &live_bindings, &cfg, true),
+        presets::panel_height(&thermal, &live_bindings, &cfg, true, false),
         cfg.ui.max_height as u16
     );
     let cpu = presets::panel_list(&cfg, &live_bindings, Default::default())
@@ -305,10 +305,38 @@ fn panel_list_expands_layout() {
         .find(|panel| panel.id == "cpu:0")
         .expect("cpu");
     assert_eq!(
-        presets::panel_height(&cpu, &live_bindings, &cfg, true),
+        presets::panel_height(&cpu, &live_bindings, &cfg, true, false),
         (cfg.charts.height + 5) as u16
     );
-    assert_eq!(presets::panel_height(&cpu, &live_bindings, &cfg, false), 7);
+    assert_eq!(
+        presets::panel_height(&cpu, &live_bindings, &cfg, false, false),
+        7
+    );
+}
+
+#[test]
+fn gpu_fan_row_merges_only_when_it_fits() {
+    let cfg = Config::default();
+    let live = snapshot("lhm-live-5900xt.json");
+    let bindings = bindings::resolve(&live, &cfg.panels);
+    let panels = presets::panel_list(&cfg, &bindings, Default::default());
+    let rows = presets::layout_rows(&panels, 2);
+
+    // 120 columns → 58-column panes: the RTX 3090's two fans need 69 worst
+    // case, so the whole GPU row keeps its fan row…
+    let flags = presets::gpu_row_merge_flags(&panels, &bindings, &cfg, 120, &rows);
+    assert_eq!(flags, vec![false, false, false, false]);
+    // …at 160 columns (78-column panes) both GPUs merge (row-uniform).
+    let flags = presets::gpu_row_merge_flags(&panels, &bindings, &cfg, 160, &rows);
+    assert_eq!(flags, vec![false, true, true, false]);
+
+    // Merging saves one content row in the GPU panel (gauge layout).
+    let gpu = panels
+        .iter()
+        .find(|panel| panel.id == "gpu:0")
+        .expect("gpu:0");
+    assert_eq!(presets::panel_height(gpu, &bindings, &cfg, false, false), 9);
+    assert_eq!(presets::panel_height(gpu, &bindings, &cfg, false, true), 8);
 }
 
 #[test]
@@ -327,9 +355,11 @@ fn layout_rows_and_auto_height() {
 
     // Auto-height distributes spare rows to chart panels, and side-by-side
     // GPUs share one row (never counted twice). Live GPUs have fans → the GPU
-    // panel carries one extra fixed row (chart + VRAM + info + fans + borders).
+    // panel carries one extra fixed row (chart + VRAM + info + fans + borders;
+    // 120 columns is too narrow to merge the fans into the info row).
     let rows = presets::layout_rows(&panels, 2);
-    let heights = presets::fit_heights(&panels, &bindings, &cfg, 50, true, &rows);
+    let no_merge = vec![false; panels.len()];
+    let heights = presets::fit_heights(&panels, &bindings, &cfg, 50, true, &rows, &no_merge);
     let base_total = cfg.charts.height + 5 + (cfg.charts.height + 5) + (cfg.charts.height + 4);
     let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
     assert_eq!(row_total, 50, "fills the available height: {heights:?}");
@@ -337,7 +367,7 @@ fn layout_rows_and_auto_height() {
     assert_eq!(heights[1], heights[2], "row partners share the height");
 
     // Overflow squeezes chart rows down to the minimum first.
-    let heights = presets::fit_heights(&panels, &bindings, &cfg, 20, true, &rows);
+    let heights = presets::fit_heights(&panels, &bindings, &cfg, 20, true, &rows, &no_merge);
     assert_eq!(heights[0], 5 + 4, "cpu at minimum chart height");
     assert_eq!(
         heights[1],
@@ -349,7 +379,7 @@ fn layout_rows_and_auto_height() {
     // auto_height off keeps base heights.
     let mut fixed = cfg.clone();
     fixed.ui.auto_height = false;
-    let heights = presets::fit_heights(&panels, &bindings, &fixed, 50, true, &rows);
+    let heights = presets::fit_heights(&panels, &bindings, &fixed, 50, true, &rows, &no_merge);
     let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
     assert_eq!(row_total, base_total);
 }

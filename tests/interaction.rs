@@ -111,11 +111,11 @@ fn t_and_c_keys_toggle_thermal_and_charts() {
     handle_event(&mut app, key(KeyCode::Char('t')), &cfg);
     assert!(!app.effective_thermal(&cfg));
 
+    assert!(!app.effective_charts(&cfg), "charts off by default");
+    handle_event(&mut app, key(KeyCode::Char('c')), &cfg);
     assert!(app.effective_charts(&cfg));
     handle_event(&mut app, key(KeyCode::Char('c')), &cfg);
     assert!(!app.effective_charts(&cfg));
-    handle_event(&mut app, key(KeyCode::Char('c')), &cfg);
-    assert!(app.effective_charts(&cfg));
 }
 
 #[test]
@@ -145,7 +145,7 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
         );
     }
 
-    let (app, mut cfg) = live_app();
+    let (mut app, mut cfg) = live_app();
     // Idle NVIDIA GPU: 0 % load and every temperature pinned at or below 45 °C
     // (deterministic, independent of the fixture's fluctuating hot spot).
     let mut idle = parse_payload(&support::fixture("lhm-live-5900xt.json")).expect("parses");
@@ -155,17 +155,8 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
     let mut busy = idle.clone();
     set_sensor(&mut busy, "/gpu-nvidia/0/load/0", 60.0);
 
-    // Off by default: no GPU ever enters the floor while opt-in is missing.
-    let mut app = app;
-    assert!(!app.effective_fan_guard(&cfg));
-    apply(&mut app, &idle, &cfg);
-    assert!(
-        app.fan_guard_state.values().all(|state| !state.engaged),
-        "no floor while off"
-    );
-
-    // Config opt-in engages on the next snapshot.
-    cfg.fan_guard.enabled = true;
+    // On by default: an idle GPU enters the floor without any opt-in.
+    assert!(app.effective_fan_guard(&cfg), "anti-stop on by default");
     apply(&mut app, &idle, &cfg);
     let state = app.fan_guard_state.get("/gpu-nvidia/0").expect("tracked");
     assert!(state.engaged, "idle GPU held at the floor");
@@ -175,29 +166,37 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
         "83 °C AMD keeps driver control"
     );
 
-    // Force config back off but keep the session; `f` overrides to on.
-    cfg.fan_guard.enabled = false;
-    let mut app = AppState::new();
-    apply(&mut app, &idle, &cfg);
-    assert!(!app.effective_fan_guard(&cfg));
-    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
-    assert_eq!(app.fan_guard_override, Some(true));
-    assert!(app.status.is_some(), "toggle feedback on the status line");
-    assert!(
-        app.fan_guard_state["/gpu-nvidia/0"].engaged,
-        "toggle engages immediately on the current snapshot"
-    );
-
     // Load spike → released (fail-safe to automatic control).
     apply(&mut app, &busy, &cfg);
     assert!(!app.fan_guard_state["/gpu-nvidia/0"].engaged);
 
-    // Toggling off clears the override and any floor.
+    // `f` turns the default off and releases any floor.
     apply(&mut app, &idle, &cfg);
     assert!(app.fan_guard_state["/gpu-nvidia/0"].engaged);
     handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
     assert_eq!(app.fan_guard_override, Some(false));
+    assert!(app.status.is_some(), "toggle feedback on the status line");
+    assert!(
+        !app.fan_guard_state["/gpu-nvidia/0"].engaged,
+        "f off releases the floor immediately"
+    );
+    apply(&mut app, &idle, &cfg);
     assert!(!app.fan_guard_state["/gpu-nvidia/0"].engaged);
+
+    // `f` again re-enables it on the current snapshot.
+    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    assert_eq!(app.fan_guard_override, Some(true));
+    assert!(app.fan_guard_state["/gpu-nvidia/0"].engaged);
+
+    // The config can disable it without any key press.
+    cfg.fan_guard.enabled = false;
+    let mut app = AppState::new();
+    apply(&mut app, &idle, &cfg);
+    assert!(!app.effective_fan_guard(&cfg));
+    assert!(
+        app.fan_guard_state.values().all(|state| !state.engaged),
+        "no floor while config-disabled"
+    );
 }
 
 #[test]

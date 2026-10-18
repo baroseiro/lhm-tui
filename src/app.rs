@@ -1343,9 +1343,15 @@ mod tests {
         app.thermal_override = Some(true);
         assert!(app.effective_thermal(&cfg));
 
+        assert!(!app.effective_charts(&cfg), "charts off by default");
+        app.charts_override = Some(true);
         assert!(app.effective_charts(&cfg));
-        app.charts_override = Some(false);
-        assert!(!app.effective_charts(&cfg));
+        let mut charted = Config::default();
+        charted.charts.enabled = true;
+        assert!(
+            app.effective_charts(&charted),
+            "charts.enabled wins without override"
+        );
 
         let mut shown = Config::default();
         shown.ui.layout.push("thermal".to_string());

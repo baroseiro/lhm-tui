@@ -112,7 +112,7 @@ async fn live_full_dashboard_render() {
     let cfg = Config::default();
     let mut app = AppState::new();
 
-    // A few real polls so the charts have a small trend to draw.
+    // A few real polls so charts have a small trend to draw if enabled.
     for _ in 0..4 {
         let fetched = live_fetch(&cfg).await;
         app.apply_poll_event(PollEvent::Snapshot(Arc::new(fetched)), &cfg);
@@ -133,6 +133,8 @@ async fn live_full_dashboard_render() {
         !text.contains("Temperatures"),
         "thermal table hidden by default"
     );
+    // Charts are off by default: the gauges layout shows the Mem Temp row.
+    assert!(text.contains("Mem Temp"), "gauges layout by default");
 
     // `t` reveals the temperatures table.
     handle_event(&mut app, key('t'), &cfg);
@@ -140,11 +142,12 @@ async fn live_full_dashboard_render() {
     println!("{text}");
     assert!(text.contains("Temperatures"), "t shows the thermal table");
 
-    // `c` switches to the gauges layout (which has a Mem Temp row).
+    // `c` switches to the chart layout (graphs replace the gauge rows).
     handle_event(&mut app, key('c'), &cfg);
     let text = render_to_string(&mut terminal, &mut app, &cfg);
     println!("{text}");
-    assert!(text.contains("Mem Temp"), "c switches to gauge panels");
+    assert!(text.contains("GPU 0"), "gpu panel still rendered");
+    assert!(!text.contains("Mem Temp"), "c switches to chart panels");
 }
 
 #[tokio::test]

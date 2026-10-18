@@ -5,7 +5,7 @@
 |                  |                                                                          |
 | ---------------- | ------------------------------------------------------------------------ |
 | Status           | Draft v1.0                                                               |
-| Target release   | v0.1.0 - monitoring + opt-in GPU fan anti-stop floor                      |
+| Target release   | v0.1.0 - monitoring + GPU fan anti-stop floor                             |
 | Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`      |
 | Data source      | LHM built-in **Remote Web Server** (`GET /data.json`), polling-based      |
 | Platforms        | TUI runs on Windows / Linux / macOS; the LHM host is Windows by definition |
@@ -77,7 +77,7 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 
 | #   | Non-goal                                                                    |
 | --- | --------------------------------------------------------------------------- |
-| N1  | General sensor writes (fan/pump control UI, arbitrary `Sensor?action=Set`) — planned v0.2. The single exception is the opt-in, off-by-default fan anti-stop floor (§7.5), which only ever writes GPU fan `Control` sensors and only ever restores automatic control |
+| N1  | General sensor writes (fan/pump control UI, arbitrary `Sensor?action=Set`) - planned v0.2. The single exception is the on-by-default fan anti-stop floor (§7.5), which only ever writes GPU fan `Control` sensors and only ever restores automatic control; disable with `f` or `fan_guard.enabled: false` |
 | N2  | Direct hardware access; `lhm-tui` never needs admin rights, LHM does         |
 | N3  | Bundling/installing/running LHM itself                                      |
 | N4  | Persisting history to disk (in-memory ring buffers only; CSV recording is v0.3) |
@@ -447,6 +447,10 @@ Responsive rules:
 - `< 80` cols → GPU side-by-side stats collapse into one-line gauges; tables lose the min/max columns.
 - `< 60`×`20` → "Terminal too small — needs ≥ 60×20" screen, poll loop keeps running.
 - Height allocation: charts `charts.height` rows (default 8, min 5); tables get `min(content, ui.max_height)`.
+- Short screens: when the rows do not fit, charts shrink to `MIN_CHART_HEIGHT` (4) first; then every
+  row squeezes towards a 4-row minimum instead of being clipped off-screen. A squeezed gauge panel
+  drops its least important rows first — memory temp → hot spot → VRAM → fan row → info — so a
+  pressed panel still shows load (and temp).
 
 ### 6.2 Widget catalog
 
@@ -492,7 +496,7 @@ Responsive rules:
 | `a`                      | Toggle ASCII rendering (overrides config)                        |
 | `t`                      | Toggle the temperatures table visibility                         |
 | `c`                      | Toggle charts (metric graphs ↔ gauges/bars)                      |
-| `f`                      | Toggle the GPU fan anti-stop floor (§7.5); off by default        |
+| `f`                      | Toggle the GPU fan anti-stop floor (§7.5); on by default         |
 | `d`                      | Debug overlay: poll latency, payload size, sensor/hw counts, last error, LHM version |
 | `y`                      | Copy current snapshot summary to clipboard (OSC 52) — optional v0.1.1 |
 
@@ -516,10 +520,11 @@ Key conflicts after remapping → config validation error listing offending acti
 
 Custom widget built on `ratatui::widgets::canvas::Canvas` (or direct braille writes) rather than the
 stock `Chart` widget, because we need multi-series braille lines, min/max envelopes, autoscale
-hysteresis and legends. Charts are optional: `charts.enabled` (or `--no-charts`) keeps the
-gauges/bars-only layouts from P2, and the `c` key toggles at runtime; history is always collected
-(cheap, about 1 MB for 500 series) so switching is instant. Series shorter than the pixel width
-are right-aligned so live charts grow from the right edge.
+hysteresis and legends. Charts are **off by default** (`charts.enabled: false`): the
+gauges/bars-only layouts from P2 render instantly with no warm-up, and `c`, `--charts` or
+`charts.enabled: true` add graphs at runtime; history is always collected (cheap, about 1 MB for
+500 series) so switching is instant. Series shorter than the pixel width are right-aligned so live
+charts grow from the right edge.
 
 ### 7.1 Data pipeline per series
 
@@ -569,13 +574,14 @@ separately and labeled "LHM min/max" (since-boot or since-reset values).
   license notice. Verify the license of any external reference before reusing anything from it;
   the default is an original implementation from this spec.
 
-### 7.5 GPU fan anti-stop floor (opt-in)
+### 7.5 GPU fan anti-stop floor (on by default)
 
 Stock NVIDIA fan curves stop the fans entirely below a driver-defined temperature (zero-RPM /
 silent mode) and expose no switch to disable it. `fan_guard` works around that by holding every
 controllable GPU fan at a software floor while the GPU is idle and handing control back to the
 driver as soon as real work starts. It is the only hardware write the tool performs, it is
-**disabled by default** (`fan_guard.enabled`, or the `f` key at runtime), and it only ever touches
+**enabled by default** (disable with `f` at runtime or `fan_guard.enabled: false`), and it only
+ever touches
 `Control` sensors (LHM `Sensor.Control.SetSoftware` / `SetDefault`) — never tachometers, voltages
 or anything else.
 
@@ -665,7 +671,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   },
 
   "charts": {
-    "enabled": true,                  // false (or --no-charts) → gauges/bars-only panels
+    "enabled": false,                 // true (or --charts) → graphs; c toggles at runtime
     "marker": "braille",              // braille | halfblock | ascii
     "height": 8,
     "window": "5m",                   // initial window
@@ -726,7 +732,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   },
 
   "fan_guard": {
-    "enabled": false,                 // opt-in GPU fan anti-stop floor (§7.5); writes to Control sensors
+    "enabled": true,                  // on by default; f or false disables (§7.5 writes Control sensors)
     "floor_percent": 45.0,            // duty held while idle; 5..=100 (0 would stop the fans)
     "idle_load_percent": 10.0,        // floor engages when load ≤ this …
     "idle_temp_c": 65.0,              // … and the hottest GPU temperature ≤ this
@@ -755,14 +761,14 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `history.window_s`                | int             | `900`            | 60–86400                                     |
 | `ui.layout`                       | string[]        | `["cpu","gpu","memory"]` | Valid panel keys enforced; `thermal` hidden by default |
 | `ui.auto_height`                  | bool            | `true`           | Charts absorb spare space, then tables to `max_height` |
-| `charts.enabled`                  | bool            | `true`           | `false`/`--no-charts` keeps gauges/bars only |
+| `charts.enabled`                  | bool            | `false`          | `true`/`--charts` adds graphs; `c` toggles at runtime |
 | `charts.marker`                   | enum            | `braille`        | Fallback automatically if glyph unsupported  |
 | `charts.window(_cycle)`           | duration/string | `"5m"`/`[1m,5m,15m]` | Window > `history.window_s` clamps       |
 | `theme.*`                         | color/float     | see example      | Names or `#RRGGBB`; downgraded for 256/16 colors |
 | `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors |
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
-| `fan_guard.enabled`               | bool            | `false`          | Opt-in GPU fan floor; the only hardware write (§7.5) |
+| `fan_guard.enabled`               | bool            | `true`           | GPU fan floor; the only hardware write (§7.5) |
 | `fan_guard.floor_percent`         | float           | `45.0`           | 5–100 (0 rejected)                           |
 | `fan_guard.idle_load_percent` / `idle_temp_c` | float | `10.0` / `65.0` | Engage thresholds; unknown data never engages |
 | `fan_guard.release_*_margin_*`    | float           | `10.0` / `5.0`   | Hysteresis before returning to auto control  |
@@ -936,7 +942,7 @@ Each milestone ships green CI and is independently reviewable.
 | R6  | Basic auth password in config file                                                                        | `password_env`/`password_file` first in docs; redaction in `--print-config`; refuse world-readable config file on Unix with a warning |
 | R7  | Windows conhost default 9001 scrollback / alt-screen semantics in old builds                              | Require Windows Terminal in docs; graceful VT capability check                                              |
 | R8  | `Sensor`-endpoint polling as optimization for pinned-only configs — needed in v0.1?                       | No; keep one `/data.json` fetch (simpler, atomic). Revisit if payload > 500 KB                              |
-| R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | Off by default; only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
+| R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | On by default (disable with `f` or `fan_guard.enabled: false`); only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
 
 ---
 
@@ -946,8 +952,8 @@ Ordered backlog beyond v0.1.0:
 
 1. **v0.2 — Control**: set fan/pump `Control` sensors (`Sensor?action=Set`), confirmation modal,
    safe-range config, `--read-only` lock flag. *(The v0.1 fan anti-stop floor — §7.5 — is a narrow,
-   opt-in slice of this: it only ever writes GPU fan controls and only to auto or the configured
-   floor.)*
+   on-by-default slice of this: it only ever writes GPU fan controls and only to auto or the
+   configured floor; `f` or `fan_guard.enabled: false` disables it.)*
 2. **v0.3 — Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
    (terminal bell, OSC 9 desktop notification, webhook).
 3. **v0.3 — History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
@@ -1119,7 +1125,7 @@ both covered in fixtures):
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
+        "enabled": { "type": "boolean", "default": false },
         "marker": { "enum": ["braille", "halfblock", "ascii"], "default": "braille" },
         "height": { "type": "integer", "minimum": 3, "default": 8 },
         "window": { "type": "string", "default": "5m" },
@@ -1139,7 +1145,7 @@ both covered in fixtures):
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
+        "enabled": { "type": "boolean", "default": true },
         "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 45 },
         "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },
         "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 65 },

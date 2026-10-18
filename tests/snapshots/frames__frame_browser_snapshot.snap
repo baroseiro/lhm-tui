@@ -2,34 +2,32 @@
 source: tests/frames.rs
 expression: "frame_text(&mut app, &cfg, 110, 32)"
 ---
- lhm-tui v0.0.1  ● live   110×32   http://127.0.0.1:8085   window 5m
+ lhm-tui v0.0.1  ● live   110×32   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 9 5900XT ──────────────────────────────────────────────────────────────────────────────────╮
-│⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀│
-│● CPU Tot╭ Sensors — 8 match(es) ─────────────────────────────────────────────────────────────────╮         │
-│⠀⠀⠀⠀⠀⠀⠀⠀⠀│ filter: gpu core▏                                                                      │⠀⠀⠀⠀⠀⠀⠀⠀⠠│
-│● Core (T│   NVIDIA GeForce RTX 3090 · GPU Core Voltage                                           │         │
-│ ▁▁▂▁▁ ▁▁│   NVIDIA GeForce RTX 3090 · GPU Core                                                   │         │
-│         │ ▶ NVIDIA GeForce RTX 3090 · GPU Core                                                   │         │
-╰ Clock 4.│   NVIDIA GeForce RTX 3090 · GPU Core                                                   │─────────╯
-╭ GPU 0 · │   AMD Radeon RX 7900 XTX · GPU Core                                                    │─────────╮
-│⠀⠀⠀⠀⠀⠀⠀⠀⠀│   AMD Radeon RX 7900 XTX · GPU Core                                                    │⠀⠀⠀⠀⠀⠀⠀⠀⣀│
-│● GPU Cor│   AMD Radeon RX 7900 XTX · GPU Core                                                    │         │
-│⠀⠀⠀⠀⠀⠀⠀⠀⠀│   AMD Radeon RX 7900 XTX · GPU Core                                                    │⠀⠀⠀⠀⠀⠀⠀⠀⠰│
-│● GPU Cor│                                                                                        │         │
+│ Temp     ██████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░ 69.6 °C │
+│ Load    ╭ Sensors — 8 match(es) ─────────────────────────────────────────────────────────────────╮░░ 7.5 % │
+│ ▁▁▂▁▁ ▁▁│ filter: gpu core▏                                                                      │         │
+│         │   NVIDIA GeForce RTX 3090 · GPU Core Voltage                                           │         │
+│ Clock 4.│   NVIDIA GeForce RTX 3090 · GPU Core                                                   │         │
+╰─────────│ ▶ NVIDIA GeForce RTX 3090 · GPU Core                                                   │─────────╯
+╭ GPU 0 · │   NVIDIA GeForce RTX 3090 · GPU Core                                                   │─────────╮
+│ Temp    │   AMD Radeon RX 7900 XTX · GPU Core                                                    │ 50.0 °C │
+│ Hot Spot│   AMD Radeon RX 7900 XTX · GPU Core                                                    │ 60.5 °C │
+│ Mem Temp│   AMD Radeon RX 7900 XTX · GPU Core                                                    │ 54.0 °C │
+│ Load    │   AMD Radeon RX 7900 XTX · GPU Core                                                    │░░ 0.0 % │
 │ VRAM    │                                                                                        │24576 MB │
-╰ Power 33│                                                                                        │ 2 0 RPM ╯
+│ Power 33│                                                                                        │ 2 0 RPM │
+╰─────────│                                                                                        │─────────╯
 ╭ GPU 1 · │                                                                                        │─────────╮
-│⠀⠀⠀⠀⠀⠀⠀⠀⠀│                                                                                        │⠀⠀⠀⠀⠀⠀⠀⠀⢀│
-│● GPU Cor│                                                                                        │         │
-│⠀⠀⠀⠀⠀⠀⠀⠀⠀│                                                                                        │⠀⠀⠀⠀⠀⠀⠀⠀⠰│
-│● GPU Cor│                                                                                        │         │
+│ Temp    │                                                                                        │ 60.0 °C │
+│ Hot Spot│                                                                                        │ 68.0 °C │
+│ Mem Temp│                                                                                        │ 83.0 °C │
+│ Load    │                                                                                        │░░ 7.0 % │
 │ VRAM    │                                                                                        │24560 MB │
 │ Power 10│                                                                                        │ 534 RPM │
 ╰─────────│                                                                                        │─────────╯
 ╭ Memory ·│                                                                                        │─────────╮
-│⠁⠁⠁⠁⠁⠁⠁⠁⠁│                                                                                        │⠁⠁⠁⠁⠁⠁⠁⠁⠁│
-│⠄⠄⠄⠄⠄⠄⠄⠄⠄│                                                                                        │⠄⠄⠄⠄⠄⠄⠄⠄⠄│
-│⡀⡀⡀⡀⡀⡀⡀⡀⡀│                                                                                        │⡀⡀⡀⡀⡀⡀⡀⡀⡐│
-│● Memory ╰────────────────────────────────────────────────────────────────────────────────────────╯         │
-│ Used     █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 26.9 / 127.9 GB │
-╰ Virtual  42.7 / 140.9 GB───────────────────────────────────────────────────────────────────────────────────╯
+│ Used    │                                                                                        │127.9 GB │
+│ Load    │                                                                                        │░ 21.0 % │
+│ Virtual │                                                                                        │         │
+╰─────────╰────────────────────────────────────────────────────────────────────────────────────────╯─────────╯

@@ -154,6 +154,7 @@ fn render_adhoc(
             window,
             window_label,
             now: Instant::now(),
+            gpu_fans_merge: false,
         };
         let series = Series {
             label,
@@ -658,6 +659,13 @@ fn render_panels(
     if zoomed {
         let spec = &panels[focused_index];
         let scroll = scrolls.get(&spec.id).copied().unwrap_or(0);
+        let merge_flags = presets::gpu_row_merge_flags(
+            &panels,
+            bindings,
+            cfg,
+            area.width,
+            &[vec![focused_index]],
+        );
         let mut ctx = PanelCtx {
             snapshot,
             bindings,
@@ -674,6 +682,7 @@ fn render_panels(
             window,
             window_label: window_label.clone(),
             now,
+            gpu_fans_merge: merge_flags.get(focused_index).copied().unwrap_or(false),
         };
         presets::draw_panel(frame, area, spec, &mut ctx);
         return;
@@ -685,7 +694,16 @@ fn render_panels(
         1
     };
     let rows = presets::layout_rows(&panels, per_row);
-    let heights = presets::fit_heights(&panels, bindings, cfg, area.height, charts_on, &rows);
+    let merge_flags = presets::gpu_row_merge_flags(&panels, bindings, cfg, area.width, &rows);
+    let heights = presets::fit_heights(
+        &panels,
+        bindings,
+        cfg,
+        area.height,
+        charts_on,
+        &rows,
+        &merge_flags,
+    );
     let row_heights: Vec<u16> = rows.iter().map(|row| heights[row[0]]).collect();
 
     let constraints: Vec<Constraint> = row_heights
@@ -721,6 +739,7 @@ fn render_panels(
                 window,
                 window_label: window_label.clone(),
                 now,
+                gpu_fans_merge: merge_flags.get(*panel_index).copied().unwrap_or(false),
             };
             presets::draw_panel(frame, column, spec, &mut ctx);
         }

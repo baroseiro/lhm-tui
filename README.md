@@ -20,17 +20,19 @@
 `lhm-tui` talks to LibreHardwareMonitor's built-in **Remote Web Server** over plain HTTP and renders
 live, color-thresholded panels in your terminal:
 
-- **CPU** — temperature & total load graphs, per-core utilization bars, clocks, package power
+- **CPU** — temperature & total load gauges, per-core utilization bars, clocks, package power
+  (`c` or `--charts` adds live graphs)
 - **GPU** — one panel per GPU (NVIDIA/AMD/Intel, multi-GPU supported): core load, **VRAM usage**,
   hotspot temperature, power draw, and every fan on the card (right-aligned on the power/clock
   row)
-- **Memory** — used/available gauges with history, page file and virtual memory
+- **Memory** — used/available gauges, page file and virtual memory
 - **Temperatures** — sortable table of every thermal sensor in the tree, colored by thresholds
 - Plus presets for **fans**, **power**, **storage** and **network**
-- **Optional GPU fan anti-stop floor** — keeps NVIDIA/AMD fan curves from parking the fans at
-  zero-RPM when idle (`f`): a 45 % floor while the GPU is idle, automatic driver control the
-  moment load or temperature rises. Off by default; the only feature that writes to hardware,
-  and only ever to the fan controls ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-opt-in))
+- **GPU fan anti-stop floor** (on by default) — keeps NVIDIA/AMD fan curves from parking the fans
+  at zero-RPM when idle: a 45 % floor while the GPU is idle, automatic driver control the moment
+  load or temperature rises. It is the only feature that writes to hardware, and only ever to the
+  fan controls — press `f` or set `"fan_guard": { "enabled": false }` to turn it off
+  ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default))
 
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
 Windows machine on your network / over SSH — through a small JSON config file.
@@ -115,7 +117,7 @@ lhm-tui --help
 | `m`                   | Reset LHM min/max counters              |
 | `a` / `d`             | ASCII mode / debug overlay              |
 | `t` / `c`             | Toggle temperatures table / charts      |
-| `f`                   | Toggle GPU fan anti-stop floor (off by default) |
+| `f`                   | Toggle GPU fan anti-stop floor (on by default) |
 
 All keys are remappable in the config file. The overlay (`h` or `?`) shows the live key map for
 your remaps, and the bottom line is a status line with the latest message (reload results, fan
@@ -140,6 +142,7 @@ anti-stop state, errors) — the chart window label moved into the header.
     "layout": ["cpu", "gpu", "memory", "thermal"]
   },
   "charts": {
+    "enabled": true,
     "window": "5m",
     "window_cycle": ["1m", "5m", "15m"]
   },
@@ -168,9 +171,9 @@ Common things people change:
 | Build a custom panel                | `panels.custom` with `graph` / `gauge` / `table` widgets                |
 | Change colors or warning thresholds | `theme`                                                                 |
 | Remap keys                          | `keys`                                                                  |
-| Turn charts off                     | `charts.enabled: false` (or run with `--no-charts`, or press `c`)       |
+| Turn charts on                      | Press `c`, run with `--charts`, or set `charts.enabled: true`          |
 | Show the temperatures table         | Press `t`, or add `"thermal"` to `ui.layout`                            |
-| Keep GPU fans spinning when idle    | Press `f`, or `"fan_guard": { "enabled": true }` ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-opt-in)) |
+| Keep GPU fans spinning when idle    | On by default — press `f` or `"fan_guard": { "enabled": false }` to disable ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default)) |
 | Switch theme                        | `theme.name`: `default`, `gruvbox`, `nord` or `mono`                    |
 | Custom theme file                   | `lhm-tui --theme path/to/theme.json` (same shape as the `theme` block)  |
 | Strip all colors                    | `NO_COLOR=1 lhm-tui` or `--no-color`                                    |

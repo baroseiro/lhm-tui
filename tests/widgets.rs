@@ -74,6 +74,8 @@ fn draw_preset(
         window: Duration::from_secs(300),
         window_label: "5m".to_string(),
         now: Instant::now(),
+        // Widget snapshots exercise the merged GPU fan row.
+        gpu_fans_merge: true,
     };
     presets::draw_panel(frame, area, spec, &mut ctx);
 }
@@ -349,7 +351,8 @@ fn cpu_panel_gauges_snapshot() {
 
 #[test]
 fn cpu_panel_chart_snapshot() {
-    let cfg = Config::default();
+    let mut cfg = Config::default();
+    cfg.charts.enabled = true;
     let (snapshot, history) = dev_history();
     let bindings = bindings::resolve(&snapshot, &cfg.panels);
     let theme = theme();
@@ -410,7 +413,8 @@ fn gpu_panel_gauges_snapshot() {
 
 #[test]
 fn gpu_panel_chart_snapshot() {
-    let cfg = Config::default();
+    let mut cfg = Config::default();
+    cfg.charts.enabled = true;
     let (snapshot, history) = dev_history();
     let bindings = bindings::resolve(&snapshot, &cfg.panels);
     let theme = theme();
@@ -471,7 +475,8 @@ fn memory_panel_gauges_snapshot() {
 
 #[test]
 fn memory_panel_chart_snapshot() {
-    let cfg = Config::default();
+    let mut cfg = Config::default();
+    cfg.charts.enabled = true;
     let (snapshot, history) = dev_history();
     let bindings = bindings::resolve(&snapshot, &cfg.panels);
     let theme = theme();
@@ -504,6 +509,7 @@ fn memory_panel_chart_snapshot() {
 #[test]
 fn ascii_marker_chart_snapshot() {
     let mut cfg = Config::default();
+    cfg.charts.enabled = true;
     cfg.charts.marker = Marker::Ascii;
     let (snapshot, history) = dev_history();
     let bindings = bindings::resolve(&snapshot, &cfg.panels);
@@ -565,6 +571,7 @@ fn thermal_panel_snapshot() {
 #[test]
 fn custom_panel_snapshot() {
     let mut cfg = Config::default();
+    cfg.charts.enabled = true;
     cfg.panels.custom.push(lhm_tui::config::CustomPanel {
         id: "nvme".to_string(),
         title: Some("NVMe".to_string()),

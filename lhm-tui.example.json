@@ -38,7 +38,7 @@
     "auto_height": true
   },
   "charts": {
-    "enabled": true,
+    "enabled": false,
     "marker": "braille",
     "height": 8,
     "window": "5m",
@@ -137,7 +137,7 @@
     "custom": []
   },
   "fan_guard": {
-    "enabled": false,
+    "enabled": true,
     "floor_percent": 45.0,
     "idle_load_percent": 10.0,
     "idle_temp_c": 65.0,

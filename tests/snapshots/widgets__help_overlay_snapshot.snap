@@ -2,28 +2,27 @@
 source: tests/widgets.rs
 expression: out
 ---
- lhm-tui v0.0.1  ● live   80×26   http://127.0.0.1:8085   window 5m
+ lhm-tui v0.0.1  ● live   80×26   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 7 7800X3D ───────────────────────────────────────────────────╮
-│⠀⠀⠀⠀⠀⠀╭ Help — any key closes ─────────────────────────────────────────╮⠀⠀⠀⠀⠀⠠│
-│● CPU │  q, esc, ctrl+c     Quit                                       │      │
-│⠀⠀⠀⠀⠀⠀│  ?, h               Help overlay                               │⠀⠀⠀⠀⠀⠐│
-│● Core│  p, space           Pause / resume polling                     │      │
-│ ▅▁   │  g                  Chart window forward                       │      │
-│      │  G                  Chart window backward                      │      │
-╰ Clock│  tab                Focus next panel                           │──────╯
-╭ GPU 0│  shift+tab, backtab Focus previous panel                       │──────╮
-│⠀⠀⠀⠀⠀⠀│  enter              Zoom focused panel                         │⠀⠀⠀⠀⠀⠰│
-│● GPU │  b                  Sensor browser                             │      │
-│⠀⠀⠀⠀⠀⠀│  s                  Cycle table sort                           │⠀⠀⠀⠀⠀⢐│
-│● GPU │  r                  Reload config                              │      │
-│ VRAM │  m                  Reset LHM min/max                          │64 MB │
-│ Power│  a                  Toggle ASCII rendering                     │5 RPM │
-╰──────│  d                  Debug overlay                              │──────╯
-╭ Memor│  t                  Toggle temperatures table                  │──────╮
-│⠁⠁⠁⠁⠁⠁│  c                  Toggle charts                              │⠁⠁⠁⠁⠁⠁│
-│⠄⠄⠄⠄⠄⠄│  f                  GPU fan anti-stop floor                    │⠄⠄⠄⠄⠄⠌│
-│⡀⡀⡀⡀⡀⡀│  ↓ ↑, j k           Scroll focused table / move selection      │⡀⡀⡀⡀⡀⡀│
-│● Memo│                                                                │      │
-│ Used │                                                                │.0 GB │
-│      ╰────────────────────────────────────────────────────────────────╯      │
-╰──────────────────────────────────────────────────────────────────────────────╯
+│ Temp ╭ Help — any key closes ─────────────────────────────────────────╮.9 °C │
+│ Load │  q, esc, ctrl+c     Quit                                       │1.2 % │
+│ ▅▁   │  ?, h               Help overlay                               │      │
+│      │  p, space           Pause / resume polling                     │      │
+│ Clock│  g                  Chart window forward                       │      │
+╰──────│  G                  Chart window backward                      │──────╯
+╭ GPU 0│  tab                Focus next panel                           │──────╮
+│ Temp │  shift+tab, backtab Focus previous panel                       │.0 °C │
+│ Hot S│  enter              Zoom focused panel                         │.5 °C │
+│ Mem T│  b                  Sensor browser                             │░ n/a │
+│ Load │  s                  Cycle table sort                           │8.0 % │
+│ VRAM │  r                  Reload config                              │64 MB │
+│ Power│  m                  Reset LHM min/max                          │5 RPM │
+╰──────│  a                  Toggle ASCII rendering                     │──────╯
+╭ Memor│  d                  Debug overlay                              │──────╮
+│ Used │  t                  Toggle temperatures table                  │.0 GB │
+│ Load │  c                  Toggle charts                              │2.8 % │
+│      │  f                  GPU fan anti-stop floor                    │      │
+╰──────│  ↓ ↑, j k           Scroll focused table / move selection      │──────╯
+       │                                                                │
+       │                                                                │
+       ╰────────────────────────────────────────────────────────────────╯

@@ -124,11 +124,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `tests/frames.rs` renders full frames at 160/120/80/60 columns across live/stale/disconnected/
     paused/zoom/debug/browser/adhoc states; `scripts/soak.{ps1,sh}` sample RSS/CPU per minute;
     `docs/qa-matrix.md` carries the pre-release checklist.
-- **GPU fan anti-stop floor** (SPEC §7.5, `T5.8`): opt-in guard that holds every controllable GPU
+- **GPU fan anti-stop floor** (SPEC §7.5, `T5.8`): guard that holds every controllable GPU
   fan at a software duty cycle while the GPU is idle and hands it back to the driver's automatic
-  curve the moment load or temperature rises — the fix for NVIDIA's zero-RPM parking. Toggle with
-  `f` (the message lands on the status line; the debug overlay shows the guard state), configure via `fan_guard.*` (floor %, idle load/temp, release hysteresis); off by
-  default. Safety rails: hysteresis instead of flapping, fail-safe to auto when load/temp are
+  curve the moment load or temperature rises — the fix for NVIDIA's zero-RPM parking. On by
+  default; `f` toggles it (the message lands on the status line; the debug overlay shows the guard
+  state) and `fan_guard.*` configures it (floor %, idle load/temp, release hysteresis).
+  Safety rails: hysteresis instead of flapping, fail-safe to auto when load/temp are
   unknown, back to auto on `f` off and on quit, `floor_percent < 5` rejected (0 % would stop the
   fans the guard exists to keep spinning). Writes use `POST /Sensor?action=Set` with a zero-length
   body (`value=null` → `SetDefault`) — the GET path hangs on errors and carries no result marker —
@@ -137,12 +138,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   popup now also lists the fixed scroll keys.
 - `lhm-tui.example.json` and `schema/lhm-tui.schema.json` gained the `fan_guard` section, and the
   default keymap gained `f` (`toggle_fan_guard`).
-- Tests: 166 total.
+- Tests: 168 total.
 
 ### Changed
 
+- **Default flip: charts are off by default** (`charts.enabled: false`). The dashboard opens as the
+  instant gauges/bars layout (no chart warm-up); press `c`, pass `--charts` or set
+  `charts.enabled: true` for live graphs. History is still collected, so `c` switches instantly.
+- **Default flip: the GPU fan anti-stop floor is on by default.** Idle GPUs are held at the 45 %
+  floor automatically; disable per session with `f` or permanently with `fan_guard.enabled: false`.
 - **GPU** panels put every fan right-aligned on the power/clock row (their own row when the panel
   is too narrow for both).
+- Short screens: when charts cannot absorb the squeeze (charts off, or table-only layouts), rows
+  now compress towards a 4-row minimum instead of being clipped off-screen, and a pressed gauge
+  panel drops its least important rows first (memory temp → hot spot → VRAM → fan row → info) so
+  load and temperature survive at the smallest sizes.
 - The permanent key-hint bar at the bottom is gone: the full key map lives in the `h`/`?` popup
   (which now also lists the scroll keys), the chart window label moved into the header, and the
   bottom line is a status line - the only place messages render (the old second-line toast is

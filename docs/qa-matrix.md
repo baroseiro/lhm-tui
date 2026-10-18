@@ -26,7 +26,8 @@ failures and list deferrals in the release notes.
 1. `lhm-tui --probe` prints version, counts and no errors.
 2. `lhm-tui` renders CPU, GPUs, memory; values match the LHM web UI within
    one poll interval.
-3. Charts fill over ~5 minutes; `g` cycles the window; `c` toggles charts.
+3. Press `c` (or run with `--charts`): charts fill over ~5 minutes; `g` cycles the window; `c`
+   switches back to gauges.
 4. `t` shows/hides the temperatures table; `s` sorts it; `j`/`k` scroll it.
 5. `enter` zooms; `tab` cycles focus; `b` searches sensors; Enter graphs a
    sensor; `q`/`esc` close overlays without quitting.
@@ -35,7 +36,7 @@ failures and list deferrals in the release notes.
 7. Kill/restart LHM mid-session: status goes `stale` then `live` again.
 8. Quit restores the terminal (no raw mode, cursor visible, shell usable).
 9. `--once` and `--dump -` produce output and exit 0.
-10. Fan anti-stop floor (row 14 only): with the GPU idle, `f` engages — fans
-    that were stopped spin up, LHM's UI shows a manual control value; start a
-    GPU load → the guard releases and the driver curve takes over; stop the
-    load → floor returns; `f` off / quit → LHM shows automatic control again.
+10. Fan anti-stop floor (row 14 only): it is on by default — with the GPU idle the fans spin at
+    the floor and LHM's UI shows a manual control value; start a GPU load → the guard releases and
+    the driver curve takes over; stop the load → floor returns; `f` off / quit → LHM shows
+    automatic control again.

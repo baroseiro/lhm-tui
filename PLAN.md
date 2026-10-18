@@ -3,7 +3,7 @@
 |              |                                                                                    |
 | ------------ | ---------------------------------------------------------------------------------- |
 | Derived from | [SPEC.md](SPEC.md) v1.0                                                             |
-| Goal         | Ship **v0.1.0** — terminal dashboard for LibreHardwareMonitor (monitoring + the opt-in GPU fan anti-stop floor) |
+| Goal         | Ship **v0.1.0** — terminal dashboard for LibreHardwareMonitor (monitoring + the GPU fan anti-stop floor, on by default) |
 | Phases       | P0–P6, mapped 1:1 to SPEC §11 milestones M0–M6                                      |
 | Effort       | ≈ 10–14 ideal days for one focused developer (see §2)                               |
 | Tracking     | Each task `T<phase>.<n>` becomes a GitHub issue labeled `phase-<n>`, closed by its PR |
@@ -313,9 +313,9 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Exit checklist P5:** QA matrix complete; soak passed; `--once`/`--dump` documented; no known S1/S2 bugs.
 
 #### T5.8 — GPU fan anti-stop floor (pulled forward from v0.2)
-**Goal:** Optional GPU fan floor (SPEC §7.5): while a GPU is idle (load ≤ `fan_guard.idle_load_percent` **and** hottest temperature ≤ `idle_temp_c`), hold every bound fan `Control` at `fan_guard.floor_percent`; hand control back to the driver (`value=null` → `SetDefault`) when load/temp cross the hysteresis margins, on `f` toggle-off, on quit, and whenever load/temp are unknown (fail-safe). Off by default; the only hardware write in v0.1.
+**Goal:** GPU fan floor (SPEC §7.5), on by default: while a GPU is idle (load ≤ `fan_guard.idle_load_percent` **and** hottest temperature ≤ `idle_temp_c`), hold every bound fan `Control` at `fan_guard.floor_percent`; hand control back to the driver (`value=null` → `SetDefault`) when load/temp cross the hysteresis margins, on `f` toggle-off, on quit, and whenever load/temp are unknown (fail-safe). The only hardware write in v0.1.
 **Files:** `src/fan_guard.rs`, `src/lhm/client.rs` (`set_sensor_control`), `src/app.rs` (control task, `f`, exit sweep), `src/ui/mod.rs` (status line + debug), `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, SPEC §7.5/§8.2/§8.3/§3.2/§6.4.
-**Notes:** `/Sensor?action=Set` answers HTTP 200 — accept/reject must be read from the JSON body (`result: ok|fail`). Write only on state transitions. `floor_percent < 5` is a validation error so the guard can never stop the fans.
+**Notes:** `/Sensor?action=Set` answers HTTP 200 — accept/reject must be read from the JSON body (`result: ok|fail`). Write only on state transitions. `floor_percent < 5` is a validation error so the guard can never stop the fans. On by default (disable with `f` or `fan_guard.enabled: false`); the only hardware write in v0.1.
 **Done when:** Mock-server tests for set/null/rejection; decision-table unit tests (idle, hysteresis, fail-safe, no controls); interaction test for `f` engage → release; frames/help snapshots updated; real-hardware smoke recorded in `docs/qa-matrix.md`.
 **Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table), background control task with per-URL client cache and status-line reporting, `f` toggle (message lands on the status line) + debug overlay line, hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
 
@@ -347,7 +347,7 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Goal:** Tag `v0.1.0`, GitHub Release with generated notes + hand-written highlights (features, known issues from T5.7 deferrals, compatibility statement LHM ≥ 0.9.5).
 **Done when:** Release public; README badge resolve; announcement issue closed.
 
-**Exit checklist P6:** all four install channels verified; README/screenshots final; release notes mention the v0.1 scope (monitoring + opt-in fan floor, no general writes) and v0.2 control plans.
+**Exit checklist P6:** all four install channels verified; README/screenshots final; release notes mention the v0.1 scope (monitoring + the fan anti-stop floor, no general writes) and v0.2 control plans.
 
 ---
 

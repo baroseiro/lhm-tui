@@ -2,7 +2,7 @@
 source: tests/frames.rs
 expression: "frame_text(&mut app, &cfg, 100, 30)"
 ---
- lhm-tui v0.0.1  ● reconnecting… (retry in 1s)   100×30   http://127.0.0.1:8085   window 5m
+ lhm-tui v0.0.1  ● reconnecting… (retry in 1s)   100×30   http://127.0.0.1:8085
 ╭ LibreHardwareMonitor ────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                  │
 │                                ● Cannot reach LibreHardwareMonitor                               │

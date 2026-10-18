@@ -64,7 +64,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
+        "enabled": { "type": "boolean", "default": false },
         "marker": { "enum": ["braille", "halfblock", "ascii"], "default": "braille" },
         "height": { "type": "integer", "minimum": 3, "default": 8 },
         "window": { "type": "string", "default": "5m" },
@@ -148,10 +148,10 @@
     },
     "fan_guard": {
       "type": "object",
-      "description": "GPU fan anti-stop floor: holds fans at floor_percent while the GPU is idle and hands control back to the driver as soon as load or temperature rises. The only hardware write lhm-tui performs; off by default.",
+      "description": "GPU fan anti-stop floor: holds fans at floor_percent while the GPU is idle and hands control back to the driver as soon as load or temperature rises. The only hardware write lhm-tui performs; on by default (f or enabled: false disables).",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
+        "enabled": { "type": "boolean", "default": true },
         "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 45 },
         "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },
         "idle_temp_c": { "type": "number", "minimum": -20, "maximum": 110, "default": 65 },

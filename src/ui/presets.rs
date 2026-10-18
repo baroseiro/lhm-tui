@@ -63,6 +63,10 @@ pub struct PanelCtx<'a> {
     pub window: Duration,
     pub window_label: String,
     pub now: Instant,
+    /// Room for every GPU fan right-aligned on the power/clock info row
+    /// (`gpu_row_merge_flags`; uniform per row so the layout never changes
+    /// between polls).
+    pub gpu_fans_merge: bool,
 }
 
 impl PanelCtx<'_> {
@@ -225,7 +229,14 @@ pub fn layout_rows(panels: &[PanelSpec], per_row: usize) -> Vec<Vec<usize>> {
 }
 
 /// Height budget for a panel (SPEC §6.1, `ui.max_height` caps tables).
-pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config, charts_on: bool) -> u16 {
+/// `merge_fans` tells the GPU arm that its fans share the power/clock row.
+pub fn panel_height(
+    spec: &PanelSpec,
+    bindings: &Bindings,
+    cfg: &Config,
+    charts_on: bool,
+    merge_fans: bool,
+) -> u16 {
     let max = cfg.ui.max_height.clamp(4, 40) as usize;
     let chart = if charts_on {
         cfg.charts.height as u16
@@ -251,18 +262,16 @@ pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config, charts_
         }
         PanelKind::Gpu(index) => {
             let show = &cfg.panels.gpu.show;
-            // Fans may share the power/clock info row (right-aligned); when
-            // they do, the chart absorbs the saved row (the draw path sizes
-            // charts from its own row count), so this stays an upper bound.
-            let fans = u16::from(
-                shows(show, "fan")
-                    && bindings
-                        .gpus
-                        .get(*index)
-                        .is_some_and(|gpu| !gpu.fans.is_empty()),
-            );
-            let vram = u16::from(shows(show, "memory"));
+            // Fans share the power/clock info row when the row fits (merge_fans
+            // from `gpu_row_merge_flags`); otherwise they get their own row.
+            let has_fans = shows(show, "fan")
+                && bindings
+                    .gpus
+                    .get(*index)
+                    .is_some_and(|gpu| !gpu.fans.is_empty());
             let info = u16::from(shows(show, "power") || shows(show, "clock"));
+            let fans = u16::from(has_fans && !(merge_fans && info > 0));
+            let vram = u16::from(shows(show, "memory"));
             let content = if charts_on {
                 let graphs = u16::from(shows(show, "load") || shows(show, "memory"))
                     + u16::from(shows(show, "temp"));
@@ -312,12 +321,77 @@ pub fn panel_height(spec: &PanelSpec, bindings: &Bindings, cfg: &Config, charts_
     }
 }
 
+/// Rendered `label value` pair width used by `compact_pairs`: 5-column label
+/// pad, one space, value capped at 10 columns.
+const COMPACT_PAIR_WIDTH: u16 = 5 + 1 + 10;
+
+/// Worst-case row width for the merged GPU info row: `info_pairs` pairs
+/// (power/clock) plus `fan_count` fans, a separator between pairs, one
+/// leading and one trailing space and one gap column. Values are rendered up
+/// to [`COMPACT_PAIR_WIDTH`] columns, so this check is independent of the
+/// current readings — the layout never flips between polls (SPEC §6.3).
+pub fn gpu_merge_min_width(info_pairs: usize, fan_count: usize) -> u16 {
+    let block = |pairs: usize| -> u16 {
+        if pairs == 0 {
+            0
+        } else {
+            pairs as u16 * COMPACT_PAIR_WIDTH + pairs as u16 - 1
+        }
+    };
+    block(info_pairs) + block(fan_count) + 3
+}
+
+/// How many `label value` pairs the GPU info row shows (config-level).
+pub fn gpu_info_pairs(cfg: &Config) -> usize {
+    let show = &cfg.panels.gpu.show;
+    usize::from(shows(show, "power")) + usize::from(shows(show, "clock"))
+}
+
+/// Per-panel flags: does the merged GPU info row fit? Uniform per row (based
+/// on the row's widest requirement, i.e. the largest fan count) so side-by-side
+/// GPUs always render the same structure.
+pub fn gpu_row_merge_flags(
+    panels: &[PanelSpec],
+    bindings: &Bindings,
+    cfg: &Config,
+    width: u16,
+    rows: &[Vec<usize>],
+) -> Vec<bool> {
+    let info_pairs = gpu_info_pairs(cfg);
+    let mut flags = vec![false; panels.len()];
+    if info_pairs == 0 {
+        return flags;
+    }
+    for row in rows {
+        let max_fans = row
+            .iter()
+            .filter_map(|index| match &panels[*index].kind {
+                PanelKind::Gpu(gpu) => bindings.gpus.get(*gpu).map(|gpu| gpu.fans.len()),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        if max_fans == 0 {
+            continue;
+        }
+        let inner = (width / row.len() as u16).saturating_sub(2);
+        let merge = inner >= gpu_merge_min_width(info_pairs, max_fans);
+        for index in row {
+            flags[*index] = merge;
+        }
+    }
+    flags
+}
+
 /// Fit panel heights to the available space.
 ///
 /// Charts are the flex element: on overflow they shrink first (down to
 /// `MIN_CHART_HEIGHT` chart rows); with `ui.auto_height` and spare room they
 /// grow to absorb the leftover space, so charts stay crisp and no blank band
-/// is left at the bottom. Rows (not panels) are the unit of accounting —
+/// is left at the bottom. When charts cannot absorb the overflow (charts off,
+/// or a table-only screen), every row squeezes towards a 4-row minimum so all
+/// panels stay visible — gauge panels drop their least important rows to match
+/// (`fit_plan`, SPEC §6.1). Rows (not panels) are the unit of accounting —
 /// side-by-side GPUs share one row and must never be counted twice.
 pub fn fit_heights(
     panels: &[PanelSpec],
@@ -326,10 +400,20 @@ pub fn fit_heights(
     available: u16,
     charts_on: bool,
     rows: &[Vec<usize>],
+    merge_fans: &[bool],
 ) -> Vec<u16> {
     let mut heights: Vec<u16> = panels
         .iter()
-        .map(|panel| panel_height(panel, bindings, cfg, charts_on))
+        .enumerate()
+        .map(|(index, panel)| {
+            panel_height(
+                panel,
+                bindings,
+                cfg,
+                charts_on,
+                merge_fans.get(index).copied().unwrap_or(false),
+            )
+        })
         .collect();
     let mut row_heights: Vec<u16> = rows.iter().map(|row| heights[row[0]]).collect();
     let total: u32 = row_heights.iter().map(|height| u32::from(*height)).sum();
@@ -355,6 +439,24 @@ pub fn fit_heights(
                 let fixed = row_height.saturating_sub(cfg.charts.height as u16);
                 let minimum = fixed + MIN_CHART_HEIGHT;
                 let reducible = u32::from(row_height.saturating_sub(minimum));
+                let cut = reducible.min(overflow);
+                *row_height -= cut as u16;
+                overflow -= cut;
+            }
+        }
+        // Still over (gauges have no flex rows, or a table-only screen):
+        // squeeze every row to its minimum so all panels stay visible. The
+        // gauge draw drops its least important rows to match (SPEC §6.1).
+        if overflow > 0 {
+            const MIN_PANEL_HEIGHT: u16 = 4;
+            for (row, row_height) in row_heights.iter_mut().enumerate() {
+                if overflow == 0 {
+                    break;
+                }
+                if charts_on && is_chart_row(row) {
+                    continue; // already squeezed to its chart minimum above
+                }
+                let reducible = u32::from(row_height.saturating_sub(MIN_PANEL_HEIGHT));
                 let cut = reducible.min(overflow);
                 *row_height -= cut as u16;
                 overflow -= cut;
@@ -408,6 +510,37 @@ pub fn fit_heights(
 
 /// Minimum chart rows a squeezed chart panel keeps (SPEC §6.1 responsive rule).
 const MIN_CHART_HEIGHT: u16 = 4;
+
+/// One planned fixed row of a gauge layout: how many rows it takes, which
+/// renderer to use, and how important it is (higher survives shrinking).
+struct PlannedRow {
+    kind: u8,
+    height: u16,
+    keep: u8,
+}
+
+/// Drop the least important rows until the plan fits `available` rows,
+/// keeping the survivors in display order (SPEC §6.1 short-panel rule).
+/// Never drops the last row, so callers always render something.
+fn fit_plan(rows: Vec<PlannedRow>, available: u16) -> Vec<PlannedRow> {
+    let mut rows = rows;
+    let total = |rows: &[PlannedRow]| rows.iter().map(|row| row.height).sum::<u16>();
+    while rows.len() > 1 && total(&rows) > available {
+        if let Some((index, _)) = rows.iter().enumerate().min_by_key(|(_, row)| row.keep) {
+            rows.remove(index);
+        }
+    }
+    rows
+}
+
+/// Lay out a fitted plan and return each row's area.
+fn plan_areas(rows: &[PlannedRow], area: Rect) -> Vec<Rect> {
+    let constraints: Vec<Constraint> = rows
+        .iter()
+        .map(|row| Constraint::Length(row.height))
+        .collect();
+    Layout::vertical(constraints).split(area).to_vec()
+}
 
 pub fn draw_panel(frame: &mut Frame, area: Rect, spec: &PanelSpec, ctx: &mut PanelCtx) {
     if area.width < 8 || area.height < 3 {
@@ -667,34 +800,47 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
         }
     }
 
-    // Gauge fallback (charts off, or nothing chartable).
-    let mut constraints: Vec<Constraint> = Vec::new();
-    let mut plan: Vec<u8> = Vec::new(); // 0 temp, 1 load, 2 bars, 3 info
+    // Gauge fallback (charts off, or nothing chartable). Shorter panels drop
+    // the least important rows first (SPEC §6.1).
+    let mut plan: Vec<PlannedRow> = Vec::new(); // 0 temp, 1 load, 2 bars, 3 info
     if show("temp") {
-        constraints.push(Constraint::Length(1));
-        plan.push(0);
+        plan.push(PlannedRow {
+            kind: 0,
+            height: 1,
+            keep: 10,
+        });
     }
     if show("load") {
-        constraints.push(Constraint::Length(1));
-        plan.push(1);
+        plan.push(PlannedRow {
+            kind: 1,
+            height: 1,
+            keep: 11,
+        });
     }
     if bars_shown {
-        constraints.push(Constraint::Length(2));
-        plan.push(2);
+        plan.push(PlannedRow {
+            kind: 2,
+            height: 2,
+            keep: 5,
+        });
     }
     if !pairs.is_empty() {
-        constraints.push(Constraint::Length(1));
-        plan.push(3);
+        plan.push(PlannedRow {
+            kind: 3,
+            height: 1,
+            keep: 8,
+        });
     }
-    if constraints.is_empty() {
+    let plan = fit_plan(plan, inner.height);
+    if plan.is_empty() {
         return;
     }
-    let areas = Layout::vertical(constraints).split(inner);
-    for (kind, row) in plan.iter().zip(areas.iter()) {
-        match kind {
+    let areas = plan_areas(&plan, inner);
+    for (row, area) in plan.iter().zip(areas.iter()) {
+        match row.kind {
             0 => gauge_for_slot(
                 frame,
-                *row,
+                *area,
                 "Temp",
                 ctx,
                 &cpu.temp,
@@ -703,15 +849,15 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
             ),
             1 => gauge_for_slot(
                 frame,
-                *row,
+                *area,
                 "Load",
                 ctx,
                 &cpu.load_total,
                 100.0,
                 Metric::Load,
             ),
-            2 => widgets::bars(frame, *row, &core_values, ctx.theme, ctx.stale),
-            _ => widgets::info_line(frame, *row, &pairs, ctx.theme, ctx.stale),
+            2 => widgets::bars(frame, *area, &core_values, ctx.theme, ctx.stale),
+            _ => widgets::info_line(frame, *area, &pairs, ctx.theme, ctx.stale),
         }
     }
 }
@@ -755,14 +901,11 @@ fn draw_gpu(
         .iter()
         .map(|(label, value)| (label.as_str(), value.clone()))
         .collect();
-    // Fans share the power/clock row, aligned to the right edge, whenever the
-    // panel is wide enough; otherwise they keep a row of their own (SPEC §6.3).
-    let merge_fans = fans_shown
-        && !pairs.is_empty()
-        && usize::from(widgets::compact_pairs_width(&pairs))
-            + usize::from(widgets::compact_pairs_width(&fan_pairs))
-            + 3
-            <= usize::from(inner.width);
+    // Fans share the power/clock row, aligned to the right edge, when the row
+    // has the columns for it (decided once per row in `gpu_row_merge_flags` —
+    // width-based, so it never flips between polls); otherwise they keep a
+    // row of their own (SPEC §6.3).
+    let merge_fans = fans_shown && !pairs.is_empty() && ctx.gpu_fans_merge;
     let info_row = !pairs.is_empty();
     let fan_row = fans_shown && !merge_fans;
 
@@ -865,40 +1008,66 @@ fn draw_gpu(
         }
     }
 
-    // Gauge fallback (charts off, or nothing chartable).
-    let mut constraints: Vec<Constraint> = Vec::new();
-    let mut plan: Vec<u8> = Vec::new(); // 0 temp, 1 hotspot, 2 mem_temp, 3 load, 4 vram, 5 info, 6 fans
+    // Gauge fallback (charts off, or nothing chartable). Shorter panels drop
+    // the least important rows first (SPEC §6.1).
+    let mut plan: Vec<PlannedRow> = Vec::new(); // 0 temp, 1 hotspot, 2 mem_temp, 3 load, 4 vram, 5 info, 6 fans, 7 merged info+fans
     if show("temp") {
-        for kind in 0..3 {
-            constraints.push(Constraint::Length(1));
-            plan.push(kind);
-        }
+        plan.push(PlannedRow {
+            kind: 0,
+            height: 1,
+            keep: 10,
+        });
+    }
+    if show("temp") {
+        plan.push(PlannedRow {
+            kind: 1,
+            height: 1,
+            keep: 4,
+        });
+        plan.push(PlannedRow {
+            kind: 2,
+            height: 1,
+            keep: 3,
+        });
     }
     if show("load") {
-        constraints.push(Constraint::Length(1));
-        plan.push(3);
+        plan.push(PlannedRow {
+            kind: 3,
+            height: 1,
+            keep: 11,
+        });
     }
     if vram_shown {
-        constraints.push(Constraint::Length(1));
-        plan.push(4);
+        plan.push(PlannedRow {
+            kind: 4,
+            height: 1,
+            keep: 6,
+        });
     }
-    if !pairs.is_empty() {
-        constraints.push(Constraint::Length(1));
-        plan.push(if merge_fans { 7 } else { 5 });
+    if info_row {
+        plan.push(PlannedRow {
+            kind: if merge_fans { 7 } else { 5 },
+            height: 1,
+            keep: 8,
+        });
     }
     if fan_row {
-        constraints.push(Constraint::Length(1));
-        plan.push(6);
+        plan.push(PlannedRow {
+            kind: 6,
+            height: 1,
+            keep: 7,
+        });
     }
-    if constraints.is_empty() {
+    let plan = fit_plan(plan, inner.height);
+    if plan.is_empty() {
         return;
     }
-    let areas = Layout::vertical(constraints).split(inner);
-    for (kind, row) in plan.iter().zip(areas.iter()) {
-        match kind {
+    let areas = plan_areas(&plan, inner);
+    for (row, area) in plan.iter().zip(areas.iter()) {
+        match row.kind {
             0 => gauge_for_slot(
                 frame,
-                *row,
+                *area,
                 "Temp",
                 ctx,
                 &gpu.temp,
@@ -907,7 +1076,7 @@ fn draw_gpu(
             ),
             1 => gauge_for_slot(
                 frame,
-                *row,
+                *area,
                 "Hot Spot",
                 ctx,
                 &gpu.hotspot,
@@ -916,18 +1085,18 @@ fn draw_gpu(
             ),
             2 => gauge_for_slot(
                 frame,
-                *row,
+                *area,
                 "Mem Temp",
                 ctx,
                 &gpu.mem_temp,
                 100.0,
                 Metric::Temperature,
             ),
-            3 => gauge_for_slot(frame, *row, "Load", ctx, &gpu.load, 100.0, Metric::Load),
-            4 => draw_vram_gauge(frame, *row, ctx, gpu),
-            6 => draw_gpu_fans(frame, *row, ctx, gpu),
-            7 => widgets::info_line_split(frame, *row, &pairs, &fan_pairs, ctx.theme, ctx.stale),
-            _ => widgets::info_line(frame, *row, &pairs, ctx.theme, ctx.stale),
+            3 => gauge_for_slot(frame, *area, "Load", ctx, &gpu.load, 100.0, Metric::Load),
+            4 => draw_vram_gauge(frame, *area, ctx, gpu),
+            6 => draw_gpu_fans(frame, *area, ctx, gpu),
+            7 => widgets::info_line_split(frame, *area, &pairs, &fan_pairs, ctx.theme, ctx.stale),
+            _ => widgets::info_line(frame, *area, &pairs, ctx.theme, ctx.stale),
         }
     }
 }
@@ -1094,30 +1263,40 @@ fn draw_memory(frame: &mut Frame, area: Rect, memory: &MemoryBindings, ctx: &mut
         }
     }
 
-    // Gauge fallback (charts off, or nothing chartable).
-    let mut constraints: Vec<Constraint> = Vec::new();
-    let mut plan: Vec<u8> = Vec::new(); // 0 used, 1 load, 2 virtual
+    // Gauge fallback (charts off, or nothing chartable). Shorter panels drop
+    // the least important rows first (SPEC §6.1).
+    let mut plan: Vec<PlannedRow> = Vec::new(); // 0 used, 1 load, 2 virtual
     if show("used") {
-        constraints.push(Constraint::Length(1));
-        plan.push(0);
+        plan.push(PlannedRow {
+            kind: 0,
+            height: 1,
+            keep: 10,
+        });
     }
     if show("load") {
-        constraints.push(Constraint::Length(1));
-        plan.push(1);
+        plan.push(PlannedRow {
+            kind: 1,
+            height: 1,
+            keep: 11,
+        });
     }
     if virtual_shown {
-        constraints.push(Constraint::Length(1));
-        plan.push(2);
+        plan.push(PlannedRow {
+            kind: 2,
+            height: 1,
+            keep: 4,
+        });
     }
-    if constraints.is_empty() {
+    let plan = fit_plan(plan, inner.height);
+    if plan.is_empty() {
         return;
     }
-    let areas = Layout::vertical(constraints).split(inner);
-    for (kind, row) in plan.iter().zip(areas.iter()) {
-        match kind {
-            0 => draw_memory_used_gauge(frame, *row, ctx, memory),
-            1 => gauge_for_slot(frame, *row, "Load", ctx, &memory.load, 100.0, Metric::Load),
-            _ => draw_virtual_line(frame, *row, ctx, memory),
+    let areas = plan_areas(&plan, inner);
+    for (row, area) in plan.iter().zip(areas.iter()) {
+        match row.kind {
+            0 => draw_memory_used_gauge(frame, *area, ctx, memory),
+            1 => gauge_for_slot(frame, *area, "Load", ctx, &memory.load, 100.0, Metric::Load),
+            _ => draw_virtual_line(frame, *area, ctx, memory),
         }
     }
 }
@@ -1888,4 +2067,57 @@ fn draw_network(frame: &mut Frame, area: Rect, ctx: &PanelCtx) {
         ctx.theme,
         ctx.stale,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows(kinds: &[(u8, u16, u8)]) -> Vec<PlannedRow> {
+        kinds
+            .iter()
+            .map(|(kind, height, keep)| PlannedRow {
+                kind: *kind,
+                height: *height,
+                keep: *keep,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fit_plan_drops_the_least_important_rows_first() {
+        // GPU gauge rows: temp(0), hotspot(1), mem_temp(2), load(3),
+        // vram(4), info(5), fans(6) — ranks as planned in `draw_gpu`.
+        let gpu = [
+            (0, 1, 10),
+            (1, 1, 4),
+            (2, 1, 3),
+            (3, 1, 11),
+            (4, 1, 6),
+            (5, 1, 8),
+            (6, 1, 7),
+        ];
+        let fitted: Vec<u8> = fit_plan(rows(&gpu), 3).iter().map(|row| row.kind).collect();
+        assert_eq!(
+            fitted,
+            vec![0, 3, 5],
+            "temp + load + info survive in display order"
+        );
+        let fitted: Vec<u8> = fit_plan(rows(&gpu), 1).iter().map(|row| row.kind).collect();
+        assert_eq!(fitted, vec![3], "a single row keeps the load gauge");
+
+        // Two-row bars count as a unit: they fit or are dropped whole.
+        let cpu = [(0, 1, 10), (1, 1, 11), (2, 2, 5), (3, 1, 8)];
+        let fitted: Vec<u8> = fit_plan(rows(&cpu), 4).iter().map(|row| row.kind).collect();
+        assert_eq!(fitted, vec![0, 1, 3], "bars dropped, not truncated");
+    }
+
+    #[test]
+    fn gpu_merge_thresholds_cover_the_worst_case() {
+        // Two info pairs + two fans: 33 + 33 + 3 = 69 columns.
+        assert_eq!(gpu_merge_min_width(2, 2), 69);
+        assert_eq!(gpu_merge_min_width(2, 1), 52);
+        assert_eq!(gpu_merge_min_width(1, 1), 35);
+        assert_eq!(gpu_merge_min_width(0, 2), 36);
+    }
 }

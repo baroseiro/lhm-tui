@@ -77,7 +77,10 @@ pub struct FanGuardConfig {
 impl Default for FanGuardConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            // On by default: the guard is the reason many NVIDIA cards expose
+            // no way to stop the zero-RPM parking. Disable with `f` or
+            // `fan_guard.enabled: false`.
+            enabled: true,
             floor_percent: 45.0,
             idle_load_percent: 10.0,
             idle_temp_c: 65.0,
@@ -223,7 +226,9 @@ pub struct ChartsConfig {
 impl Default for ChartsConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
+            // Off by default: the gauges/bars layout renders instantly with no
+            // warm-up; `c`, `--charts` or `charts.enabled: true` add graphs.
+            enabled: false,
             marker: Marker::Braille,
             height: 8,
             window: "5m".to_string(),
@@ -1240,7 +1245,7 @@ mod tests {
         assert!(config.ui.auto_height);
         assert_eq!(config.ui.table_sort, TableSort::ValueDesc);
         assert_eq!(config.charts.marker, Marker::Braille);
-        assert!(config.charts.enabled, "charts on by default");
+        assert!(!config.charts.enabled, "charts off by default");
         assert_eq!(config.charts.height, 8);
         assert_eq!(config.charts.window, "5m");
         assert_eq!(config.charts.window_cycle, vec!["1m", "5m", "15m"]);
@@ -1267,7 +1272,7 @@ mod tests {
         assert_eq!(config.keys["toggle_fan_guard"], vec!["f"]);
         assert_eq!(config.keys["help"], vec!["?", "h"]);
         assert_eq!(config.keys.len(), 17);
-        assert!(!config.fan_guard.enabled, "fan writes off by default");
+        assert!(config.fan_guard.enabled, "fan anti-stop on by default");
         assert_eq!(config.fan_guard.floor_percent, 45.0);
         assert_eq!(config.fan_guard.idle_load_percent, 10.0);
         assert_eq!(config.fan_guard.idle_temp_c, 65.0);
