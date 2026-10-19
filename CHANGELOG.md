@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- v0.2.0 published: GitHub Release with six archives, installers and checksums (all verified),
+  Windows artifact re-downloaded and smoke-tested; release body set from
+  `docs/release-notes-v0.2.0.md`.
 - Info rows no longer truncate labels at five columns (`Clock Effective`, `Voltage Core` render in
   full); the per-frame layout decisions (GPU fan merge, CPU strip rows) live in a shared
   `PanelLayout` used by both the height model and the draw code.

@@ -405,6 +405,7 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 #### T7.5 — Release v0.2.0
 **Goal:** Version bump `0.1.0` → `0.2.0`; promote `CHANGELOG.md` `[Unreleased]` → `[0.2.0]`; roadmap renumber (control → v0.3); `docs/release-notes-v0.2.0.md`; refresh `docs/demo.tape` captures if the layout moved noticeably; tag `v0.2.0` and verify the release workflow + published artifacts like v0.1.0.
 **Done when:** Release published with all six archives, installers and checksums; README/notes updated; tag verified against the released commit.
+**Shipped:** v0.2.0 released 2026-10-19 (tag on `54e2776`); the release workflow built all six targets + installers, every archive verified against `sha256.sum`, the Windows x64 artifact was re-downloaded and smoke-tested (`--version` 0.2.0, live `--probe`), and the GitHub Release body was set from `docs/release-notes-v0.2.0.md`.
 
 ---
 
