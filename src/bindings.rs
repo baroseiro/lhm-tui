@@ -28,8 +28,19 @@ pub struct CpuBindings {
     pub load_total: Option<Slot>,
     pub core_loads: Vec<Slot>,
     pub temp: Option<Slot>,
+    /// Average core clock (`Cores (Average)` on AMD, `Core Average` on Intel).
     pub clock: Option<Slot>,
+    /// Average *effective* clock (deep-sleep states counted) — SPEC §5.2.
+    pub clock_effective: Option<Slot>,
+    pub bus_speed: Option<Slot>,
+    pub clock_fabric: Option<Slot>,
+    pub clock_uncore: Option<Slot>,
+    pub clock_memory: Option<Slot>,
     pub power: Option<Slot>,
+    /// Package/core voltage (`Core (SVI2 TFN)`, `CPU Core`, …) — never a VID.
+    pub voltage: Option<Slot>,
+    /// Package current (`TDC`, `Core TDC`, …).
+    pub current: Option<Slot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +56,8 @@ pub struct GpuBindings {
     /// GPU memory temperature: NVIDIA "GPU Memory Junction", AMD "GPU Memory".
     pub mem_temp: Option<Slot>,
     pub power: Option<Slot>,
+    /// GPU core voltage (`GPU Core Voltage`, `GPU Core`).
+    pub voltage: Option<Slot>,
     pub clock: Option<Slot>,
     /// Every fan on the card (multi-fan GPUs), paired with its control by
     /// name. A `gpu.<n>.fan` override pins a single fan.
@@ -96,6 +109,8 @@ pub struct Bindings {
     pub gpus: Vec<GpuBindings>,
     pub memory: Option<MemoryBindings>,
     pub thermal: Vec<Slot>,
+    /// Every voltage sensor in the tree (the `v` table, SPEC §5.2).
+    pub voltage: Vec<Slot>,
     pub fans: Vec<FanRow>,
     pub power: Vec<Slot>,
     pub storage: Vec<StorageBindings>,
@@ -168,6 +183,7 @@ pub fn resolve(snapshot: &Snapshot, panels: &PanelsConfig) -> Bindings {
     let memory = memory_bindings(snapshot, overrides);
 
     let mut thermal: Vec<Slot> = Vec::new();
+    let mut voltage: Vec<Slot> = Vec::new();
     let mut fans: Vec<FanRow> = Vec::new();
     let mut power: Vec<Slot> = Vec::new();
     let mut storage: Vec<StorageBindings> = Vec::new();
@@ -177,6 +193,7 @@ pub fn resolve(snapshot: &Snapshot, panels: &PanelsConfig) -> Bindings {
         for sensor in hardware.sensors() {
             match sensor.kind {
                 SensorKind::Temperature => thermal.push(slot_of(hardware, sensor)),
+                SensorKind::Voltage => voltage.push(slot_of(hardware, sensor)),
                 SensorKind::Fan => {
                     let control = hardware
                         .sensors()
@@ -206,6 +223,7 @@ pub fn resolve(snapshot: &Snapshot, panels: &PanelsConfig) -> Bindings {
         gpus,
         memory,
         thermal,
+        voltage,
         fans,
         power,
         storage,
@@ -252,11 +270,61 @@ fn cpu_bindings(
         find_named(
             hardware,
             &SensorKind::Clock,
-            &["Cores (Average)", "CPU Core #1", "P-Core #0", "Bus Speed"],
+            &[
+                "Cores (Average)",
+                "Core Average",
+                "CPU Core Average",
+                "CPU Core #1",
+                "P-Core #0",
+                "Bus Speed",
+            ],
         )
+    });
+    let clock_effective = find_slot(snapshot, hardware, overrides, "cpu.clock_effective", || {
+        find_exact(
+            hardware,
+            &SensorKind::Clock,
+            &[
+                "Cores (Average Effective)",
+                "Core Average Effective",
+                "CPU Core Average Effective",
+            ],
+        )
+    });
+    let bus_speed = find_slot(snapshot, hardware, overrides, "cpu.bus_speed", || {
+        find_exact(hardware, &SensorKind::Clock, &["Bus Speed"])
+    });
+    let clock_fabric = find_slot(snapshot, hardware, overrides, "cpu.clock_fabric", || {
+        find_exact(hardware, &SensorKind::Clock, &["Fabric", "Infinity Fabric"])
+    });
+    let clock_uncore = find_slot(snapshot, hardware, overrides, "cpu.clock_uncore", || {
+        find_exact(hardware, &SensorKind::Clock, &["Uncore"])
+    });
+    let clock_memory = find_slot(snapshot, hardware, overrides, "cpu.clock_memory", || {
+        find_exact(hardware, &SensorKind::Clock, &["Memory"])
     });
     let power = find_slot(snapshot, hardware, overrides, "cpu.power", || {
         find_named(hardware, &SensorKind::Power, &["Package", "CPU Package"])
+    });
+    let voltage = find_slot(snapshot, hardware, overrides, "cpu.voltage", || {
+        find_named(
+            hardware,
+            &SensorKind::Voltage,
+            &["Core (SVI2 TFN)", "CPU Core", "Core Voltage"],
+        )
+        .or_else(|| {
+            // Fallback: any voltage that is not a per-core VID.
+            hardware
+                .sensors()
+                .find(|sensor| sensor.kind == SensorKind::Voltage && !sensor.name.contains("VID"))
+        })
+    });
+    let current = find_slot(snapshot, hardware, overrides, "cpu.current", || {
+        find_named(hardware, &SensorKind::Current, &["TDC", "Core TDC"]).or_else(|| {
+            hardware
+                .sensors()
+                .find(|sensor| sensor.kind == SensorKind::Current)
+        })
     });
 
     let core_loads = if let Some(rule) = overrides.get("cpu.core_loads") {
@@ -289,7 +357,14 @@ fn cpu_bindings(
         core_loads,
         temp,
         clock,
+        clock_effective,
+        bus_speed,
+        clock_fabric,
+        clock_uncore,
+        clock_memory,
         power,
+        voltage,
+        current,
     }
 }
 
@@ -365,6 +440,18 @@ fn gpu_bindings(
     let power = find_slot(snapshot, hardware, overrides, &key("power"), || {
         find_named(hardware, &SensorKind::Power, &["GPU Package", "GPU Power"])
     });
+    let voltage = find_slot(snapshot, hardware, overrides, &key("voltage"), || {
+        find_named(
+            hardware,
+            &SensorKind::Voltage,
+            &["GPU Core Voltage", "GPU Core"],
+        )
+        .or_else(|| {
+            hardware
+                .sensors()
+                .find(|sensor| sensor.kind == SensorKind::Voltage)
+        })
+    });
     let clock = find_slot(snapshot, hardware, overrides, &key("clock"), || {
         find_named(hardware, &SensorKind::Clock, &["GPU Core", "GFX Core"])
     });
@@ -410,6 +497,7 @@ fn gpu_bindings(
         hotspot,
         mem_temp,
         power,
+        voltage,
         clock,
         fans,
     }

@@ -267,6 +267,7 @@ fn panel_list_expands_layout() {
     // The `t` override reveals the temperatures table (appended last).
     let overrides = presets::PanelOverrides {
         thermal: Some(true),
+        voltage: None,
     };
     let panels = presets::panel_list(&cfg, &bindings, overrides);
     let ids: Vec<&str> = panels.iter().map(|panel| panel.id.as_str()).collect();
@@ -279,11 +280,28 @@ fn panel_list_expands_layout() {
             .scrollable
     );
 
+    // The `v` override reveals the voltages table (appended last).
+    let live = snapshot("lhm-live-5900xt.json");
+    let live_bindings = bindings::resolve(&live, &cfg.panels);
+    let overrides = presets::PanelOverrides {
+        thermal: Some(false),
+        voltage: Some(true),
+    };
+    let panels = presets::panel_list(&cfg, &live_bindings, overrides);
+    let ids: Vec<&str> = panels.iter().map(|panel| panel.id.as_str()).collect();
+    assert_eq!(ids, vec!["cpu:0", "gpu:0", "gpu:1", "memory", "voltage"]);
+    assert!(
+        panels
+            .iter()
+            .find(|panel| panel.id == "voltage")
+            .expect("voltage")
+            .scrollable
+    );
+
     // Optional presets appear only when enabled AND listed in ui.layout.
     let mut cfg_fans = cfg.clone();
     cfg_fans.panels.fans.enabled = true;
     cfg_fans.ui.layout.push("fans".to_string());
-    let live = snapshot("lhm-live-5900xt.json");
     let live_bindings = bindings::resolve(&live, &cfg_fans.panels);
     let ids: Vec<String> = presets::panel_list(&cfg_fans, &live_bindings, Default::default())
         .into_iter()
@@ -292,26 +310,74 @@ fn panel_list_expands_layout() {
     assert_eq!(ids, vec!["cpu:0", "gpu:0", "gpu:1", "memory", "fans"]);
 
     // Heights: tables clamp to ui.max_height; chart panels get chart + chrome.
+    let overrides = presets::PanelOverrides {
+        thermal: Some(true),
+        voltage: None,
+    };
     let thermal = presets::panel_list(&cfg, &live_bindings, overrides)
         .into_iter()
         .find(|panel| panel.id == "thermal")
         .expect("thermal");
     assert_eq!(
-        presets::panel_height(&thermal, &live_bindings, &cfg, true, false),
+        presets::panel_height(
+            &thermal,
+            &live_bindings,
+            &cfg,
+            true,
+            presets::PanelLayout::default()
+        ),
         cfg.ui.max_height as u16
     );
     let cpu = presets::panel_list(&cfg, &live_bindings, Default::default())
         .into_iter()
         .find(|panel| panel.id == "cpu:0")
         .expect("cpu");
+    // The live strip needs two rows (nine metrics) at typical widths.
+    let strip = presets::PanelLayout {
+        merge_fans: false,
+        strip_rows: 2,
+    };
     assert_eq!(
-        presets::panel_height(&cpu, &live_bindings, &cfg, true, false),
-        (cfg.charts.height + 5) as u16
+        presets::panel_height(&cpu, &live_bindings, &cfg, true, strip),
+        (cfg.charts.height + 6) as u16
     );
     assert_eq!(
-        presets::panel_height(&cpu, &live_bindings, &cfg, false, false),
-        7
+        presets::panel_height(&cpu, &live_bindings, &cfg, false, strip),
+        8
     );
+}
+
+#[test]
+fn voltage_and_cpu_metric_slots_bind_on_the_live_fixture() {
+    let cfg = Config::default();
+    let live = snapshot("lhm-live-5900xt.json");
+    let bindings = bindings::resolve(&live, &cfg.panels);
+
+    assert!(
+        bindings.voltage.len() >= 2,
+        "CPU + GPU voltage sensors table: {}",
+        bindings.voltage.len()
+    );
+
+    let cpu = &bindings.cpu[0];
+    let label =
+        |slot: &Option<lhm_tui::bindings::Slot>| slot.as_ref().map(|slot| slot.label.clone());
+    assert_eq!(label(&cpu.clock).as_deref(), Some("Cores (Average)"));
+    assert_eq!(
+        label(&cpu.clock_effective).as_deref(),
+        Some("Cores (Average Effective)")
+    );
+    assert_eq!(label(&cpu.bus_speed).as_deref(), Some("Bus Speed"));
+    assert_eq!(label(&cpu.clock_fabric).as_deref(), Some("Fabric"));
+    assert_eq!(label(&cpu.clock_uncore).as_deref(), Some("Uncore"));
+    assert_eq!(label(&cpu.clock_memory).as_deref(), Some("Memory"));
+    assert_eq!(label(&cpu.voltage).as_deref(), Some("Core (SVI2 TFN)"));
+    assert_eq!(label(&cpu.current).as_deref(), Some("TDC"));
+
+    let nvidia = &bindings.gpus[0];
+    assert_eq!(label(&nvidia.voltage).as_deref(), Some("GPU Core Voltage"));
+    let amd = &bindings.gpus[1];
+    assert_eq!(label(&amd.voltage).as_deref(), Some("GPU Core"));
 }
 
 #[test]
@@ -322,21 +388,30 @@ fn gpu_fan_row_merges_only_when_it_fits() {
     let panels = presets::panel_list(&cfg, &bindings, Default::default());
     let rows = presets::layout_rows(&panels, 2);
 
-    // 120 columns → 58-column panes: the RTX 3090's two fans need 69 worst
-    // case, so the whole GPU row keeps its fan row…
-    let flags = presets::gpu_row_merge_flags(&panels, &bindings, &cfg, 120, &rows);
-    assert_eq!(flags, vec![false, false, false, false]);
-    // …at 160 columns (78-column panes) both GPUs merge (row-uniform).
-    let flags = presets::gpu_row_merge_flags(&panels, &bindings, &cfg, 160, &rows);
-    assert_eq!(flags, vec![false, true, true, false]);
+    // The merge decision and the CPU strip row count are shared with the
+    // height model (`panel_layouts`).
+    let layouts = presets::panel_layouts(&panels, &bindings, &live, &cfg, 149, &rows);
+    assert!(layouts[1].merge_fans, "RTX 3090 row merges at 149 columns");
+    assert!(layouts[2].merge_fans, "AMD row merges at 149 columns");
+    assert_eq!(layouts[0].strip_rows, 2, "CPU strip wraps onto two rows");
 
-    // Merging saves one content row in the GPU panel (gauge layout).
     let gpu = panels
         .iter()
         .find(|panel| panel.id == "gpu:0")
         .expect("gpu:0");
-    assert_eq!(presets::panel_height(gpu, &bindings, &cfg, false, false), 9);
-    assert_eq!(presets::panel_height(gpu, &bindings, &cfg, false, true), 8);
+    let merged = presets::PanelLayout {
+        merge_fans: true,
+        strip_rows: 0,
+    };
+    let unmerged = presets::PanelLayout::default();
+    assert_eq!(
+        presets::panel_height(gpu, &bindings, &cfg, false, unmerged),
+        9
+    );
+    assert_eq!(
+        presets::panel_height(gpu, &bindings, &cfg, false, merged),
+        8
+    );
 }
 
 #[test]
@@ -354,21 +429,24 @@ fn layout_rows_and_auto_height() {
     );
 
     // Auto-height distributes spare rows to chart panels, and side-by-side
-    // GPUs share one row (never counted twice). Live GPUs have fans → the GPU
-    // panel carries one extra fixed row (chart + VRAM + info + fans + borders;
-    // 120 columns is too narrow to merge the fans into the info row).
+    // GPUs share one row (never counted twice). The CPU panel carries its
+    // two-row metrics strip; the GPU panels keep the fan row here.
     let rows = presets::layout_rows(&panels, 2);
-    let no_merge = vec![false; panels.len()];
-    let heights = presets::fit_heights(&panels, &bindings, &cfg, 50, true, &rows, &no_merge);
-    let base_total = cfg.charts.height + 5 + (cfg.charts.height + 5) + (cfg.charts.height + 4);
+    let mut layouts = vec![presets::PanelLayout::default(); panels.len()];
+    layouts[0] = presets::PanelLayout {
+        merge_fans: false,
+        strip_rows: 2,
+    };
+    let heights = presets::fit_heights(&panels, &bindings, &cfg, 50, true, &rows, &layouts);
+    let base_total = cfg.charts.height + 6 + (cfg.charts.height + 5) + (cfg.charts.height + 4);
     let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
     assert_eq!(row_total, 50, "fills the available height: {heights:?}");
     assert!(row_total > base_total);
     assert_eq!(heights[1], heights[2], "row partners share the height");
 
     // Overflow squeezes chart rows down to the minimum first.
-    let heights = presets::fit_heights(&panels, &bindings, &cfg, 20, true, &rows, &no_merge);
-    assert_eq!(heights[0], 5 + 4, "cpu at minimum chart height");
+    let heights = presets::fit_heights(&panels, &bindings, &cfg, 20, true, &rows, &layouts);
+    assert_eq!(heights[0], 6 + 4, "cpu at minimum chart height");
     assert_eq!(
         heights[1],
         5 + 4,
@@ -379,7 +457,7 @@ fn layout_rows_and_auto_height() {
     // auto_height off keeps base heights.
     let mut fixed = cfg.clone();
     fixed.ui.auto_height = false;
-    let heights = presets::fit_heights(&panels, &bindings, &fixed, 50, true, &rows, &no_merge);
+    let heights = presets::fit_heights(&panels, &bindings, &fixed, 50, true, &rows, &layouts);
     let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
     assert_eq!(row_total, base_total);
 }

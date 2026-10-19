@@ -16,13 +16,15 @@
 `lhm-tui` talks to LibreHardwareMonitor's built-in **Remote Web Server** over plain HTTP and renders
 live, color-thresholded panels in your terminal:
 
-- **CPU** — temperature & total load gauges, per-core utilization bars, clocks, package power
-  (`c` or `--charts` adds live graphs)
+- **CPU** — temperature & total load gauges, per-core utilization bars, and a metrics strip with
+  `Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric · Clock Uncore · Clock Memory
+  · Voltage Core · Current TDC` (`c` or `--charts` adds live graphs)
 - **GPU** — one panel per GPU (NVIDIA/AMD/Intel, multi-GPU supported): core load, **VRAM usage**,
-  hotspot temperature, power draw, and every fan on the card (right-aligned on the power/clock
-  row)
+  hotspot temperature, power draw, clock & voltage, and every fan on the card (right-aligned on the
+  same row)
 - **Memory** — used/available gauges, page file and virtual memory
 - **Temperatures** — sortable table of every thermal sensor in the tree, colored by thresholds
+- **Voltages** — sortable table of every voltage sensor (`v`, hidden by default)
 - Plus presets for **fans**, **power**, **storage** and **network**
 - **GPU fan anti-stop floor** (on by default) — keeps NVIDIA/AMD fan curves from parking the fans
   at zero-RPM when idle: a 45 % floor while the GPU is idle, automatic driver control the moment
@@ -40,10 +42,10 @@ Windows machine on your network / over SSH — through a small JSON config file.
 
 ## Demo
 
-A 13-second loop on the reference machine (RTX 3090 + RX 7900 XTX): the default gauges view, `c`
-switching to live charts, `t` opening the temperatures table, `?` showing the key map, then a clean
-quit. Note the status line at the bottom — the fan anti-stop floor holding the 3090 at 45 % while
-idle.
+A ~15-second loop on the reference machine (RTX 3090 + RX 7900 XTX): the default gauges view with
+the new CPU metrics strip, `c` switching to live charts, `t` opening the temperatures table, `v`
+opening the voltages table, `?` showing the key map, then a clean quit. Note the status line at the
+bottom — the fan anti-stop floor holding the 3090 at 45 % while idle.
 
 ![lhm-tui demo: gauges, charts toggle, temperatures table, help overlay](docs/demo.gif)
 
@@ -128,7 +130,8 @@ lhm-tui --help
 | `r`                   | Reload config from disk                 |
 | `m`                   | Reset LHM min/max counters              |
 | `a` / `d`             | ASCII mode / debug overlay              |
-| `t` / `c`             | Toggle temperatures table / charts      |
+| `t` / `v`             | Toggle temperatures / voltages tables   |
+| `c`                   | Toggle charts                           |
 | `f`                   | Toggle GPU fan anti-stop floor (on by default) |
 
 All keys are remappable in the config file. The overlay (`h` or `?`) shows the live key map for
@@ -185,6 +188,7 @@ Common things people change:
 | Remap keys                          | `keys`                                                                  |
 | Turn charts on                      | Press `c`, run with `--charts`, or set `charts.enabled: true`          |
 | Show the temperatures table         | Press `t`, or add `"thermal"` to `ui.layout`                            |
+| Show the voltages table             | Press `v`, or add `"voltage"` to `ui.layout`                            |
 | Keep GPU fans spinning when idle    | On by default — press `f` or `"fan_guard": { "enabled": false }` to disable ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default)) |
 | Switch theme                        | `theme.name`: `default`, `gruvbox`, `nord` or `mono`                    |
 | Custom theme file                   | `lhm-tui --theme path/to/theme.json` (same shape as the `theme` block)  |
@@ -224,11 +228,15 @@ Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itse
 ## Roadmap
 
 - **v0.1.0** — dashboard: presets, optional braille charts, JSON config, themes, GPU fan anti-stop
-  floor, installers via GitHub Releases *(current)*
-- **v0.1.x** — winget + scoop manifests, crates.io publish, README screenshots/GIF
-- **v0.2.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
-- **v0.3.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
-- **v0.4.0** — multi-host tabs, user theme files
+  floor, installers via GitHub Releases
+- **v0.1.x** — README captures, public repo, CI housekeeping (shipped alongside v0.2.0)
+- **v0.2.0** — voltage & clock indicators: voltages table (`v`), GPU voltage on the metrics row,
+  the CPU metrics strip *(current)*
+- **v0.2.x** — winget + scoop manifests, crates.io publish
+- **v0.3.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
+- **v0.3.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
+- **v0.4.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
+- **v0.5.0** — multi-host tabs, user theme files
 - Later — template-based custom panels, plugin scripting
 
 See [SPEC.md](SPEC.md) for the full design and milestone acceptance criteria.

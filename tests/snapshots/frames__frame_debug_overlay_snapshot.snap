@@ -2,36 +2,36 @@
 source: tests/frames.rs
 expression: "frame_text(&mut app, &cfg, 100, 34)"
 ---
- lhm-tui v0.1.0  ● live   100×34   http://127.0.0.1:8085
+ lhm-tui v0.2.0  ● live   100×34   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 9 5900XT ────────────────────────────────────────────────────────────────────────╮
 │ Temp     ███████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░ 69.6 °C │
 │ Load     ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 7.5 % │
 │ ▁▁▂▁▁ ▁▁▂▂▁▁▁▁ ▁        ▁▂                                                                       │
 │                                                                                                  │
-│ Clock 4.06 GHz   Power 87 W                                                                      │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭ GPU 0 · NVID╭ Debug — d closes ────────────────────────────────────────────────────╮─────────────╮
-│ Temp     ███│  version        0.1.0                                                │░░░░ 50.0 °C │
-│ Hot Spot ███│  link           Live                                                 │░░░░ 60.5 °C │
-│ Mem Temp ███│  flags          paused=false charts=false ascii=false zoom=false help│░░░░ 54.0 °C │
-│ Load     █░░│  url            http://127.0.0.1:8085                                │░░░░░░ 0.0 % │
-│ VRAM     ██░│  poll interval  1000 ms                                              │9 / 24576 MB │
-│ Power 33 W C│  window         5m                                                   │ Fan 2 0 RPM │
-╰─────────────│  uptime         0 s                                                  │─────────────╯
-╭ GPU 1 · AMD │  last poll      6 ms                                                 │─────────────╮
-│ Temp     ███│  payload        72.3 KB                                              │░░░░ 60.0 °C │
-│ Hot Spot ███│  lhm version    unknown                                              │░░░░ 68.0 °C │
-│ Mem Temp ███│  hardware       9 items · 276 sensors · 0 skipped                    │░░░░ 83.0 °C │
-│ Load     ███│  history        275 series · cap 900 pts                             │░░░░░░ 7.0 % │
-│ VRAM     ███│  chart axes     0 tracked                                            │1 / 24560 MB │
-│ Power 105 W │  fan guard      on · 2 controls · 1 at floor · 1 skipped             │an   534 RPM │
-╰─────────────│  failed polls   0                                                    │─────────────╯
-╭ Memory · Tot│  status         fan anti-stop: AMD Radeon RX 7900 XTX left to its dri│─────────────╮
-│ Used     ███╰──────────────────────────────────────────────────────────────────────╯9 / 127.9 GB │
+│ Power 87 W Clock Average 4.06 GHz Clock Effective 321 MHz Bus Speed 100 MHz Clock Fabric 1.80 GHz│
+│ Clock Uncore 1.80 GHz Clock Memory 1.80 GHz Voltage Core 1.39 V Current TDC 41.02 A              │
+╰─────────────╭ Debug — d closes ────────────────────────────────────────────────────╮─────────────╯
+╭ GPU 0 · NVID│  version        0.2.0                                                │─────────────╮
+│ Temp     ███│  link           Live                                                 │░░░░ 50.0 °C │
+│ Hot Spot ███│  flags          paused=false charts=false ascii=false zoom=false help│░░░░ 60.5 °C │
+│ Mem Temp ███│  url            http://127.0.0.1:8085                                │░░░░ 54.0 °C │
+│ Load     █░░│  poll interval  1000 ms                                              │░░░░░░ 0.0 % │
+│ VRAM     ██░│  window         5m                                                   │9 / 24576 MB │
+│ Power 33 W C│  uptime         0 s                                                  │ Fan 2 0 RPM │
+╰─────────────│  last poll      6 ms                                                 │─────────────╯
+╭ GPU 1 · AMD │  payload        72.3 KB                                              │─────────────╮
+│ Temp     ███│  lhm version    unknown                                              │░░░░ 60.0 °C │
+│ Hot Spot ███│  hardware       9 items · 276 sensors · 0 skipped                    │░░░░ 68.0 °C │
+│ Mem Temp ███│  history        275 series · cap 900 pts                             │░░░░ 83.0 °C │
+│ Load     ███│  chart axes     0 tracked                                            │░░░░░░ 7.0 % │
+│ VRAM     ███│  fan guard      on · 2 controls · 1 at floor · 1 skipped             │1 / 24560 MB │
+│ Power 105 W │  failed polls   0                                                    │an   534 RPM │
+╰─────────────│  status         fan anti-stop: AMD Radeon RX 7900 XTX left to its dri│─────────────╯
+╭ Memory · Tot╰──────────────────────────────────────────────────────────────────────╯─────────────╮
+│ Used     ███████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 26.9 / 127.9 GB │
 │ Load     █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 21.0 % │
 │ Virtual  42.7 / 140.9 GB                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 

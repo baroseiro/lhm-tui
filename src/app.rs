@@ -113,6 +113,8 @@ pub struct AppState {
     pub ascii_override: Option<bool>,
     /// `t` key override for the temperatures table visibility.
     pub thermal_override: Option<bool>,
+    /// `v` key override for the voltages table visibility.
+    pub voltage_override: Option<bool>,
     /// `c` key override for `charts.enabled`.
     pub charts_override: Option<bool>,
     /// `?`/`h` help overlay visibility (any key press closes it).
@@ -174,6 +176,7 @@ impl AppState {
             window_override: None,
             ascii_override: None,
             thermal_override: None,
+            voltage_override: None,
             charts_override: None,
             help_visible: false,
             status: None,
@@ -267,6 +270,12 @@ impl AppState {
             .unwrap_or_else(|| cfg.ui.layout.iter().any(|key| key == "thermal"))
     }
 
+    /// Effective voltages table visibility: `v` override, else `ui.layout`.
+    pub fn effective_voltage(&self, cfg: &Config) -> bool {
+        self.voltage_override
+            .unwrap_or_else(|| cfg.ui.layout.iter().any(|key| key == "voltage"))
+    }
+
     /// Effective charts mode: `c` override, else `charts.enabled` from config.
     pub fn effective_charts(&self, cfg: &Config) -> bool {
         self.charts_override.unwrap_or(cfg.charts.enabled)
@@ -281,6 +290,7 @@ impl AppState {
     pub fn panel_overrides(&self, cfg: &Config) -> crate::ui::presets::PanelOverrides {
         crate::ui::presets::PanelOverrides {
             thermal: Some(self.effective_thermal(cfg)),
+            voltage: Some(self.effective_voltage(cfg)),
         }
     }
 
@@ -677,6 +687,10 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
     } else if action_matches(cfg, "toggle_thermal", &key) {
         let current = app.effective_thermal(cfg);
         app.thermal_override = Some(!current);
+        app.dirty = true;
+    } else if action_matches(cfg, "toggle_voltage", &key) {
+        let current = app.effective_voltage(cfg);
+        app.voltage_override = Some(!current);
         app.dirty = true;
     } else if action_matches(cfg, "toggle_charts", &key) {
         let current = app.effective_charts(cfg);

@@ -94,6 +94,22 @@ pub fn gauge(
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/// Label column width for a pair: the shared 5-column pad, widened (never
+/// truncated) for longer labels such as `Clock Effective` or `Voltage`.
+fn label_width(label: &str) -> u16 {
+    display_width(label).max(INFO_LABEL_WIDTH)
+}
+
+/// Value column width used by the compact renderer (values are capped).
+fn compact_value_width(value: &str) -> u16 {
+    display_width(value).min(INFO_VALUE_WIDTH)
+}
+
+/// Width of one compact pair, including its label pad and separating space.
+fn compact_pair_width(label: &str, value: &str) -> u16 {
+    label_width(label) + 1 + compact_value_width(value)
+}
+
 /// Fixed-width `label value` pairs for info rows, so columns stay aligned
 /// across panels and frames (SPEC §6.5).
 pub fn info_line(
@@ -112,7 +128,7 @@ pub fn info_line(
             spans.push(Span::raw(" "));
         }
         spans.push(Span::styled(
-            format!("{} ", pad_display(label, INFO_LABEL_WIDTH)),
+            format!("{} ", pad_display(label, label_width(label))),
             with_dim(Style::new().fg(theme.muted), dim),
         ));
         spans.push(Span::styled(
@@ -124,7 +140,8 @@ pub fn info_line(
 }
 
 /// Rendered width of a `compact_pairs` block (no leading/trailing space).
-/// Labels keep the shared 5-column pad; values stay natural up to 10 columns.
+/// Labels keep at least the shared 5-column pad (longer labels keep their full
+/// width); values stay natural up to 10 columns.
 pub fn compact_pairs_width(pairs: &[(&str, String)]) -> u16 {
     let count = pairs.len() as u16;
     if count == 0 {
@@ -132,7 +149,7 @@ pub fn compact_pairs_width(pairs: &[(&str, String)]) -> u16 {
     }
     pairs
         .iter()
-        .map(|(_, value)| INFO_LABEL_WIDTH + 1 + display_width(value).min(INFO_VALUE_WIDTH))
+        .map(|(label, value)| compact_pair_width(label, value))
         .sum::<u16>()
         + (count - 1)
 }
@@ -148,7 +165,7 @@ fn push_compact_pairs(
             spans.push(Span::raw(" "));
         }
         spans.push(Span::styled(
-            format!("{} ", pad_display(label, INFO_LABEL_WIDTH)),
+            format!("{} ", pad_display(label, label_width(label))),
             with_dim(Style::new().fg(theme.muted), dim),
         ));
         spans.push(Span::styled(
@@ -156,6 +173,58 @@ fn push_compact_pairs(
             with_dim(Style::new().fg(theme.text).bold(), dim),
         ));
     }
+}
+
+/// Greedy row split for wrapped pair rows: pairs keep display order, and a pair
+/// moves to the next row when it no longer fits `width` (a pair wider than the
+/// row gets a row of its own and clips).
+fn compact_pair_rows(pairs: &[(&str, String)], width: u16) -> Vec<std::ops::Range<usize>> {
+    let mut rows = Vec::new();
+    let mut start = 0usize;
+    let mut used = 0u16;
+    for (index, (label, value)) in pairs.iter().enumerate() {
+        let pair = compact_pair_width(label, value);
+        let separator = u16::from(index > start);
+        if index > start && used + separator + pair > width {
+            rows.push(start..index);
+            start = index;
+            used = pair;
+        } else {
+            used += separator + pair;
+        }
+    }
+    if start < pairs.len() {
+        rows.push(start..pairs.len());
+    }
+    rows
+}
+
+/// Rows a wrapped pair strip needs at `width` (the height model uses this;
+/// the renderer uses the same split so they never disagree).
+pub fn info_lines_needed(pairs: &[(&str, String)], width: u16) -> u16 {
+    compact_pair_rows(pairs, width).len() as u16
+}
+
+/// `label value` pairs wrapped onto consecutive rows of `area` (the CPU
+/// metrics strip, SPEC §6.3). Renders at most `area.height` rows.
+pub fn info_lines_wrapped(
+    frame: &mut Frame,
+    area: Rect,
+    pairs: &[(&str, String)],
+    theme: &Theme,
+    dim: bool,
+) {
+    if area.height == 0 || pairs.is_empty() {
+        return;
+    }
+    let rows = compact_pair_rows(pairs, area.width);
+    let mut lines: Vec<Line> = Vec::new();
+    for row in rows.into_iter().take(area.height as usize) {
+        let mut spans: Vec<Span> = vec![Span::raw(" ")];
+        push_compact_pairs(&mut spans, &pairs[row], theme, dim);
+        lines.push(Line::from(spans));
+    }
+    frame.render_widget(Paragraph::new(Text::from(lines)), area);
 }
 
 /// `info_line` with a second block pinned to the right edge of the same row

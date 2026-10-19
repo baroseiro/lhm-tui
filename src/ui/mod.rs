@@ -154,7 +154,7 @@ fn render_adhoc(
             window,
             window_label,
             now: Instant::now(),
-            gpu_fans_merge: false,
+            layout: Default::default(),
         };
         let series = Series {
             label,
@@ -635,6 +635,7 @@ fn render_panels(
     let zoomed = app.zoomed;
     let overrides = presets::PanelOverrides {
         thermal: Some(app.effective_thermal(cfg)),
+        voltage: Some(app.effective_voltage(cfg)),
     };
     let (window, window_label) = app.effective_window(cfg);
     let now = Instant::now();
@@ -667,9 +668,10 @@ fn render_panels(
     if zoomed {
         let spec = &panels[focused_index];
         let scroll = scrolls.get(&spec.id).copied().unwrap_or(0);
-        let merge_flags = presets::gpu_row_merge_flags(
+        let layouts = presets::panel_layouts(
             &panels,
             bindings,
+            snapshot,
             cfg,
             area.width,
             &[vec![focused_index]],
@@ -690,7 +692,7 @@ fn render_panels(
             window,
             window_label: window_label.clone(),
             now,
-            gpu_fans_merge: merge_flags.get(focused_index).copied().unwrap_or(false),
+            layout: layouts.get(focused_index).copied().unwrap_or_default(),
         };
         presets::draw_panel(frame, area, spec, &mut ctx);
         return;
@@ -702,7 +704,7 @@ fn render_panels(
         1
     };
     let rows = presets::layout_rows(&panels, per_row);
-    let merge_flags = presets::gpu_row_merge_flags(&panels, bindings, cfg, area.width, &rows);
+    let layouts = presets::panel_layouts(&panels, bindings, snapshot, cfg, area.width, &rows);
     let heights = presets::fit_heights(
         &panels,
         bindings,
@@ -710,7 +712,7 @@ fn render_panels(
         area.height,
         charts_on,
         &rows,
-        &merge_flags,
+        &layouts,
     );
     let row_heights: Vec<u16> = rows.iter().map(|row| heights[row[0]]).collect();
 
@@ -747,7 +749,7 @@ fn render_panels(
                 window,
                 window_label: window_label.clone(),
                 now,
-                gpu_fans_merge: merge_flags.get(*panel_index).copied().unwrap_or(false),
+                layout: layouts.get(*panel_index).copied().unwrap_or_default(),
             };
             presets::draw_panel(frame, column, spec, &mut ctx);
         }

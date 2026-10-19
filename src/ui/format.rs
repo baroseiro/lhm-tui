@@ -117,6 +117,9 @@ pub fn stat(kind: &SensorKind, value: Option<f64>) -> String {
         ) => {
             format!("{v:.1}")
         }
+        // Voltages need decimals to be meaningful (`1.16`, not `1`).
+        (SensorKind::Voltage, Some(v)) => format!("{v:.2}"),
+        (SensorKind::Current, Some(v)) => format!("{v:.1}"),
         (_, Some(v)) => format!("{v:.0}"),
     }
 }
@@ -181,5 +184,7 @@ mod tests {
         assert_eq!(stat(&SensorKind::Temperature, Some(77.3)), "77.3");
         assert_eq!(stat(&SensorKind::Temperature, None), "—");
         assert_eq!(stat(&SensorKind::Fan, Some(1205.0)), "1205");
+        assert_eq!(stat(&SensorKind::Voltage, Some(1.156)), "1.16");
+        assert_eq!(stat(&SensorKind::Current, Some(41.02)), "41.0");
     }
 }

@@ -353,16 +353,23 @@ Heuristics are documented, deterministic, and overridable per panel in config (F
 candidate lists; first match wins. `(name)` match is case-insensitive exact, then regex fallback.
 
 **CPU panel** — hardware candidates: `HardwareKind::Cpu` (first; extra CPUs get their own panel;
-common case is 1).
+common case is 1). The bottom **metrics strip** renders these in exactly this order, wrapping onto
+as many rows as the panel width needs (missing slots are skipped; see §6.3):
 
-| Slot            | SensorType    | Candidate names (in order)                                   |
-| --------------- | ------------- | ------------------------------------------------------------ |
-| `load` (graph)  | Load          | `CPU Total`, `Total`, first sensor whose id ends `/load/0`    |
-| `core_loads`    | Load          | all sensors matching `^CPU Core #\d+$` (bars, up to 64)       |
-| `temp` (graph)  | Temperature   | `Core (Tctl/Tdie)`, `CPU Package`, `Core Average`, `CPU Cores`, `Core Max` |
-| `clock`         | Clock         | `Cores (Average)`, `CPU Core #1`, `P-Core #0`, `Bus Speed`    |
-| `power`         | Power         | `Package`, `CPU Package`, first `Power` sensor                |
-| `voltage`       | Voltage       | `CPU Core`, `CPU IOD Hotspot`, first `Voltage`                |
+| Slot              | SensorType    | Candidate names (in order)                                   |
+| ----------------- | ------------- | ------------------------------------------------------------ |
+| `load` (graph)    | Load          | `CPU Total`, `Total`, first sensor whose id ends `/load/0`    |
+| `core_loads`      | Load          | all sensors matching `^CPU Core #\d+$` (bars, up to 64)       |
+| `temp` (graph)    | Temperature   | `Core (Tctl/Tdie)`, `CPU Package`, `Core Average`, `CPU Cores`, `Core Max` |
+| `power`           | Power         | `Package`, `CPU Package`, first `Power` sensor                |
+| `clock`           | Clock         | `Cores (Average)`, `Core Average`, `CPU Core Average`, `CPU Core #1`, `P-Core #0` |
+| `clock_effective` | Clock         | `Cores (Average Effective)`, `Core Average Effective`, `CPU Core Average Effective` |
+| `bus_speed`       | Clock         | `Bus Speed`                                                   |
+| `clock_fabric`    | Clock         | `Fabric`, `Infinity Fabric`                                   |
+| `clock_uncore`    | Clock         | `Uncore`                                                      |
+| `clock_memory`    | Clock         | `Memory` (package memory clock)                               |
+| `voltage`         | Voltage       | `Core (SVI2 TFN)`, `CPU Core`, `Core Voltage`; core voltage — never a per-core VID |
+| `current`         | Current       | `TDC`, `Core TDC`, first `Current`                            |
 
 **GPU panel** — one panel per hardware whose kind is `Gpu*`; panel title `GPU {n} · {name}` using
 hardware order in the tree (stable within a session). Slots:
@@ -377,6 +384,7 @@ hardware order in the tree (stable within a session). Slots:
 | `hotspot`     | Temperature | `GPU Hot Spot`, `Hot Spot`                                      |
 | `mem_temp`    | Temperature | `GPU Memory Junction`, `GPU Memory` (VRAM temp; exact names only — never falls back to the core temp) |
 | `power`       | Power       | `GPU Package`, `GPU Power`, first `Power`                       |
+| `voltage`     | Voltage     | `GPU Core Voltage`, `GPU Core`, first `Voltage`                 |
 | `clock_gfx`   | Clock       | `GPU Core`, `GFX Core`                                          |
 | `clock_mem`   | Clock       | `GPU Memory`, `Mem Core`                                        |
 | `fan`         | Fan         | **all** fans on the card, paired with Controls by name (`GPU Fan 1`, `GPU Fan 2`, …); `gpu.<n>.fan` override pins a single fan |
@@ -393,6 +401,9 @@ hardware order in the tree (stable within a session). Slots:
 
 **Thermal table** — every `Temperature` sensor across all hardware, sorted by value desc;
 threshold-colored (theme thresholds), shows LHM min/max and our window min/max toggleable (key `s`).
+
+**Voltage table** — every `Voltage` sensor across all hardware, same table as thermal (values in V,
+never threshold-colored), hidden by default and toggled with `v` (or listed in `ui.layout`).
 
 **Fans table** — every `Fan` sensor + `Control` sensors rendered as secondary column ("ctr 45 %").
 
@@ -468,10 +479,11 @@ Responsive rules:
 
 | Key           | Contents                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
-| `cpu`         | temp graph + total-load graph (dual series), per-core bars, clock/power gauges   |
-| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + power/clock gauges with every fan (`Fan 1`, `Fan 2`, …) right-aligned on the same row — fans keep their own row when the panel is too narrow |
+| `cpu`         | temp graph + total-load graph (dual series), per-core bars, and a bottom metrics strip — `Power`, `Clock Average`, `Clock Effective`, `Bus Speed`, `Clock Fabric`, `Clock Uncore`, `Clock Memory`, `Voltage Core`, `Current TDC` — wrapping onto extra rows when the panel is narrow (missing sensors are skipped) |
+| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + a metrics row `Power · Clock · Voltage` with every fan (`Fan 1`, `Fan 2`, …) right-aligned on the same row — fans (and, when cramped, the whole row) fall back to extra rows when the panel is too narrow |
 | `memory`      | used/available gauge + used-load graph + optional page file/virtual gauges       |
 | `thermal`     | table of all temperature sensors, sorted desc (hidden by default; `t` or list it in `ui.layout`) |
+| `voltage`     | table of all voltage sensors (hidden by default; `v` or list it in `ui.layout`)  |
 | `fans`        | table of fans (+control % column)                                                 |
 | `power`       | table of power sensors with total row                                             |
 | `storage`     | table: temperature/activity/used/free per drive                                  |
@@ -495,6 +507,7 @@ Responsive rules:
 | `m`                      | `GET /ResetAllMinMax` on LHM (result on the status line)         |
 | `a`                      | Toggle ASCII rendering (overrides config)                        |
 | `t`                      | Toggle the temperatures table visibility                         |
+| `v`                      | Toggle the voltages table visibility                             |
 | `c`                      | Toggle charts (metric graphs ↔ gauges/bars)                      |
 | `f`                      | Toggle the GPU fan anti-stop floor (§7.5); on by default         |
 | `d`                      | Debug overlay: poll latency, payload size, sensor/hw counts, last error, LHM version |
@@ -508,7 +521,10 @@ Key conflicts after remapping → config validation error listing offending acti
 - Graph series colors: per-slot palette (`theme.cpu`, `theme.gpu`, `theme.memory`, `theme.network`, `theme.storage`; extra series cycle).
 - Thresholds: values ≥ `warn` → `theme.warn`, ≥ `crit` → `theme.crit`; applies to gauges, bars, tables and graph line/latest-value marker. Defaults: 80/95 °C, 90/98 % load, GPU mem 90/97 %.
 - Numbers right-aligned, `tabular`-friendly fixed decimals: temps `69.5 °C`, loads `41.2 %`, memory `20.1 / 32.0 GB`, clocks `5.42 GHz`, fans `1205 RPM`, power `142 W`.
-- Info rows pack `label value` pairs with a 5-column label pad; on the GPU panel the fans sit right-aligned on the power/clock row (parent rows fall back to a separate fan row when the panel is too narrow).
+- Info rows pack `label value` pairs with a minimum 5-column label pad (longer labels, e.g.
+  `Clock Effective`, keep their full width — paired columns may start at different offsets). On the
+  GPU panel the fans sit right-aligned on the power/clock/voltage row, and the CPU metrics strip
+  wraps onto extra rows when it does not fit; both fall back to extra rows when the panel is narrow.
 - `NO_COLOR` env or `--no-color`: honor by dropping colors but keeping bold/dim and bar glyphs.
   RGB theme colors are downgraded automatically to the terminal's detected color depth
   (truecolor → 256 → 16); built-in palettes: `default`, `gruvbox`, `nord`, `mono` (or a theme
@@ -720,11 +736,12 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   },
 
   "panels": {
-    "cpu":  { "enabled": true, "show": ["temp", "load", "core_loads", "clock", "power"] },
+    "cpu":  { "enabled": true, "show": ["temp", "load", "core_loads", "clock", "power", "voltage", "current"] },
     "gpu":  { "enabled": true, "include": ["GpuNvidia", "GpuAmd", "GpuIntel"], "per_row": 2,
-              "show": ["load", "memory", "temp", "power", "fan", "clock"] },
+              "show": ["load", "memory", "temp", "power", "voltage", "fan", "clock"] },
     "memory": { "enabled": true, "show": ["used", "load", "virtual"] },
     "thermal": { "enabled": true },
+    "voltage": { "enabled": true },   // hidden until `v` (or added to ui.layout)
     "fans":   { "enabled": false },
     "power":  { "enabled": false },
 
@@ -782,7 +799,8 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `charts.marker`                   | enum            | `braille`        | Fallback automatically if glyph unsupported  |
 | `charts.window(_cycle)`           | duration/string | `"5m"`/`[1m,5m,15m]` | Window > `history.window_s` clamps       |
 | `theme.*`                         | color/float     | see example      | Names or `#RRGGBB`; downgraded for 256/16 colors |
-| `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors |
+| `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors. CPU slots: `temp`, `load`, `core_loads`, `clock`, `power`, `voltage`, `current`; GPU slots: `load`, `memory`, `temp`, `power`, `voltage`, `fan`, `clock` |
+| `panels.voltage`                  | toggle          | `true`           | Voltages table; hidden until `v` or added to `ui.layout` |
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
 | `fan_guard.enabled`               | bool            | `true`           | GPU fan floor; the only hardware write (§7.5) |
@@ -878,6 +896,7 @@ Each milestone ships green CI and is independently reviewable.
 | M4  | Config depth             | Full `panels.*` overrides, custom panels, themes + thresholds, key remap, validation errors, JSON schema | Example config round-trips: `--print-config`; every §8.3 field exercised by ≥ 1 test                 |
 | M5  | Polish                   | Help/debug overlays, zoom, sensor browser, reload, reset min/max, ascii/no-color, responsive rules       | Manual QA matrix (§12.4) passes on Windows Terminal + tmux + kitty                                   |
 | M6  | Release v0.1.0           | README, packaging (`dist`), CHANGELOG, tag (winget + scoop + crates.io deferred to v0.1.x)               | Release archives attach to a GitHub Release and run `--probe` on clean machines; winget/crates.io validation moved to v0.1.x |
+| M7  | v0.2.0 indicators        | Voltages table (`v`), GPU `Voltage` in the metrics row, CPU metrics strip (`Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric · Clock Uncore · Clock Memory · Voltage Core · Current TDC`) | Voltage/clock values match LHM's own UI within one poll; strip wraps without clipping; `v` toggles the table; release tagged |
 
 ---
 
@@ -974,17 +993,18 @@ Each milestone ships green CI and is independently reviewable.
 
 Ordered backlog beyond v0.1.0:
 
-1. **v0.2 — Control**: set fan/pump `Control` sensors (`Sensor?action=Set`), confirmation modal,
+1. **v0.2.x — Release channels**: crates.io publish, winget + scoop manifests (deferred from v0.1.0).
+2. **v0.3 — Control**: set fan/pump `Control` sensors (`Sensor?action=Set`), confirmation modal,
    safe-range config, `--read-only` lock flag. *(The v0.1 fan anti-stop floor — §7.5 — is a narrow,
    on-by-default slice of this: it only ever writes GPU fan controls and only to auto or the
    configured floor; `f` or `fan_guard.enabled: false` disables it.)*
-2. **v0.3 — Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
+3. **v0.4 — Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
    (terminal bell, OSC 9 desktop notification, webhook).
-3. **v0.3 — History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
+4. **v0.4 — History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
    charts at startup.
-4. **v0.4 — Multi-host**: tabs/sidebar monitoring several LHM hosts concurrently.
-5. **v0.4 — Theme editor** + user theme file drop-in directory.
-6. **v0.5 — Plugins/scripting**: template-based custom panels in config (no code), later Lua/WASM.
+5. **v0.5 — Multi-host**: tabs/sidebar monitoring several LHM hosts concurrently.
+6. **v0.5 — Theme editor** + user theme file drop-in directory.
+7. **v0.6 — Plugins/scripting**: template-based custom panels in config (no code), later Lua/WASM.
 
 ---
 

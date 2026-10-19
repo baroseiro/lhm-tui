@@ -2,7 +2,7 @@
 source: tests/frames.rs
 expression: "frame_text(&mut app, &cfg, 100, 28)"
 ---
- lhm-tui v0.1.0  ● live   100×28   http://127.0.0.1:8085
+ lhm-tui v0.2.0  ● live   100×28   http://127.0.0.1:8085
 ╭ Sensor · /amdcpu/0/temperature/2 ────────────────────────────────────────────────────────────────╮
 │AMD Ryzen 9 5900XT · Core (Tctl/Tdie)                                                             │
 │                                                                                                  │

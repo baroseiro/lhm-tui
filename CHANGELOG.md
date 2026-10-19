@@ -7,14 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-19
+
 ### Added
 
+- **Voltages table** (`v` / `panels.voltage` / `"voltage"` in `ui.layout`): every voltage sensor in
+  the tree, sorted by value, with LHM min/max — hidden by default like the temperatures table
+  (`T7.1`).
+- **GPU voltage** on the panel metrics row: `Power · Clock · Voltage`, with the fans still
+  right-aligned on the same row when it fits (`T7.2`).
+- **CPU metrics strip**: `Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric ·
+  Clock Uncore · Clock Memory · Voltage Core · Current TDC`, wrapped onto extra rows when the panel
+  is narrow; new binding slots (`cpu.clock_effective`, `cpu.bus_speed`, `cpu.clock_fabric`,
+  `cpu.clock_uncore`, `cpu.clock_memory`, `cpu.voltage`, `cpu.current`) and `voltage`/`current`
+  slots in `panels.cpu.show` (`T7.3`).
+- `voltage`/`current` show slots for CPU, `voltage` for GPU, `panels.voltage`, the `v` keybinding
+  and the `toggle_voltage` action; regenerated example config and schema.
+- Tests: voltage table snapshot, live-fixture binding checks for every new slot, `v` toggle
+  interaction test.
 - README captures recorded from a live session with VHS: `docs/preview.png` (hero shot) and
-  `docs/demo.gif` (13 s: default gauges → `c` charts → `t` temperatures → `?` keymap → quit), plus
-  the reproducible `docs/demo.tape` and a regeneration note in `CONTRIBUTING.md`.
+  `docs/demo.gif` (~15 s: gauges → `c` charts → `t` temperatures → `v` voltages → `?` keymap →
+  quit), plus the reproducible `docs/demo.tape` and a regeneration note in `CONTRIBUTING.md`.
 
 ### Changed
 
+- Info rows no longer truncate labels at five columns (`Clock Effective`, `Voltage Core` render in
+  full); the per-frame layout decisions (GPU fan merge, CPU strip rows) live in a shared
+  `PanelLayout` used by both the height model and the draw code.
+- Min/max table columns format voltages with two decimals and currents with one.
 - CI housekeeping: `actions/checkout` bumped to v6 (v4 still targeted Node 20, which GitHub is
   retiring), runner images pinned to `windows-2022` / `ubuntu-24.04` / `macos-15` (the `-latest`
   labels migrate between OS versions; `ubuntu-latest` moves to Ubuntu 26 from October 2026), and

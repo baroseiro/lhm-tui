@@ -111,6 +111,27 @@ fn t_and_c_keys_toggle_thermal_and_charts() {
     handle_event(&mut app, key(KeyCode::Char('t')), &cfg);
     assert!(!app.effective_thermal(&cfg));
 
+    assert!(!app.effective_voltage(&cfg), "voltages hidden by default");
+    handle_event(&mut app, key(KeyCode::Char('v')), &cfg);
+    assert!(app.effective_voltage(&cfg));
+    let panels = lhm_tui::ui::presets::panel_list(
+        &cfg,
+        app.bindings.as_ref().unwrap(),
+        app.panel_overrides(&cfg),
+    );
+    assert!(
+        panels.iter().any(|panel| panel.id == "voltage"),
+        "v reveals the voltages table"
+    );
+    handle_event(&mut app, key(KeyCode::Char('v')), &cfg);
+    assert!(!app.effective_voltage(&cfg));
+    let panels = lhm_tui::ui::presets::panel_list(
+        &cfg,
+        app.bindings.as_ref().unwrap(),
+        app.panel_overrides(&cfg),
+    );
+    assert!(!panels.iter().any(|panel| panel.id == "voltage"));
+
     assert!(!app.effective_charts(&cfg), "charts off by default");
     handle_event(&mut app, key(KeyCode::Char('c')), &cfg);
     assert!(app.effective_charts(&cfg));

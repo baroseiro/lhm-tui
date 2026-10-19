@@ -33,6 +33,8 @@ failures and list deferrals in the release notes.
    sensor; `q`/`esc` close overlays without quitting.
 6. `p` pauses (header shows `paused`); `r` reloads an edited config without
    losing history; `m` reports the min/max reset result on the status line.
+7. `t` and `v` toggle the temperatures and voltages tables; `s` sorts them; `j`/`k` scroll them;
+   voltage rows show min/max with two decimals.
 7. Kill/restart LHM mid-session: status goes `stale` then `live` again.
 8. Quit restores the terminal (no raw mode, cursor visible, shell usable).
 9. `--once` and `--dump -` produce output and exit 0.

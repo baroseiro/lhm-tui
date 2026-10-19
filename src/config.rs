@@ -344,6 +344,8 @@ pub struct PanelsConfig {
     pub gpu: GpuPanel,
     pub memory: MemoryPanel,
     pub thermal: ThermalPanel,
+    /// Voltages table (`v`, same table shape as thermal, enabled by default).
+    pub voltage: ThermalPanel,
     pub fans: TogglePanel,
     pub power: TogglePanel,
     pub storage: TogglePanel,
@@ -363,9 +365,17 @@ impl Default for CpuPanel {
     fn default() -> Self {
         Self {
             enabled: true,
-            show: ["temp", "load", "core_loads", "clock", "power"]
-                .map(String::from)
-                .to_vec(),
+            show: [
+                "temp",
+                "load",
+                "core_loads",
+                "clock",
+                "power",
+                "voltage",
+                "current",
+            ]
+            .map(String::from)
+            .to_vec(),
         }
     }
 }
@@ -387,7 +397,7 @@ impl Default for GpuPanel {
                 .map(String::from)
                 .to_vec(),
             per_row: 2,
-            show: ["load", "memory", "temp", "power", "fan", "clock"]
+            show: ["load", "memory", "temp", "power", "voltage", "fan", "clock"]
                 .map(String::from)
                 .to_vec(),
         }
@@ -515,6 +525,7 @@ pub const KNOWN_ACTIONS: &[(&str, &str)] = &[
     ("ascii", "Toggle ASCII rendering"),
     ("debug", "Debug overlay"),
     ("toggle_thermal", "Toggle temperatures table"),
+    ("toggle_voltage", "Toggle voltages table"),
     ("toggle_charts", "Toggle charts"),
     ("toggle_fan_guard", "GPU fan anti-stop floor"),
 ];
@@ -523,7 +534,7 @@ pub const KNOWN_ACTIONS: &[(&str, &str)] = &[
 pub const BUILTIN_THEMES: &[&str] = &["default", "gruvbox", "nord", "mono", "custom"];
 
 fn default_keys() -> BTreeMap<String, Vec<String>> {
-    let entries: [(&str, &[&str]); 17] = [
+    let entries: [(&str, &[&str]); 18] = [
         ("quit", &["q", "esc", "ctrl+c"]),
         ("help", &["?", "h"]),
         ("pause", &["p", "space"]),
@@ -539,6 +550,7 @@ fn default_keys() -> BTreeMap<String, Vec<String>> {
         ("ascii", &["a"]),
         ("debug", &["d"]),
         ("toggle_thermal", &["t"]),
+        ("toggle_voltage", &["v"]),
         ("toggle_charts", &["c"]),
         ("toggle_fan_guard", &["f"]),
     ];
@@ -917,8 +929,16 @@ pub fn validate(config: &Config) -> Vec<String> {
     }
 
     // Panel slot lists and GPU include kinds (T4.1).
-    const CPU_SLOTS: &[&str] = &["temp", "load", "core_loads", "clock", "power"];
-    const GPU_SLOTS: &[&str] = &["load", "memory", "temp", "power", "fan", "clock"];
+    const CPU_SLOTS: &[&str] = &[
+        "temp",
+        "load",
+        "core_loads",
+        "clock",
+        "power",
+        "voltage",
+        "current",
+    ];
+    const GPU_SLOTS: &[&str] = &["load", "memory", "temp", "power", "voltage", "fan", "clock"];
     const MEMORY_SLOTS: &[&str] = &["used", "load", "virtual"];
     for (list, valid, label) in [
         (&config.panels.cpu.show, CPU_SLOTS, "panels.cpu.show"),
@@ -1123,7 +1143,20 @@ pub fn validate(config: &Config) -> Vec<String> {
     errors
 }
 
-const CPU_OVERRIDE_SLOTS: &[&str] = &["load", "temp", "clock", "power", "core_loads"];
+const CPU_OVERRIDE_SLOTS: &[&str] = &[
+    "load",
+    "temp",
+    "clock",
+    "clock_effective",
+    "bus_speed",
+    "clock_fabric",
+    "clock_uncore",
+    "clock_memory",
+    "power",
+    "voltage",
+    "current",
+    "core_loads",
+];
 const GPU_OVERRIDE_SLOTS: &[&str] = &[
     "load",
     "mem_load",
@@ -1133,6 +1166,7 @@ const GPU_OVERRIDE_SLOTS: &[&str] = &[
     "hotspot",
     "mem_temp",
     "power",
+    "voltage",
     "clock",
     "fan",
 ];
@@ -1177,7 +1211,8 @@ fn canonical_key_spec(key: &ratatui::crossterm::event::KeyEvent) -> Option<Strin
 
 fn is_known_panel(key: &str, panels: &PanelsConfig) -> bool {
     match key {
-        "cpu" | "gpu" | "memory" | "thermal" | "fans" | "power" | "storage" | "network" => true,
+        "cpu" | "gpu" | "memory" | "thermal" | "voltage" | "fans" | "power" | "storage"
+        | "network" => true,
         _ => key
             .strip_prefix("custom:")
             .is_some_and(|id| panels.custom.iter().any(|panel| panel.id == id)),
@@ -1265,18 +1300,36 @@ mod tests {
             }
         );
         assert!(config.panels.cpu.enabled);
+        assert_eq!(
+            config.panels.cpu.show,
+            vec![
+                "temp",
+                "load",
+                "core_loads",
+                "clock",
+                "power",
+                "voltage",
+                "current"
+            ]
+        );
         assert!(config.panels.gpu.enabled);
         assert_eq!(config.panels.gpu.per_row, 2);
+        assert!(config.panels.gpu.show.contains(&"voltage".to_string()));
         assert!(config.panels.thermal.enabled);
+        assert!(
+            config.panels.voltage.enabled,
+            "voltage table binds, hidden by layout"
+        );
         assert!(!config.panels.fans.enabled);
         assert!(!config.panels.storage.enabled);
         assert_eq!(config.keys["quit"], vec!["q", "esc", "ctrl+c"]);
         assert_eq!(config.keys["pause"], vec!["p", "space"]);
         assert_eq!(config.keys["toggle_thermal"], vec!["t"]);
+        assert_eq!(config.keys["toggle_voltage"], vec!["v"]);
         assert_eq!(config.keys["toggle_charts"], vec!["c"]);
         assert_eq!(config.keys["toggle_fan_guard"], vec!["f"]);
         assert_eq!(config.keys["help"], vec!["?", "h"]);
-        assert_eq!(config.keys.len(), 17);
+        assert_eq!(config.keys.len(), 18);
         assert!(config.fan_guard.enabled, "fan anti-stop on by default");
         assert_eq!(config.fan_guard.floor_percent, 45.0);
         assert_eq!(config.fan_guard.idle_load_percent, 10.0);

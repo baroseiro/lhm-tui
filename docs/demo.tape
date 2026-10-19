@@ -27,16 +27,20 @@ Set TypingSpeed 40ms
 Sleep 600ms
 Type "lhm-tui"
 Enter
-Sleep 4000ms
-Type "c"
 Sleep 3500ms
+Type "c"
+Sleep 3000ms
 Screenshot docs/preview.png
 Type "t"
-Sleep 2500ms
+Sleep 2000ms
 Type "t"
+Sleep 300ms
+Type "v"
+Sleep 2000ms
+Type "v"
 Sleep 400ms
 Type "?"
-Sleep 2200ms
+Sleep 1800ms
 Type "?"
 Sleep 500ms
 Type "q"

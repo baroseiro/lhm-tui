@@ -375,6 +375,39 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 
 ---
 
+### Phase P7 — Voltage & clock indicators (v0.2.0, SPEC §11 M7)
+
+#### T7.1 — Voltages table panel
+**Goal:** New `voltage` preset: a sortable table of every `Voltage` sensor across all hardware (`bindings.voltage: Vec<Slot>`), hidden by default, toggled with `v` (`keys.toggle_voltage`), also showable by adding `"voltage"` to `ui.layout`. `panels.voltage.enabled` gates it like every preset.
+**Files:** `src/bindings.rs`, `src/config.rs` (TogglePanel + key action + validation), `src/app.rs` (override + key), `src/ui/presets.rs` (PanelKind + table via the shared slot-table helper), `schema`, example config.
+**Notes:** Reuse the thermal table renderer (extracted into `draw_slot_table`); voltage values are not threshold-colored.
+**Done when:** `v` toggles the table live; layout membership works; binding test on the live fixture finds the CPU/GPU voltages; keymap validation covers `v`.
+**Shipped:** `Bindings.voltage`, `PanelKind::Voltage`, shared `draw_slot_table` (thermal + voltage), `panels.voltage` (default enabled, hidden by layout), `keys.toggle_voltage = ["v"]`, `PanelOverrides.voltage`; widget snapshot at 92×10 shows the Min/Max columns.
+
+#### T7.2 — GPU `Voltage` in the metrics row
+**Goal:** GPU panels show `Power · Clock · Voltage` (each gated by `panels.gpu.show`) left of the right-aligned fan block.
+**Files:** `src/bindings.rs` (`GpuBindings.voltage` + candidates), `src/ui/presets.rs`, `src/config.rs` (show-list enum).
+**Notes:** The fan-merge width check must account for the third pair; the info renderer stops truncating labels at 5 columns (full labels, minimum pad). Extract the per-frame width/height decisions into `PanelLayout` shared by `fit_heights` and the draw code so they can never disagree.
+**Done when:** Both reference GPUs show `Voltage` at 149×42 with fans still right-aligned on the same row; narrow panels fall back to an extra row without blank lines.
+**Shipped:** `GpuBindings.voltage` (prefers `GPU Core Voltage`/`GPU Core`), `gpu` show slot `voltage`, info renderer no longer truncates labels, and `PanelLayout.merge_fans` (value-aware, computed once in `render_panels` with the snapshot and shared with `fit_heights`) replaced the worst-case width heuristic.
+
+#### T7.3 — CPU metrics strip
+**Goal:** Replace the CPU panel's single `Clock · Power` row with the ordered strip `Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric · Clock Uncore · Clock Memory · Voltage Core · Current TDC`, wrapping onto extra rows when the panel is narrower than the strip (missing slots skipped).
+**Files:** `src/bindings.rs` (`clock_effective`, `bus_speed`, `clock_fabric`, `clock_uncore`, `clock_memory`, `voltage`, `current` slots + candidates), `src/ui/presets.rs` (wrapping renderer + height model), `src/config.rs` (`cpu.show` gains `voltage`, `current`).
+**Notes:** Row count is computed once per frame (value-aware) and shared with the height model, so it never disagrees or clips.
+**Done when:** 149×42 shows all nine metrics in the requested order; 80×30 wraps cleanly; overrides (`cpu.clock_effective` …) validate and bind.
+**Shipped:** eight new CPU slots with candidate lists/override keys, `voltage`/`current` show slots, `widgets::info_lines_wrapped` + `info_lines_needed` (greedy row split used by both renderer and height model via `PanelLayout.strip_rows`), `stat()` formats voltages with two decimals and currents with one.
+
+#### T7.4 — Docs, schema, example, README, CHANGELOG
+**Goal:** SPEC (5.2/6.3/6.4/6.5/8.2/8.3/11/16), regenerated `lhm-tui.example.json`, JSON Schema (`panels.voltage`, show-list enums, key action), README features + keybindings + “common tweaks”, CHANGELOG entries.
+**Done when:** `example_config_is_valid_and_roundtrips` + schema tests pass; README marks `v`.
+
+#### T7.5 — Release v0.2.0
+**Goal:** Version bump `0.1.0` → `0.2.0`; promote `CHANGELOG.md` `[Unreleased]` → `[0.2.0]`; roadmap renumber (control → v0.3); `docs/release-notes-v0.2.0.md`; refresh `docs/demo.tape` captures if the layout moved noticeably; tag `v0.2.0` and verify the release workflow + published artifacts like v0.1.0.
+**Done when:** Release published with all six archives, installers and checksums; README/notes updated; tag verified against the released commit.
+
+---
+
 ## 4. Critical path & parallelization
 
 ```text

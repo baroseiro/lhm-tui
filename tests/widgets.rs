@@ -58,6 +58,17 @@ fn draw_preset(
     scroll: u16,
     ascii: bool,
 ) {
+    let layout = presets::panel_layouts(
+        std::slice::from_ref(spec),
+        bindings,
+        snapshot,
+        cfg,
+        area.width,
+        &[vec![0]],
+    )
+    .first()
+    .copied()
+    .unwrap_or_default();
     let mut ctx = PanelCtx {
         snapshot,
         bindings,
@@ -74,8 +85,7 @@ fn draw_preset(
         window: Duration::from_secs(300),
         window_label: "5m".to_string(),
         now: Instant::now(),
-        // Widget snapshots exercise the merged GPU fan row.
-        gpu_fans_merge: true,
+        layout,
     };
     presets::draw_panel(frame, area, spec, &mut ctx);
 }
@@ -551,6 +561,36 @@ fn thermal_panel_snapshot() {
         scrollable: true,
     };
     let out = render(64, 8, |frame| {
+        draw_preset(
+            frame,
+            frame.area(),
+            &spec,
+            &snapshot,
+            &bindings,
+            &cfg,
+            &theme,
+            &mut charts,
+            None,
+            0,
+            false,
+        );
+    });
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn voltage_panel_snapshot() {
+    let cfg = Config::default();
+    let snapshot = fixture_snapshot("lhm-live-5900xt.json");
+    let bindings = bindings::resolve(&snapshot, &cfg.panels);
+    let theme = theme();
+    let mut charts = ChartsState::new();
+    let spec = PanelSpec {
+        id: "voltage".to_string(),
+        kind: PanelKind::Voltage,
+        scrollable: true,
+    };
+    let out = render(92, 10, |frame| {
         draw_preset(
             frame,
             frame.area(),

@@ -113,7 +113,7 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": true },
-            "show": { "type": "array", "items": { "enum": ["temp", "load", "core_loads", "clock", "power"] } }
+            "show": { "type": "array", "items": { "enum": ["temp", "load", "core_loads", "clock", "power", "voltage", "current"] } }
           }
         },
         "gpu": {
@@ -123,7 +123,7 @@
             "enabled": { "type": "boolean", "default": true },
             "include": { "type": "array", "items": { "type": "string" } },
             "per_row": { "type": "integer", "minimum": 1, "default": 2 },
-            "show": { "type": "array", "items": { "enum": ["load", "memory", "temp", "power", "fan", "clock"] } }
+            "show": { "type": "array", "items": { "enum": ["load", "memory", "temp", "power", "voltage", "fan", "clock"] } }
           }
         },
         "memory": {
@@ -135,6 +135,7 @@
           }
         },
         "thermal": { "$ref": "#/$defs/toggle" },
+        "voltage": { "$ref": "#/$defs/toggle" },
         "fans": { "$ref": "#/$defs/toggle" },
         "power": { "$ref": "#/$defs/toggle" },
         "storage": { "$ref": "#/$defs/toggle" },

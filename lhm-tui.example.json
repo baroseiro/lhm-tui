@@ -90,7 +90,9 @@
         "load",
         "core_loads",
         "clock",
-        "power"
+        "power",
+        "voltage",
+        "current"
       ]
     },
     "gpu": {
@@ -106,6 +108,7 @@
         "memory",
         "temp",
         "power",
+        "voltage",
         "fan",
         "clock"
       ]
@@ -119,6 +122,9 @@
       ]
     },
     "thermal": {
+      "enabled": true
+    },
+    "voltage": {
       "enabled": true
     },
     "fans": {
@@ -192,6 +198,9 @@
     ],
     "toggle_thermal": [
       "t"
+    ],
+    "toggle_voltage": [
+      "v"
     ],
     "window_next": [
       "g"

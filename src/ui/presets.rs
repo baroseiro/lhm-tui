@@ -30,6 +30,7 @@ pub enum PanelKind {
     Gpu(usize),
     Memory,
     Thermal,
+    Voltage,
     Fans,
     Power,
     Storage,
@@ -63,10 +64,8 @@ pub struct PanelCtx<'a> {
     pub window: Duration,
     pub window_label: String,
     pub now: Instant,
-    /// Room for every GPU fan right-aligned on the power/clock info row
-    /// (`gpu_row_merge_flags`; uniform per row so the layout never changes
-    /// between polls).
-    pub gpu_fans_merge: bool,
+    /// Width/height decisions shared with the height model (`panel_layouts`).
+    pub layout: PanelLayout,
 }
 
 impl PanelCtx<'_> {
@@ -88,12 +87,25 @@ impl PanelCtx<'_> {
     }
 }
 
-/// Runtime panel-visibility overrides (the `t` key today).
+/// Runtime panel-visibility overrides (the `t`/`v` keys).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PanelOverrides {
     /// `t` override for the temperatures table; `None` → membership in
     /// `ui.layout` decides.
     pub thermal: Option<bool>,
+    /// `v` override for the voltages table.
+    pub voltage: Option<bool>,
+}
+
+/// Per-panel layout decisions that depend on the terminal width and the
+/// current readings. Computed once per frame in `render_panels` and shared by
+/// the height model and the draw code, so they can never disagree.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PanelLayout {
+    /// GPU: the fan block shares the power/clock/voltage info row.
+    pub merge_fans: bool,
+    /// CPU: rows the bottom metrics strip occupies (0 = strip hidden).
+    pub strip_rows: u8,
 }
 
 /// Expand `ui.layout` into the concrete panel list for the current bindings.
@@ -102,6 +114,10 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
     let thermal_visible = overrides.thermal.unwrap_or(layout_has_thermal)
         && cfg.panels.thermal.enabled
         && !bindings.thermal.is_empty();
+    let layout_has_voltage = cfg.ui.layout.iter().any(|key| key == "voltage");
+    let voltage_visible = overrides.voltage.unwrap_or(layout_has_voltage)
+        && cfg.panels.voltage.enabled
+        && !bindings.voltage.is_empty();
 
     let mut panels = Vec::new();
     for key in &cfg.ui.layout {
@@ -135,6 +151,13 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
                 panels.push(PanelSpec {
                     id: "thermal".to_string(),
                     kind: PanelKind::Thermal,
+                    scrollable: true,
+                });
+            }
+            "voltage" if voltage_visible => {
+                panels.push(PanelSpec {
+                    id: "voltage".to_string(),
+                    kind: PanelKind::Voltage,
                     scrollable: true,
                 });
             }
@@ -189,11 +212,18 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
         }
     }
 
-    // `t` can reveal the temperatures table even when it is not in ui.layout.
+    // `t` / `v` can reveal the tables even when they are not in ui.layout.
     if thermal_visible && !layout_has_thermal {
         panels.push(PanelSpec {
             id: "thermal".to_string(),
             kind: PanelKind::Thermal,
+            scrollable: true,
+        });
+    }
+    if voltage_visible && !layout_has_voltage {
+        panels.push(PanelSpec {
+            id: "voltage".to_string(),
+            kind: PanelKind::Voltage,
             scrollable: true,
         });
     }
@@ -229,13 +259,13 @@ pub fn layout_rows(panels: &[PanelSpec], per_row: usize) -> Vec<Vec<usize>> {
 }
 
 /// Height budget for a panel (SPEC §6.1, `ui.max_height` caps tables).
-/// `merge_fans` tells the GPU arm that its fans share the power/clock row.
+/// `layout` carries the width-dependent decisions (fan merge, strip rows).
 pub fn panel_height(
     spec: &PanelSpec,
     bindings: &Bindings,
     cfg: &Config,
     charts_on: bool,
-    merge_fans: bool,
+    layout: PanelLayout,
 ) -> u16 {
     let max = cfg.ui.max_height.clamp(4, 40) as usize;
     let chart = if charts_on {
@@ -247,7 +277,7 @@ pub fn panel_height(
         PanelKind::Cpu(_) => {
             let show = &cfg.panels.cpu.show;
             let bars = if shows(show, "core_loads") { 2 } else { 0 };
-            let info = u16::from(shows(show, "clock") || shows(show, "power"));
+            let info = u16::from(layout.strip_rows);
             let content = if charts_on {
                 let graphs = u16::from(shows(show, "load")) + u16::from(shows(show, "temp"));
                 if graphs > 0 {
@@ -262,15 +292,16 @@ pub fn panel_height(
         }
         PanelKind::Gpu(index) => {
             let show = &cfg.panels.gpu.show;
-            // Fans share the power/clock info row when the row fits (merge_fans
-            // from `gpu_row_merge_flags`); otherwise they get their own row.
+            // Fans share the power/clock/voltage info row when `layout` says it
+            // fits; otherwise they get a row of their own.
             let has_fans = shows(show, "fan")
                 && bindings
                     .gpus
                     .get(*index)
                     .is_some_and(|gpu| !gpu.fans.is_empty());
-            let info = u16::from(shows(show, "power") || shows(show, "clock"));
-            let fans = u16::from(has_fans && !(merge_fans && info > 0));
+            let info =
+                u16::from(shows(show, "power") || shows(show, "clock") || shows(show, "voltage"));
+            let fans = u16::from(has_fans && !(layout.merge_fans && info > 0));
             let vram = u16::from(shows(show, "memory"));
             let content = if charts_on {
                 let graphs = u16::from(shows(show, "load") || shows(show, "memory"))
@@ -303,6 +334,7 @@ pub fn panel_height(
             (content + 2).max(3)
         }
         PanelKind::Thermal => (bindings.thermal.len() + 3).clamp(4, max) as u16,
+        PanelKind::Voltage => (bindings.voltage.len() + 3).clamp(4, max) as u16,
         PanelKind::Fans => (bindings.fans.len() + 3).clamp(4, max) as u16,
         PanelKind::Power => (bindings.power.len() + 4).clamp(4, max) as u16,
         PanelKind::Storage => (bindings.storage.len() + 3).clamp(4, max) as u16,
@@ -321,66 +353,114 @@ pub fn panel_height(
     }
 }
 
-/// Rendered `label value` pair width used by `compact_pairs`: 5-column label
-/// pad, one space, value capped at 10 columns.
-const COMPACT_PAIR_WIDTH: u16 = 5 + 1 + 10;
+/// `(label, value)` pairs borrowed as the slice shape the info widgets take.
+fn pair_refs(pairs: &[(String, String)]) -> Vec<(&str, String)> {
+    pairs
+        .iter()
+        .map(|(label, value)| (label.as_str(), value.clone()))
+        .collect()
+}
 
-/// Worst-case row width for the merged GPU info row: `info_pairs` pairs
-/// (power/clock) plus `fan_count` fans, a separator between pairs, one
-/// leading and one trailing space and one gap column. Values are rendered up
-/// to [`COMPACT_PAIR_WIDTH`] columns, so this check is independent of the
-/// current readings — the layout never flips between polls (SPEC §6.3).
-pub fn gpu_merge_min_width(info_pairs: usize, fan_count: usize) -> u16 {
-    let block = |pairs: usize| -> u16 {
-        if pairs == 0 {
-            0
-        } else {
-            pairs as u16 * COMPACT_PAIR_WIDTH + pairs as u16 - 1
+/// GPU info pairs in display order: `Power`, `Clock`, `Voltage` (each gated by
+/// `panels.gpu.show` and only when the sensor is bound).
+fn gpu_info_pairs(gpu: &GpuBindings, snapshot: &Snapshot, cfg: &Config) -> Vec<(String, String)> {
+    let show = |slot: &str| shows(&cfg.panels.gpu.show, slot);
+    [
+        ("Power", &gpu.power, show("power")),
+        ("Clock", &gpu.clock, show("clock")),
+        ("Voltage", &gpu.voltage, show("voltage")),
+    ]
+    .into_iter()
+    .filter(|(_, slot, visible)| *visible && slot.is_some())
+    .map(|(label, slot, _)| (label.to_string(), slot_display(snapshot, slot)))
+    .collect()
+}
+
+/// CPU bottom metrics strip in the SPEC §6.3 order. Clocks are gated by the
+/// `clock` show slot, power/voltage/current by their own slots.
+fn cpu_strip_pairs(cpu: &CpuBindings, snapshot: &Snapshot, cfg: &Config) -> Vec<(String, String)> {
+    let show = |slot: &str| shows(&cfg.panels.cpu.show, slot);
+    let mut pairs: Vec<(String, String)> = Vec::new();
+    let mut add = |label: &str, slot: &Option<Slot>| {
+        if slot.is_some() {
+            pairs.push((label.to_string(), slot_display(snapshot, slot)));
         }
     };
-    block(info_pairs) + block(fan_count) + 3
+    if show("power") {
+        add("Power", &cpu.power);
+    }
+    if show("clock") {
+        add("Clock Average", &cpu.clock);
+        add("Clock Effective", &cpu.clock_effective);
+        add("Bus Speed", &cpu.bus_speed);
+        add("Clock Fabric", &cpu.clock_fabric);
+        add("Clock Uncore", &cpu.clock_uncore);
+        add("Clock Memory", &cpu.clock_memory);
+    }
+    if show("voltage") {
+        add("Voltage Core", &cpu.voltage);
+    }
+    if show("current") {
+        add("Current TDC", &cpu.current);
+    }
+    pairs
 }
 
-/// How many `label value` pairs the GPU info row shows (config-level).
-pub fn gpu_info_pairs(cfg: &Config) -> usize {
-    let show = &cfg.panels.gpu.show;
-    usize::from(shows(show, "power")) + usize::from(shows(show, "clock"))
+/// Does the GPU info row plus the right-aligned fan block fit `inner` columns?
+fn gpu_info_fits(gpu: &GpuBindings, snapshot: &Snapshot, cfg: &Config, inner: u16) -> bool {
+    let info = gpu_info_pairs(gpu, snapshot, cfg);
+    let fans = gpu_fan_pairs(gpu, snapshot);
+    if info.is_empty() || fans.is_empty() {
+        return false;
+    }
+    let info_refs = pair_refs(&info);
+    let fan_refs = pair_refs(&fans);
+    u32::from(widgets::compact_pairs_width(&info_refs))
+        + u32::from(widgets::compact_pairs_width(&fan_refs))
+        + 3
+        <= u32::from(inner)
 }
 
-/// Per-panel flags: does the merged GPU info row fit? Uniform per row (based
-/// on the row's widest requirement, i.e. the largest fan count) so side-by-side
-/// GPUs always render the same structure.
-pub fn gpu_row_merge_flags(
+/// Per-panel layout decisions (width + current values). Side-by-side GPUs share
+/// one decision so a row always renders consistently.
+pub fn panel_layouts(
     panels: &[PanelSpec],
     bindings: &Bindings,
+    snapshot: &Snapshot,
     cfg: &Config,
     width: u16,
     rows: &[Vec<usize>],
-) -> Vec<bool> {
-    let info_pairs = gpu_info_pairs(cfg);
-    let mut flags = vec![false; panels.len()];
-    if info_pairs == 0 {
-        return flags;
-    }
+) -> Vec<PanelLayout> {
+    let mut layouts = vec![PanelLayout::default(); panels.len()];
     for row in rows {
-        let max_fans = row
-            .iter()
-            .filter_map(|index| match &panels[*index].kind {
-                PanelKind::Gpu(gpu) => bindings.gpus.get(*gpu).map(|gpu| gpu.fans.len()),
-                _ => None,
-            })
-            .max()
-            .unwrap_or(0);
-        if max_fans == 0 {
-            continue;
-        }
         let inner = (width / row.len() as u16).saturating_sub(2);
-        let merge = inner >= gpu_merge_min_width(info_pairs, max_fans);
+        let gpu_row = row
+            .iter()
+            .all(|index| matches!(panels[*index].kind, PanelKind::Gpu(_)));
+        if gpu_row {
+            let merge = row.iter().all(|index| match &panels[*index].kind {
+                PanelKind::Gpu(gpu_index) => bindings
+                    .gpus
+                    .get(*gpu_index)
+                    .is_some_and(|gpu| gpu_info_fits(gpu, snapshot, cfg, inner)),
+                _ => false,
+            });
+            for index in row {
+                layouts[*index].merge_fans = merge;
+            }
+        }
         for index in row {
-            flags[*index] = merge;
+            if let PanelKind::Cpu(cpu_index) = &panels[*index].kind {
+                if let Some(cpu) = bindings.cpu.get(*cpu_index) {
+                    let pairs = cpu_strip_pairs(cpu, snapshot, cfg);
+                    let refs = pair_refs(&pairs);
+                    layouts[*index].strip_rows =
+                        widgets::info_lines_needed(&refs, inner).min(3) as u8;
+                }
+            }
         }
     }
-    flags
+    layouts
 }
 
 /// Fit panel heights to the available space.
@@ -400,7 +480,7 @@ pub fn fit_heights(
     available: u16,
     charts_on: bool,
     rows: &[Vec<usize>],
-    merge_fans: &[bool],
+    layouts: &[PanelLayout],
 ) -> Vec<u16> {
     let mut heights: Vec<u16> = panels
         .iter()
@@ -411,7 +491,7 @@ pub fn fit_heights(
                 bindings,
                 cfg,
                 charts_on,
-                merge_fans.get(index).copied().unwrap_or(false),
+                layouts.get(index).copied().unwrap_or_default(),
             )
         })
         .collect();
@@ -562,7 +642,10 @@ pub fn draw_panel(frame: &mut Frame, area: Rect, spec: &PanelSpec, ctx: &mut Pan
                 draw_memory(frame, area, &memory, ctx);
             }
         }
-        PanelKind::Thermal => draw_thermal(frame, area, ctx),
+        PanelKind::Thermal => {
+            draw_slot_table(frame, area, "Temperatures", &ctx.bindings.thermal, ctx)
+        }
+        PanelKind::Voltage => draw_slot_table(frame, area, "Voltages", &ctx.bindings.voltage, ctx),
         PanelKind::Fans => draw_fans(frame, area, ctx),
         PanelKind::Power => draw_power(frame, area, ctx),
         PanelKind::Storage => draw_storage(frame, area, ctx),
@@ -727,11 +810,10 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
         .iter()
         .map(|slot| bindings::slot_sensor(ctx.snapshot, slot).and_then(|sensor| sensor.value))
         .collect();
-    let pairs: Vec<(&str, String)> = [("Clock", &cpu.clock), ("Power", &cpu.power)]
-        .into_iter()
-        .filter(|(label, slot)| slot.is_some() && show(&label.to_ascii_lowercase()))
-        .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
-        .collect();
+    // Bottom metrics strip, SPEC §6.3 order; wraps per `panel_layouts`.
+    let strip_owned = cpu_strip_pairs(cpu, ctx.snapshot, ctx.cfg);
+    let strip = pair_refs(&strip_owned);
+    let strip_rows = u16::from(ctx.layout.strip_rows);
     let bars_shown = show("core_loads") && !core_values.is_empty();
 
     if ctx.charts_on() {
@@ -752,8 +834,8 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
                 graphs.push((format!("{panel_key}:temp"), series, YMode::Auto));
             }
         }
-        if !graphs.is_empty() || bars_shown || !pairs.is_empty() {
-            let reserved = u16::from(bars_shown) * 2 + u16::from(!pairs.is_empty());
+        if !graphs.is_empty() || bars_shown || strip_rows > 0 {
+            let reserved = u16::from(bars_shown) * 2 + strip_rows;
             let chart_height = if graphs.is_empty() {
                 0
             } else {
@@ -787,14 +869,14 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
                 widgets::bars(frame, bars_rect, &core_values, ctx.theme, ctx.stale);
                 offset += 2;
             }
-            if !pairs.is_empty() {
+            if strip_rows > 0 && !strip.is_empty() {
                 let info_rect = Rect {
                     x: inner.x,
                     y: inner.y + offset,
                     width: inner.width,
-                    height: 1,
+                    height: strip_rows,
                 };
-                widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
+                widgets::info_lines_wrapped(frame, info_rect, &strip, ctx.theme, ctx.stale);
             }
             return;
         }
@@ -824,10 +906,10 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
             keep: 5,
         });
     }
-    if !pairs.is_empty() {
+    if strip_rows > 0 && !strip.is_empty() {
         plan.push(PlannedRow {
             kind: 3,
-            height: 1,
+            height: strip_rows,
             keep: 8,
         });
     }
@@ -857,7 +939,7 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
                 Metric::Load,
             ),
             2 => widgets::bars(frame, *area, &core_values, ctx.theme, ctx.stale),
-            _ => widgets::info_line(frame, *area, &pairs, ctx.theme, ctx.stale),
+            _ => widgets::info_lines_wrapped(frame, *area, &strip, ctx.theme, ctx.stale),
         }
     }
 }
@@ -885,11 +967,9 @@ fn draw_gpu(
     }
 
     let show = |slot: &str| shows(&ctx.cfg.panels.gpu.show, slot);
-    let pairs: Vec<(&str, String)> = [("Power", &gpu.power), ("Clock", &gpu.clock)]
-        .into_iter()
-        .filter(|(label, slot)| slot.is_some() && show(&label.to_ascii_lowercase()))
-        .map(|(label, slot)| (label, slot_display(ctx.snapshot, slot)))
-        .collect();
+    // Info row pairs in display order: Power, Clock, Voltage (SPEC §6.3).
+    let info_pairs_owned = gpu_info_pairs(gpu, ctx.snapshot, ctx.cfg);
+    let pairs: Vec<(&str, String)> = pair_refs(&info_pairs_owned);
     let vram_shown = show("memory");
     let fans_shown = show("fan") && !gpu.fans.is_empty();
     let fan_pairs_owned = if fans_shown {
@@ -897,15 +977,10 @@ fn draw_gpu(
     } else {
         Vec::new()
     };
-    let fan_pairs: Vec<(&str, String)> = fan_pairs_owned
-        .iter()
-        .map(|(label, value)| (label.as_str(), value.clone()))
-        .collect();
-    // Fans share the power/clock row, aligned to the right edge, when the row
-    // has the columns for it (decided once per row in `gpu_row_merge_flags` —
-    // width-based, so it never flips between polls); otherwise they keep a
-    // row of their own (SPEC §6.3).
-    let merge_fans = fans_shown && !pairs.is_empty() && ctx.gpu_fans_merge;
+    let fan_pairs: Vec<(&str, String)> = pair_refs(&fan_pairs_owned);
+    // Fans share the info row, right-aligned, when `panel_layouts` says the row
+    // fits; otherwise they keep a row of their own (SPEC §6.3).
+    let merge_fans = fans_shown && !pairs.is_empty() && ctx.layout.merge_fans;
     let info_row = !pairs.is_empty();
     let fan_row = fans_shown && !merge_fans;
 
@@ -1760,25 +1835,13 @@ fn sort_table_rows(sort: TableSort, rows: &mut Vec<(Option<f64>, String, Row<'st
     }
 }
 
-fn draw_thermal(frame: &mut Frame, area: Rect, ctx: &PanelCtx) {
+fn draw_slot_table(frame: &mut Frame, area: Rect, title: &str, slots: &[Slot], ctx: &PanelCtx) {
     let narrow = area.width < 80; // drop Min/Max columns (SPEC §6.1)
-    let block = panel_block(
-        "Temperatures".to_string(),
-        ctx.theme,
-        ctx.stale,
-        ctx.focused,
-    );
-    let labels: Vec<String> = ctx
-        .bindings
-        .thermal
-        .iter()
-        .map(|slot| slot.label.clone())
-        .collect();
+    let block = panel_block(title.to_string(), ctx.theme, ctx.stale, ctx.focused);
+    let labels: Vec<String> = slots.iter().map(|slot| slot.label.clone()).collect();
     let duplicated = duplicate_labels(&labels);
 
-    let mut rows: Vec<(Option<f64>, String, Row<'static>)> = ctx
-        .bindings
-        .thermal
+    let mut rows: Vec<(Option<f64>, String, Row<'static>)> = slots
         .iter()
         .zip(duplicated)
         .filter_map(|(slot, duplicated)| {
@@ -2086,8 +2149,6 @@ mod tests {
 
     #[test]
     fn fit_plan_drops_the_least_important_rows_first() {
-        // GPU gauge rows: temp(0), hotspot(1), mem_temp(2), load(3),
-        // vram(4), info(5), fans(6) — ranks as planned in `draw_gpu`.
         let gpu = [
             (0, 1, 10),
             (1, 1, 4),
@@ -2110,14 +2171,5 @@ mod tests {
         let cpu = [(0, 1, 10), (1, 1, 11), (2, 2, 5), (3, 1, 8)];
         let fitted: Vec<u8> = fit_plan(rows(&cpu), 4).iter().map(|row| row.kind).collect();
         assert_eq!(fitted, vec![0, 1, 3], "bars dropped, not truncated");
-    }
-
-    #[test]
-    fn gpu_merge_thresholds_cover_the_worst_case() {
-        // Two info pairs + two fans: 33 + 33 + 3 = 69 columns.
-        assert_eq!(gpu_merge_min_width(2, 2), 69);
-        assert_eq!(gpu_merge_min_width(2, 1), 52);
-        assert_eq!(gpu_merge_min_width(1, 1), 35);
-        assert_eq!(gpu_merge_min_width(0, 2), 36);
     }
 }
