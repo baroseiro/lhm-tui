@@ -2,35 +2,35 @@
 source: tests/frames.rs
 expression: "frame_text(&mut app, &cfg, 110, 32)"
 ---
- lhm-tui v0.2.0  ● live   110×32   http://127.0.0.1:8085
+ lhm-tui v0.3.0  ● live   110×32   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 9 5900XT ──────────────────────────────────────────────────────────────────────────────────╮
 │ Temp     ██████████████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░ 69.6 °C │
 │ Load    ╭ Sensors — 8 match(es) ─────────────────────────────────────────────────────────────────╮░░ 7.5 % │
-│ ▁▁▂▁▁ ▁▁│ filter: gpu core▏                                                                      │         │
-│         │   NVIDIA GeForce RTX 3090 · GPU Core Voltage                                           │         │
-│ Power 87│   NVIDIA GeForce RTX 3090 · GPU Core                                                   │         │
-│ Clock Un│ ▶ NVIDIA GeForce RTX 3090 · GPU Core                                                   │         │
-╰─────────│   NVIDIA GeForce RTX 3090 · GPU Core                                                   │─────────╯
-╭ GPU 0 · │   AMD Radeon RX 7900 XTX · GPU Core                                                    │─────────╮
-│ Temp    │   AMD Radeon RX 7900 XTX · GPU Core                                                    │ 50.0 °C │
-│ Hot Spot│   AMD Radeon RX 7900 XTX · GPU Core                                                    │ 60.5 °C │
+│         │ filter: gpu core▏                                                                      │         │
+╰─────────│   NVIDIA GeForce RTX 3090 · GPU Core Voltage                                           │─────────╯
+╭ GPU 0 · │   NVIDIA GeForce RTX 3090 · GPU Core                                                   │─────────╮
+│ Temp    │ ▶ NVIDIA GeForce RTX 3090 · GPU Core                                                   │ 50.0 °C │
+│ Hot Spot│   NVIDIA GeForce RTX 3090 · GPU Core                                                   │ 60.5 °C │
 │ Mem Temp│   AMD Radeon RX 7900 XTX · GPU Core                                                    │ 54.0 °C │
-│ Load    │                                                                                        │░░ 0.0 % │
-│ VRAM    │                                                                                        │24576 MB │
-│ Power 33│                                                                                        │ 2 0 RPM │
+│ Load    │   AMD Radeon RX 7900 XTX · GPU Core                                                    │░░ 0.0 % │
+│ VRAM    │   AMD Radeon RX 7900 XTX · GPU Core                                                    │ MB (2%) │
+│ Shared  │   AMD Radeon RX 7900 XTX · GPU Core                                                    │ MB (0%) │
+│ Pwr   33│                                                                                        │         │
+│ Fan 1 0 │                                                                                        │         │
 ╰─────────│                                                                                        │─────────╯
 ╭ GPU 1 · │                                                                                        │─────────╮
 │ Temp    │                                                                                        │ 60.0 °C │
 │ Hot Spot│                                                                                        │ 68.0 °C │
 │ Mem Temp│                                                                                        │ 83.0 °C │
 │ Load    │                                                                                        │░░ 7.0 % │
-│ VRAM    │                                                                                        │24560 MB │
-│ Power 10│                                                                                        │ 534 RPM │
+│ VRAM    │                                                                                        │ MB (9%) │
+│ Shared  │                                                                                        │ MB (1%) │
+│ Pwr   10│                                                                                        │         │
+│ Fan   53│                                                                                        │         │
 ╰─────────│                                                                                        │─────────╯
 ╭ Memory ·│                                                                                        │─────────╮
-│ Used    │                                                                                        │127.9 GB │
-│ Load    │                                                                                        │░ 21.0 % │
-│ Virtual ╰────────────────────────────────────────────────────────────────────────────────────────╯         │
+│ Used    │                                                                                        │GB (21%) │
+│ Load    ╰────────────────────────────────────────────────────────────────────────────────────────╯░ 21.0 % │
+│ Virtual  ███████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 42.7 / 140.9 GB (30%) │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
  fan anti-stop: AMD Radeon RX 7900 XTX left to its driver curve (fans cannot stop)

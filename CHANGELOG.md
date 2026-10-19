@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
+### Added
+
+- **Shared GPU memory** row on every GPU panel, directly under VRAM:
+  `Shared 606 / 104796 MB (1%)` from the Windows D3D shared-memory sensors; when the card reports no
+  total (NVIDIA), it is estimated as system RAM total minus this card's VRAM. New
+  `gpu.<n>.shared_used` / `gpu.<n>.shared_total` override slots; the row follows the existing
+  `memory` show slot.
+
+### Changed
+
+- **GPU fans** always get their own row underneath the `Pwr · Clk · Volt` metrics instead of being
+  right-aligned on the metrics row.
+- **CPU per-core bars** carry a `Per-Core` label and one column of spacing between cores.
+- **CPU metrics strip** follows the fixed two-row template: `Pwr · TDC · Volt Core` with
+  `Clk Avg · Clk Eff` right-aligned, then `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory`
+  (labels shortened; the GPU metrics row is now `Pwr · Clk · Volt` too).
+- **Memory panel**: `Virtual` is now a gauge like `Used`, and used/virtual memory plus GPU VRAM
+  display `used / total (pct %)` (`26.9 / 127.9 GB (21%)`; VRAM keeps MB: `599 / 24576 MB (2%)`).
+- **Voltages table**: GPU rails carry the card name (`GPU Core Voltage (NVIDIA GeForce RTX 3090)`),
+  and per-core rails stay hidden in the docked table but appear when the panel is zoomed
+  (`enter`); graph an individual rail via the sensor browser (`b`).
+- `rust-toolchain.toml` now also installs the `rust-analyzer` component for editor support.
+- Project docs refreshed for v0.3.0: README status/roadmap, SPEC milestones/backlog, PLAN release
+  task and AGENTS implementation status.
+
 ## [0.2.0] - 2026-10-19
 
 ### Added

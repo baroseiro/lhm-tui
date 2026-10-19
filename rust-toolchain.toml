@@ -3,5 +3,5 @@
 # the minimum supported Rust so MSRV regressions surface before pushing.
 [toolchain]
 channel = "1.89"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "rust-analyzer"]
 profile = "minimal"

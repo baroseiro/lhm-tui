@@ -10,8 +10,7 @@ use std::time::{Duration, Instant};
 
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Cell, Paragraph, Row};
+use ratatui::widgets::{Block, BorderType, Cell, Row};
 use ratatui::Frame;
 
 use crate::bindings::{self, Bindings, CpuBindings, GpuBindings, MemoryBindings, Slot};
@@ -64,8 +63,11 @@ pub struct PanelCtx<'a> {
     pub window: Duration,
     pub window_label: String,
     pub now: Instant,
-    /// Width/height decisions shared with the height model (`panel_layouts`).
+    /// Height decisions shared with the height model (`panel_layouts`).
     pub layout: PanelLayout,
+    /// True when the panel owns the whole body (`enter` zoom): the voltages
+    /// table then also shows per-core rails (SPEC §6.3).
+    pub zoomed: bool,
 }
 
 impl PanelCtx<'_> {
@@ -97,13 +99,11 @@ pub struct PanelOverrides {
     pub voltage: Option<bool>,
 }
 
-/// Per-panel layout decisions that depend on the terminal width and the
-/// current readings. Computed once per frame in `render_panels` and shared by
-/// the height model and the draw code, so they can never disagree.
+/// Per-panel layout decisions that depend on the current readings. Computed
+/// once per frame in `render_panels` and shared by the height model and the
+/// draw code, so they can never disagree.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PanelLayout {
-    /// GPU: the fan block shares the power/clock/voltage info row.
-    pub merge_fans: bool,
     /// CPU: rows the bottom metrics strip occupies (0 = strip hidden).
     pub strip_rows: u8,
 }
@@ -259,7 +259,7 @@ pub fn layout_rows(panels: &[PanelSpec], per_row: usize) -> Vec<Vec<usize>> {
 }
 
 /// Height budget for a panel (SPEC §6.1, `ui.max_height` caps tables).
-/// `layout` carries the width-dependent decisions (fan merge, strip rows).
+/// `layout` carries the CPU strip row count.
 pub fn panel_height(
     spec: &PanelSpec,
     bindings: &Bindings,
@@ -292,8 +292,6 @@ pub fn panel_height(
         }
         PanelKind::Gpu(index) => {
             let show = &cfg.panels.gpu.show;
-            // Fans share the power/clock/voltage info row when `layout` says it
-            // fits; otherwise they get a row of their own.
             let has_fans = shows(show, "fan")
                 && bindings
                     .gpus
@@ -301,20 +299,27 @@ pub fn panel_height(
                     .is_some_and(|gpu| !gpu.fans.is_empty());
             let info =
                 u16::from(shows(show, "power") || shows(show, "clock") || shows(show, "voltage"));
-            let fans = u16::from(has_fans && !(layout.merge_fans && info > 0));
+            let fans = u16::from(has_fans);
             let vram = u16::from(shows(show, "memory"));
+            let shared = u16::from(
+                shows(show, "memory")
+                    && bindings
+                        .gpus
+                        .get(*index)
+                        .is_some_and(|gpu| gpu.shared_used.is_some()),
+            );
             let content = if charts_on {
                 let graphs = u16::from(shows(show, "load") || shows(show, "memory"))
                     + u16::from(shows(show, "temp"));
                 if graphs > 0 {
-                    chart + vram + info + fans
+                    chart + vram + shared + info + fans
                 } else {
-                    vram + info + fans
+                    vram + shared + info + fans
                 }
             } else {
                 let temps = if shows(show, "temp") { 3 } else { 0 };
                 let load = u16::from(shows(show, "load"));
-                temps + load + vram + info + fans
+                temps + load + vram + shared + info + fans
             };
             (content + 2).max(3)
         }
@@ -366,9 +371,9 @@ fn pair_refs(pairs: &[(String, String)]) -> Vec<(&str, String)> {
 fn gpu_info_pairs(gpu: &GpuBindings, snapshot: &Snapshot, cfg: &Config) -> Vec<(String, String)> {
     let show = |slot: &str| shows(&cfg.panels.gpu.show, slot);
     [
-        ("Power", &gpu.power, show("power")),
-        ("Clock", &gpu.clock, show("clock")),
-        ("Voltage", &gpu.voltage, show("voltage")),
+        ("Pwr", &gpu.power, show("power")),
+        ("Clk", &gpu.clock, show("clock")),
+        ("Volt", &gpu.voltage, show("voltage")),
     ]
     .into_iter()
     .filter(|(_, slot, visible)| *visible && slot.is_some())
@@ -376,87 +381,132 @@ fn gpu_info_pairs(gpu: &GpuBindings, snapshot: &Snapshot, cfg: &Config) -> Vec<(
     .collect()
 }
 
-/// CPU bottom metrics strip in the SPEC §6.3 order. Clocks are gated by the
-/// `clock` show slot, power/voltage/current by their own slots.
-fn cpu_strip_pairs(cpu: &CpuBindings, snapshot: &Snapshot, cfg: &Config) -> Vec<(String, String)> {
+/// Two-row CPU metrics template (SPEC §6.3):
+/// row 1 `Pwr · TDC · Volt Core  ……  Clk Avg · Clk Eff`,
+/// row 2 `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory`.
+/// Clock fields are gated by the `clock` show slot, the rest by their own.
+struct CpuStrip {
+    first_left: Vec<(String, String)>,
+    first_right: Vec<(String, String)>,
+    second: Vec<(String, String)>,
+}
+
+impl CpuStrip {
+    /// Rows this instance occupies (0 when every slot is disabled/missing).
+    fn rows(&self) -> u8 {
+        u8::from(!self.first_left.is_empty() || !self.first_right.is_empty())
+            + u8::from(!self.second.is_empty())
+    }
+}
+
+fn cpu_strip(cpu: &CpuBindings, snapshot: &Snapshot, cfg: &Config) -> CpuStrip {
     let show = |slot: &str| shows(&cfg.panels.cpu.show, slot);
-    let mut pairs: Vec<(String, String)> = Vec::new();
-    let mut add = |label: &str, slot: &Option<Slot>| {
-        if slot.is_some() {
-            pairs.push((label.to_string(), slot_display(snapshot, slot)));
-        }
+    let mut strip = CpuStrip {
+        first_left: Vec::new(),
+        first_right: Vec::new(),
+        second: Vec::new(),
     };
-    if show("power") {
-        add("Power", &cpu.power);
+    if show("power") && cpu.power.is_some() {
+        strip
+            .first_left
+            .push(("Pwr".to_string(), slot_display(snapshot, &cpu.power)));
+    }
+    if show("current") && cpu.current.is_some() {
+        strip
+            .first_left
+            .push(("TDC".to_string(), slot_display(snapshot, &cpu.current)));
+    }
+    if show("voltage") && cpu.voltage.is_some() {
+        strip.first_left.push((
+            "Volt Core".to_string(),
+            slot_display(snapshot, &cpu.voltage),
+        ));
     }
     if show("clock") {
-        add("Clock Average", &cpu.clock);
-        add("Clock Effective", &cpu.clock_effective);
-        add("Bus Speed", &cpu.bus_speed);
-        add("Clock Fabric", &cpu.clock_fabric);
-        add("Clock Uncore", &cpu.clock_uncore);
-        add("Clock Memory", &cpu.clock_memory);
+        if cpu.clock.is_some() {
+            strip
+                .first_right
+                .push(("Clk Avg".to_string(), slot_display(snapshot, &cpu.clock)));
+        }
+        if cpu.clock_effective.is_some() {
+            strip.first_right.push((
+                "Clk Eff".to_string(),
+                slot_display(snapshot, &cpu.clock_effective),
+            ));
+        }
+        if cpu.bus_speed.is_some() {
+            strip.second.push((
+                "Bus Speed".to_string(),
+                slot_display(snapshot, &cpu.bus_speed),
+            ));
+        }
+        if cpu.clock_fabric.is_some() {
+            strip.second.push((
+                "Clk Fabric".to_string(),
+                slot_display(snapshot, &cpu.clock_fabric),
+            ));
+        }
+        if cpu.clock_uncore.is_some() {
+            strip.second.push((
+                "Clk Uncore".to_string(),
+                slot_display(snapshot, &cpu.clock_uncore),
+            ));
+        }
+        if cpu.clock_memory.is_some() {
+            strip.second.push((
+                "Clk Memory".to_string(),
+                slot_display(snapshot, &cpu.clock_memory),
+            ));
+        }
     }
-    if show("voltage") {
-        add("Voltage Core", &cpu.voltage);
-    }
-    if show("current") {
-        add("Current TDC", &cpu.current);
-    }
-    pairs
+    strip
 }
 
-/// Does the GPU info row plus the right-aligned fan block fit `inner` columns?
-fn gpu_info_fits(gpu: &GpuBindings, snapshot: &Snapshot, cfg: &Config, inner: u16) -> bool {
-    let info = gpu_info_pairs(gpu, snapshot, cfg);
-    let fans = gpu_fan_pairs(gpu, snapshot);
-    if info.is_empty() || fans.is_empty() {
-        return false;
+/// Draw the fixed two-row CPU strip into `area` (1–2 rows tall).
+fn draw_cpu_strip(frame: &mut Frame, area: Rect, ctx: &PanelCtx, cpu: &CpuBindings) {
+    let strip = cpu_strip(cpu, ctx.snapshot, ctx.cfg);
+    if area.height == 0 || strip.rows() == 0 {
+        return;
     }
-    let info_refs = pair_refs(&info);
-    let fan_refs = pair_refs(&fans);
-    u32::from(widgets::compact_pairs_width(&info_refs))
-        + u32::from(widgets::compact_pairs_width(&fan_refs))
-        + 3
-        <= u32::from(inner)
+    let left = pair_refs(&strip.first_left);
+    let right = pair_refs(&strip.first_right);
+    if !left.is_empty() || !right.is_empty() {
+        let rect = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        };
+        if right.is_empty() {
+            widgets::info_lines_wrapped(frame, rect, &left, ctx.theme, ctx.stale);
+        } else {
+            widgets::info_line_split(frame, rect, &left, &right, ctx.theme, ctx.stale);
+        }
+    }
+    let second = pair_refs(&strip.second);
+    if !second.is_empty() && area.height > 1 {
+        let rect = Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: 1,
+        };
+        widgets::info_lines_wrapped(frame, rect, &second, ctx.theme, ctx.stale);
+    }
 }
 
-/// Per-panel layout decisions (width + current values). Side-by-side GPUs share
-/// one decision so a row always renders consistently.
+/// Per-panel layout decisions (CPU strip height depends on the current values).
 pub fn panel_layouts(
     panels: &[PanelSpec],
     bindings: &Bindings,
     snapshot: &Snapshot,
     cfg: &Config,
-    width: u16,
-    rows: &[Vec<usize>],
 ) -> Vec<PanelLayout> {
     let mut layouts = vec![PanelLayout::default(); panels.len()];
-    for row in rows {
-        let inner = (width / row.len() as u16).saturating_sub(2);
-        let gpu_row = row
-            .iter()
-            .all(|index| matches!(panels[*index].kind, PanelKind::Gpu(_)));
-        if gpu_row {
-            let merge = row.iter().all(|index| match &panels[*index].kind {
-                PanelKind::Gpu(gpu_index) => bindings
-                    .gpus
-                    .get(*gpu_index)
-                    .is_some_and(|gpu| gpu_info_fits(gpu, snapshot, cfg, inner)),
-                _ => false,
-            });
-            for index in row {
-                layouts[*index].merge_fans = merge;
-            }
-        }
-        for index in row {
-            if let PanelKind::Cpu(cpu_index) = &panels[*index].kind {
-                if let Some(cpu) = bindings.cpu.get(*cpu_index) {
-                    let pairs = cpu_strip_pairs(cpu, snapshot, cfg);
-                    let refs = pair_refs(&pairs);
-                    layouts[*index].strip_rows =
-                        widgets::info_lines_needed(&refs, inner).min(3) as u8;
-                }
+    for (index, panel) in panels.iter().enumerate() {
+        if let PanelKind::Cpu(cpu_index) = &panel.kind {
+            if let Some(cpu) = bindings.cpu.get(*cpu_index) {
+                layouts[index].strip_rows = cpu_strip(cpu, snapshot, cfg).rows();
             }
         }
     }
@@ -642,10 +692,22 @@ pub fn draw_panel(frame: &mut Frame, area: Rect, spec: &PanelSpec, ctx: &mut Pan
                 draw_memory(frame, area, &memory, ctx);
             }
         }
-        PanelKind::Thermal => {
-            draw_slot_table(frame, area, "Temperatures", &ctx.bindings.thermal, ctx)
+        PanelKind::Thermal => draw_slot_table(
+            frame,
+            area,
+            "Temperatures",
+            &ctx.bindings.thermal,
+            false,
+            ctx,
+        ),
+        PanelKind::Voltage => {
+            // Per-core rails are hidden unless the panel is zoomed (`enter`).
+            let visible: Vec<Slot> = voltage_table_slots(&ctx.bindings.voltage, ctx.zoomed)
+                .into_iter()
+                .cloned()
+                .collect();
+            draw_slot_table(frame, area, "Voltages", &visible, true, ctx)
         }
-        PanelKind::Voltage => draw_slot_table(frame, area, "Voltages", &ctx.bindings.voltage, ctx),
         PanelKind::Fans => draw_fans(frame, area, ctx),
         PanelKind::Power => draw_power(frame, area, ctx),
         PanelKind::Storage => draw_storage(frame, area, ctx),
@@ -810,9 +872,7 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
         .iter()
         .map(|slot| bindings::slot_sensor(ctx.snapshot, slot).and_then(|sensor| sensor.value))
         .collect();
-    // Bottom metrics strip, SPEC §6.3 order; wraps per `panel_layouts`.
-    let strip_owned = cpu_strip_pairs(cpu, ctx.snapshot, ctx.cfg);
-    let strip = pair_refs(&strip_owned);
+    // Bottom metrics template, SPEC §6.3 (two fixed rows).
     let strip_rows = u16::from(ctx.layout.strip_rows);
     let bars_shown = show("core_loads") && !core_values.is_empty();
 
@@ -866,17 +926,24 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
                     width: inner.width,
                     height: 2,
                 };
-                widgets::bars(frame, bars_rect, &core_values, ctx.theme, ctx.stale);
+                widgets::bars(
+                    frame,
+                    bars_rect,
+                    "Per-Core",
+                    &core_values,
+                    ctx.theme,
+                    ctx.stale,
+                );
                 offset += 2;
             }
-            if strip_rows > 0 && !strip.is_empty() {
+            if strip_rows > 0 {
                 let info_rect = Rect {
                     x: inner.x,
                     y: inner.y + offset,
                     width: inner.width,
                     height: strip_rows,
                 };
-                widgets::info_lines_wrapped(frame, info_rect, &strip, ctx.theme, ctx.stale);
+                draw_cpu_strip(frame, info_rect, ctx, cpu);
             }
             return;
         }
@@ -906,7 +973,7 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
             keep: 5,
         });
     }
-    if strip_rows > 0 && !strip.is_empty() {
+    if strip_rows > 0 {
         plan.push(PlannedRow {
             kind: 3,
             height: strip_rows,
@@ -938,8 +1005,8 @@ fn draw_cpu(frame: &mut Frame, area: Rect, panel_key: &str, cpu: &CpuBindings, c
                 100.0,
                 Metric::Load,
             ),
-            2 => widgets::bars(frame, *area, &core_values, ctx.theme, ctx.stale),
-            _ => widgets::info_lines_wrapped(frame, *area, &strip, ctx.theme, ctx.stale),
+            2 => widgets::bars(frame, *area, "Per-Core", &core_values, ctx.theme, ctx.stale),
+            _ => draw_cpu_strip(frame, *area, ctx, cpu),
         }
     }
 }
@@ -967,22 +1034,14 @@ fn draw_gpu(
     }
 
     let show = |slot: &str| shows(&ctx.cfg.panels.gpu.show, slot);
-    // Info row pairs in display order: Power, Clock, Voltage (SPEC §6.3).
+    // Info row pairs in display order: Pwr, Clk, Volt (SPEC §6.3).
     let info_pairs_owned = gpu_info_pairs(gpu, ctx.snapshot, ctx.cfg);
     let pairs: Vec<(&str, String)> = pair_refs(&info_pairs_owned);
     let vram_shown = show("memory");
-    let fans_shown = show("fan") && !gpu.fans.is_empty();
-    let fan_pairs_owned = if fans_shown {
-        gpu_fan_pairs(gpu, ctx.snapshot)
-    } else {
-        Vec::new()
-    };
-    let fan_pairs: Vec<(&str, String)> = pair_refs(&fan_pairs_owned);
-    // Fans share the info row, right-aligned, when `panel_layouts` says the row
-    // fits; otherwise they keep a row of their own (SPEC §6.3).
-    let merge_fans = fans_shown && !pairs.is_empty() && ctx.layout.merge_fans;
+    let shared_shown = show("memory") && gpu.shared_used.is_some();
     let info_row = !pairs.is_empty();
-    let fan_row = fans_shown && !merge_fans;
+    // Fans always get their own row underneath the metrics (SPEC §6.3).
+    let fan_row = show("fan") && !gpu.fans.is_empty();
 
     if ctx.charts_on() {
         let mut graphs: Vec<(String, Vec<Series>, YMode)> = Vec::new();
@@ -1019,8 +1078,11 @@ fn draw_gpu(
                 graphs.push((format!("{panel_key}:temp"), series, YMode::Auto));
             }
         }
-        if !graphs.is_empty() || vram_shown || info_row || fan_row {
-            let reserved = u16::from(vram_shown) + u16::from(info_row) + u16::from(fan_row);
+        if !graphs.is_empty() || vram_shown || shared_shown || info_row || fan_row {
+            let reserved = u16::from(vram_shown)
+                + u16::from(shared_shown)
+                + u16::from(info_row)
+                + u16::from(fan_row);
             let chart_height = if graphs.is_empty() {
                 0
             } else {
@@ -1054,6 +1116,16 @@ fn draw_gpu(
                 draw_vram_gauge(frame, vram_rect, ctx, gpu);
                 offset += 1;
             }
+            if shared_shown {
+                let shared_rect = Rect {
+                    x: inner.x,
+                    y: inner.y + offset,
+                    width: inner.width,
+                    height: 1,
+                };
+                draw_shared_gauge(frame, shared_rect, ctx, gpu);
+                offset += 1;
+            }
             if info_row {
                 let info_rect = Rect {
                     x: inner.x,
@@ -1061,13 +1133,7 @@ fn draw_gpu(
                     width: inner.width,
                     height: 1,
                 };
-                if merge_fans {
-                    widgets::info_line_split(
-                        frame, info_rect, &pairs, &fan_pairs, ctx.theme, ctx.stale,
-                    );
-                } else {
-                    widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
-                }
+                widgets::info_line(frame, info_rect, &pairs, ctx.theme, ctx.stale);
                 offset += 1;
             }
             if fan_row {
@@ -1085,7 +1151,7 @@ fn draw_gpu(
 
     // Gauge fallback (charts off, or nothing chartable). Shorter panels drop
     // the least important rows first (SPEC §6.1).
-    let mut plan: Vec<PlannedRow> = Vec::new(); // 0 temp, 1 hotspot, 2 mem_temp, 3 load, 4 vram, 5 info, 6 fans, 7 merged info+fans
+    let mut plan: Vec<PlannedRow> = Vec::new(); // 0 temp, 1 hotspot, 2 mem_temp, 3 load, 4 vram, 5 info, 6 fans, 8 shared
     if show("temp") {
         plan.push(PlannedRow {
             kind: 0,
@@ -1119,9 +1185,16 @@ fn draw_gpu(
             keep: 6,
         });
     }
+    if shared_shown {
+        plan.push(PlannedRow {
+            kind: 8,
+            height: 1,
+            keep: 5,
+        });
+    }
     if info_row {
         plan.push(PlannedRow {
-            kind: if merge_fans { 7 } else { 5 },
+            kind: 5,
             height: 1,
             keep: 8,
         });
@@ -1170,7 +1243,7 @@ fn draw_gpu(
             3 => gauge_for_slot(frame, *area, "Load", ctx, &gpu.load, 100.0, Metric::Load),
             4 => draw_vram_gauge(frame, *area, ctx, gpu),
             6 => draw_gpu_fans(frame, *area, ctx, gpu),
-            7 => widgets::info_line_split(frame, *area, &pairs, &fan_pairs, ctx.theme, ctx.stale),
+            8 => draw_shared_gauge(frame, *area, ctx, gpu),
             _ => widgets::info_line(frame, *area, &pairs, ctx.theme, ctx.stale),
         }
     }
@@ -1178,7 +1251,7 @@ fn draw_gpu(
 
 /// One line with every fan on the card: `Fan 1 1205 RPM  Fan 2 1180 RPM`
 /// (single-fan cards keep the compact `Fan` label). Used when the fans do not
-/// fit beside power/clock on the info row.
+/// fit beside `Pwr`/`Clk` on the metrics row.
 fn draw_gpu_fans(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindings) {
     if area.height == 0 || gpu.fans.is_empty() {
         return;
@@ -1222,17 +1295,34 @@ fn fan_label(name: &str, index: usize, multi: bool) -> String {
     }
 }
 
-fn draw_vram_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindings) {
-    let used = slot_value(ctx.snapshot, &gpu.mem_used);
-    let total = slot_value(ctx.snapshot, &gpu.mem_total);
+/// One `label used / total (pct %)` gauge row (VRAM, shared GPU memory).
+/// `total_fallback_mb` covers cards that report no total sensor (NVIDIA shared
+/// memory); it is expressed in MB and converted to the used sensor's unit.
+fn draw_usage_gauge(
+    frame: &mut Frame,
+    area: Rect,
+    label: &str,
+    ctx: &PanelCtx,
+    used_slot: &Option<Slot>,
+    total_slot: &Option<Slot>,
+    total_fallback_mb: Option<f64>,
+) {
+    let used = slot_value(ctx.snapshot, used_slot);
+    let bound_total = slot_value(ctx.snapshot, total_slot).map(|(_, value)| value);
     match used {
         Some((used_sensor, used_value)) => {
+            let total = bound_total.filter(|value| *value > 0.0).or_else(|| {
+                total_fallback_mb.map(|mb| match used_sensor.kind {
+                    SensorKind::SmallData => mb,
+                    _ => mb / 1024.0,
+                })
+            });
             let (display, ratio) = match total {
-                Some((_, total_value)) if total_value > 0.0 => (
+                Some(total_value) => (
                     format::data_ratio(&used_sensor.kind, used_value, total_value),
                     used_value / total_value,
                 ),
-                _ => (format::sensor_value(used_sensor), f64::NAN),
+                None => (format::sensor_value(used_sensor), f64::NAN),
             };
             let fill_ratio = if ratio.is_nan() {
                 0.0
@@ -1245,14 +1335,14 @@ fn draw_vram_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindi
                 ctx.theme.value_style(Metric::GpuMemory, fill_ratio * 100.0)
             };
             widgets::gauge(
-                frame, area, "VRAM", &display, fill_ratio, style, ctx.theme, ctx.stale,
+                frame, area, label, &display, fill_ratio, style, ctx.theme, ctx.stale,
             );
         }
         None => {
             widgets::gauge(
                 frame,
                 area,
-                "VRAM",
+                label,
                 "n/a",
                 0.0,
                 with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
@@ -1261,6 +1351,53 @@ fn draw_vram_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindi
             );
         }
     }
+}
+
+fn draw_vram_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindings) {
+    draw_usage_gauge(
+        frame,
+        area,
+        "VRAM",
+        ctx,
+        &gpu.mem_used,
+        &gpu.mem_total,
+        None,
+    );
+}
+
+/// Windows shared GPU memory (D3D), shown under the VRAM row (SPEC §6.3).
+fn draw_shared_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, gpu: &GpuBindings) {
+    let fallback = if gpu.shared_total.is_none() {
+        estimated_shared_total_mb(ctx, gpu)
+    } else {
+        None
+    };
+    draw_usage_gauge(
+        frame,
+        area,
+        "Shared",
+        ctx,
+        &gpu.shared_used,
+        &gpu.shared_total,
+        fallback,
+    );
+}
+
+/// Estimated shared-memory total when the card reports none (NVIDIA): system
+/// RAM total (`used + available`, GB) minus this card's VRAM total, in MB.
+fn estimated_shared_total_mb(ctx: &PanelCtx, gpu: &GpuBindings) -> Option<f64> {
+    let memory = ctx.bindings.memory.as_ref()?;
+    let (_, used_gb) = slot_value(ctx.snapshot, &memory.used)?;
+    let (_, available_gb) = slot_value(ctx.snapshot, &memory.available)?;
+    let (_, vram_mb) = slot_value(ctx.snapshot, &gpu.mem_total)?;
+    ram_minus_vram_mb(used_gb, available_gb, vram_mb)
+}
+
+/// `(RAM used + available) × 1024 - VRAM total`, in MB; `None` when the
+/// subtraction is not positive (nonsensical readings).
+fn ram_minus_vram_mb(used_gb: f64, available_gb: f64, vram_mb: f64) -> Option<f64> {
+    let shared_mb = (used_gb + available_gb) * 1024.0 - vram_mb;
+    (shared_mb > 0.0).then_some(shared_mb)
 }
 
 // ------------------------------------------------------------------ memory
@@ -1332,7 +1469,7 @@ fn draw_memory(frame: &mut Frame, area: Rect, memory: &MemoryBindings, ctx: &mut
                     width: inner.width,
                     height: 1,
                 };
-                draw_virtual_line(frame, virtual_rect, ctx, memory);
+                draw_virtual_gauge(frame, virtual_rect, ctx, memory);
             }
             return;
         }
@@ -1371,7 +1508,7 @@ fn draw_memory(frame: &mut Frame, area: Rect, memory: &MemoryBindings, ctx: &mut
         match row.kind {
             0 => draw_memory_used_gauge(frame, *area, ctx, memory),
             1 => gauge_for_slot(frame, *area, "Load", ctx, &memory.load, 100.0, Metric::Load),
-            _ => draw_virtual_line(frame, *area, ctx, memory),
+            _ => draw_virtual_gauge(frame, *area, ctx, memory),
         }
     }
 }
@@ -1461,30 +1598,47 @@ fn draw_memory_used_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, memory:
     }
 }
 
-fn draw_virtual_line(frame: &mut Frame, area: Rect, ctx: &PanelCtx, memory: &MemoryBindings) {
+fn draw_virtual_gauge(frame: &mut Frame, area: Rect, ctx: &PanelCtx, memory: &MemoryBindings) {
     let virtual_used = slot_value(ctx.snapshot, &memory.virtual_used);
     let virtual_available = slot_value(ctx.snapshot, &memory.virtual_available);
-    let Some((used_sensor, used_value)) = virtual_used else {
-        return;
-    };
-    let display = match virtual_available {
-        Some((_, available_value)) => {
-            format::data_ratio(&used_sensor.kind, used_value, used_value + available_value)
+    match virtual_used {
+        Some((used_sensor, used_value)) => {
+            let (display, ratio) = match virtual_available {
+                Some((_, available_value)) if used_value + available_value > 0.0 => (
+                    format::data_ratio(&used_sensor.kind, used_value, used_value + available_value),
+                    used_value / (used_value + available_value),
+                ),
+                _ => (format::sensor_value(used_sensor), f64::NAN),
+            };
+            let fill_ratio = if ratio.is_nan() {
+                0.0
+            } else {
+                ratio.clamp(0.0, 1.0)
+            };
+            widgets::gauge(
+                frame,
+                area,
+                "Virtual",
+                &display,
+                fill_ratio,
+                ctx.theme.value_style(Metric::GpuMemory, fill_ratio * 100.0),
+                ctx.theme,
+                ctx.stale,
+            );
         }
-        None => format::sensor_value(used_sensor),
-    };
-    let spans = vec![
-        Span::raw(" "),
-        Span::styled(
-            format!("{} ", widgets::pad_display("Virtual", 8)),
-            with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
-        ),
-        Span::styled(
-            display,
-            with_dim(Style::new().fg(ctx.theme.text).bold(), ctx.stale),
-        ),
-    ];
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+        None => {
+            widgets::gauge(
+                frame,
+                area,
+                "Virtual",
+                "n/a",
+                0.0,
+                with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
+                ctx.theme,
+                ctx.stale,
+            );
+        }
+    }
 }
 
 /// Single-graph helper for ad-hoc views (T5.2).
@@ -1694,7 +1848,7 @@ fn draw_custom_widget(
                     bindings::slot_sensor(ctx.snapshot, slot).and_then(|sensor| sensor.value)
                 })
                 .collect();
-            widgets::bars(frame, area, &values, ctx.theme, ctx.stale);
+            widgets::bars(frame, area, "", &values, ctx.theme, ctx.stale);
         }
         WidgetKind::Sparkline => {
             if let Some(slot) = widget_slot(widget, ctx.snapshot) {
@@ -1835,7 +1989,42 @@ fn sort_table_rows(sort: TableSort, rows: &mut Vec<(Option<f64>, String, Row<'st
     }
 }
 
-fn draw_slot_table(frame: &mut Frame, area: Rect, title: &str, slots: &[Slot], ctx: &PanelCtx) {
+/// Per-core voltage rails (`Core #1 VID`, `CPU Core #2`, …) are hidden from
+/// the voltages table; the zoomed panel (`enter`) reveals them (SPEC §6.3).
+fn is_core_voltage_rail(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let mut rest = lower.as_str();
+    while let Some(index) = rest.find("core #") {
+        let after = &rest[index + "core #".len()..];
+        if after.starts_with(|c: char| c.is_ascii_digit()) {
+            return true;
+        }
+        rest = after;
+    }
+    false
+}
+
+/// Slots shown by the voltages table: per-core rails only in the zoomed detail
+/// view (`enter`), never in the docked table (SPEC §6.3).
+fn voltage_table_slots(slots: &[Slot], zoomed: bool) -> Vec<&Slot> {
+    if zoomed {
+        slots.iter().collect()
+    } else {
+        slots
+            .iter()
+            .filter(|slot| !is_core_voltage_rail(&slot.label))
+            .collect()
+    }
+}
+
+fn draw_slot_table(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    slots: &[Slot],
+    qualify_gpu: bool,
+    ctx: &PanelCtx,
+) {
     let narrow = area.width < 80; // drop Min/Max columns (SPEC §6.1)
     let block = panel_block(title.to_string(), ctx.theme, ctx.stale, ctx.focused);
     let labels: Vec<String> = slots.iter().map(|slot| slot.label.clone()).collect();
@@ -1846,12 +2035,17 @@ fn draw_slot_table(frame: &mut Frame, area: Rect, title: &str, slots: &[Slot], c
         .zip(duplicated)
         .filter_map(|(slot, duplicated)| {
             let sensor = bindings::slot_sensor(ctx.snapshot, slot)?;
-            let hardware_name = ctx
-                .snapshot
-                .hardware(&slot.hardware_id)
+            let hardware = ctx.snapshot.hardware(&slot.hardware_id);
+            let hardware_name = hardware
                 .map(|hardware| hardware.name.clone())
                 .unwrap_or_default();
-            let name = distinct_label(&slot.label, &hardware_name, duplicated);
+            // GPU rails always carry the card name; other tables only when a
+            // label is ambiguous within the table.
+            let name = if qualify_gpu && hardware.is_some_and(|hardware| hardware.kind.is_gpu()) {
+                format!("{} ({hardware_name})", slot.label)
+            } else {
+                distinct_label(&slot.label, &hardware_name, duplicated)
+            };
             let style = with_dim(
                 ctx.theme.sensor_style(&sensor.kind, sensor.value),
                 ctx.stale,
@@ -2171,5 +2365,53 @@ mod tests {
         let cpu = [(0, 1, 10), (1, 1, 11), (2, 2, 5), (3, 1, 8)];
         let fitted: Vec<u8> = fit_plan(rows(&cpu), 4).iter().map(|row| row.kind).collect();
         assert_eq!(fitted, vec![0, 1, 3], "bars dropped, not truncated");
+    }
+
+    #[test]
+    fn core_voltage_rail_detection() {
+        assert!(is_core_voltage_rail("Core #1 VID"));
+        assert!(is_core_voltage_rail("CPU Core #12"));
+        assert!(is_core_voltage_rail("core #3 vid"));
+        assert!(!is_core_voltage_rail("Core (SVI2 TFN)"));
+        assert!(!is_core_voltage_rail("SoC (SVI2 TFN)"));
+        assert!(!is_core_voltage_rail("GPU Core Voltage"));
+        assert!(!is_core_voltage_rail("GPU Core"));
+    }
+
+    #[test]
+    fn voltage_table_hides_core_rails_unless_zoomed() {
+        let slot = |label: &str| Slot {
+            hardware_id: "/amdcpu/0".to_string(),
+            sensor_id: format!("/amdcpu/0/voltage/{label}"),
+            label: label.to_string(),
+        };
+        let slots = vec![
+            slot("Core (SVI2 TFN)"),
+            slot("Core #1 VID"),
+            slot("Core #2 VID"),
+            slot("SoC (SVI2 TFN)"),
+        ];
+        let docked = voltage_table_slots(&slots, false);
+        let labels: Vec<&str> = docked.iter().map(|slot| slot.label.as_str()).collect();
+        assert_eq!(labels, vec!["Core (SVI2 TFN)", "SoC (SVI2 TFN)"]);
+        assert_eq!(
+            voltage_table_slots(&slots, true).len(),
+            4,
+            "the zoomed detail view shows every rail"
+        );
+    }
+
+    #[test]
+    fn shared_total_is_estimated_as_ram_minus_vram() {
+        let estimate = ram_minus_vram_mb(26.9, 101.0, 24_576.0).expect("estimate");
+        assert!(
+            (estimate - 106_393.6).abs() < 0.01,
+            "127.9 GB RAM minus 24 GB VRAM, in MB: {estimate}"
+        );
+        assert_eq!(
+            ram_minus_vram_mb(1.0, 2.0, 5_000.0),
+            None,
+            "a VRAM total larger than RAM yields no estimate"
+        );
     }
 }

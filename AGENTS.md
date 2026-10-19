@@ -2,20 +2,21 @@
 
 ## What this repo is
 
-- **Docs-only, pre-implementation.** The repo holds only markdown docs — `README.md` (public),
-  `SPEC.md` (frozen design, v1.0), `PLAN.md` (execution plan), `AGENTS.md`, `CHANGELOG.md`. Verify
-  with a directory listing / `git ls-files` before assuming code exists. No crate, CI, schema or
-  example config yet.
+- **Rust crate + docs.** `src/` holds the ratatui TUI, `tests/` the fixture/snapshot contract;
+  `SPEC.md` (frozen design, v1.0), `PLAN.md` (execution plan), `README.md` (public) and
+  `CHANGELOG.md` document it. v0.3.0 is released (2026-10-19). Verify with `git ls-files` before
+  assuming a file or feature is missing.
 - **Git history is live and intentional:** one `initial commit` on `main`, tracking
   `origin` = `https://github.com/baroseiro/lhm-tui.git`. Commit forward; don't re-init, rewrite or
   orphan that history. PR/commit expectations are in PLAN §0 (one PR per task, CHANGELOG updates).
-- **Reading order before any work:** `SPEC.md` in full, then `PLAN.md`. Plan phases P0–P6 map 1:1
-  to SPEC §11 milestones M0–M6; tasks (`T<phase>.<n>`) are in dependency order, and `SPEC.md` /
-  `PLAN.md` must stay consistent — update both together.
-- **Roadmap files**: the P0–P6 scaffolding is in place (LICENSE, `lhm-tui.example.json`,
+- **Reading order before any work:** `SPEC.md` in full, then `PLAN.md`. Plan phases P0–P7 map to
+  SPEC §11 milestones M0–M8 (P7 covers M7/M8); tasks (`T<phase>.<n>`) are in dependency order, and
+  `SPEC.md` / `PLAN.md` must stay consistent — update both together.
+- **Roadmap files**: the P0–P7 scaffolding is in place (LICENSE, `lhm-tui.example.json`,
   `schema/`, `docs/`, `.github/`). UI captures (`docs/preview.png`, `docs/demo.gif`) are generated
-  from `docs/demo.tape` with VHS — regenerate them when the layout changes noticeably; never "fix"
-  a doc by deleting references to files that exist.
+  from `docs/demo.tape` with VHS — regenerate them when the layout changes noticeably (the version
+  header in them comes from `Cargo.toml`, so regenerate after a bump); never "fix" a doc by
+  deleting references to files that exist.
 
 ## Sources of truth & edit order
 
@@ -29,8 +30,7 @@ Precedence when things conflict: **executable config/scripts > `SPEC.md` > `PLAN
    `lhm-tui.example.json` must be strict JSON — no comments, no trailing commas (SPEC §8.1).
    Don't copy the comments, and don't "clean up" the SPEC example.
 4. `OWNER` placeholders were replaced with **`baroseiro`** in `README.md` and in the schema `$id`
-   (T6.1); the README screenshot/animation placeholders remain (comments mark what to add post-tag).
-   Don't reintroduce `OWNER`.
+   (T6.1); badges and captures are in place. Don't reintroduce `OWNER`.
 5. ASCII mockups in `SPEC.md` §6.1 / `README.md` are illustrative. TestBackend snapshots (T5.6)
    are the rendering source of truth.
 
@@ -73,15 +73,15 @@ Precedence when things conflict: **executable config/scripts > `SPEC.md` > `PLAN
   new widget ⇒ `TestBackend` + `insta` snapshot (SPEC §12).
 - CI never talks to a real LHM: integration tests use a mock server (SPEC §12.2). `--dump -` output
   has a golden test — treat it as public API.
-- No CI exists yet; it lands first in T0.1 (matrix: windows + ubuntu + macos, running
-  `fmt --check`, `clippy -D warnings`, `test`, `build --release`). Manual QA matrix and soak tests
-  (SPEC §12.4, PLAN T5.7) are release gates, not CI jobs.
+- CI runs on windows + ubuntu + macos: `fmt --check`, `clippy -D warnings`, `test` and
+  `build --release`. Manual QA matrix and soak tests (SPEC §12.4, PLAN T5.7) are release gates,
+  not CI jobs.
 - Per-PR verification order is PLAN §5: `fmt → clippy → test → targeted test files → manual smoke`.
 
 ## Commands
 
-- Nothing is runnable yet (no `Cargo.toml`). After T0.1 scaffolds the crate: `cargo run` (against a
-  real LHM at `http://localhost:8085`), `cargo run -- --probe`, `cargo test`,
-  `cargo clippy --all-targets -- -D warnings`.
+- `cargo run` (against a real LHM at `http://localhost:8085`), `cargo run -- --probe`,
+  `cargo test`, `cargo clippy --all-targets -- -D warnings`; `cargo +1.89 check --all-targets` is
+  the MSRV gate. Regenerate captures with `vhs docs/demo.tape` after layout or version changes.
 - Prefer `--probe` as the first diagnostic for anything connection/parsing related; it prints LHM
   version, sensor counts and the sensor-binding report (SPEC §9).

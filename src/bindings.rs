@@ -51,6 +51,10 @@ pub struct GpuBindings {
     pub mem_load: Option<Slot>,
     pub mem_used: Option<Slot>,
     pub mem_total: Option<Slot>,
+    /// Windows "shared GPU memory" (D3D): used / total; total is absent on
+    /// NVIDIA cards, in which case the gauge shows the used value only.
+    pub shared_used: Option<Slot>,
+    pub shared_total: Option<Slot>,
     pub temp: Option<Slot>,
     pub hotspot: Option<Slot>,
     /// GPU memory temperature: NVIDIA "GPU Memory Junction", AMD "GPU Memory".
@@ -416,6 +420,34 @@ fn gpu_bindings(
             .or_else(|| find_contains(hardware, &[SensorKind::Data, SensorKind::SmallData], "Free"))
         })
     });
+    let shared_used = find_slot(snapshot, hardware, overrides, &key("shared_used"), || {
+        find_named_multi(
+            hardware,
+            &[SensorKind::Data, SensorKind::SmallData],
+            &["D3D Shared Memory Used", "Shared Memory Used"],
+        )
+        .or_else(|| {
+            hardware.sensors().find(|sensor| {
+                matches!(sensor.kind, SensorKind::Data | SensorKind::SmallData)
+                    && sensor.name.contains("Shared")
+                    && sensor.name.contains("Used")
+            })
+        })
+    });
+    let shared_total = find_slot(snapshot, hardware, overrides, &key("shared_total"), || {
+        find_named_multi(
+            hardware,
+            &[SensorKind::Data, SensorKind::SmallData],
+            &["D3D Shared Memory Total", "Shared Memory Total"],
+        )
+        .or_else(|| {
+            hardware.sensors().find(|sensor| {
+                matches!(sensor.kind, SensorKind::Data | SensorKind::SmallData)
+                    && sensor.name.contains("Shared")
+                    && sensor.name.contains("Total")
+            })
+        })
+    });
     let temp = find_slot(snapshot, hardware, overrides, &key("temp"), || {
         find_named(
             hardware,
@@ -493,6 +525,8 @@ fn gpu_bindings(
         mem_load,
         mem_used,
         mem_total,
+        shared_used,
+        shared_total,
         temp,
         hotspot,
         mem_temp,

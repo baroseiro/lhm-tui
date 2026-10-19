@@ -142,6 +142,22 @@ fn live_fixture_dual_gpu_machine() {
         slot_label(&snapshot, &amd.mem_used).as_deref(),
         Some("GPU Memory Used")
     );
+    assert_eq!(
+        slot_label(&snapshot, &nvidia.shared_used).as_deref(),
+        Some("D3D Shared Memory Used")
+    );
+    assert!(
+        nvidia.shared_total.is_none(),
+        "NVIDIA does not report a shared-memory total"
+    );
+    assert_eq!(
+        slot_label(&snapshot, &amd.shared_used).as_deref(),
+        Some("D3D Shared Memory Used")
+    );
+    assert_eq!(
+        slot_label(&snapshot, &amd.shared_total).as_deref(),
+        Some("D3D Shared Memory Total")
+    );
 
     // Memory: "Total Memory" primary, "Virtual Memory" as virtual (both kind Memory).
     let memory = bindings.memory.as_ref().expect("memory");
@@ -333,10 +349,7 @@ fn panel_list_expands_layout() {
         .find(|panel| panel.id == "cpu:0")
         .expect("cpu");
     // The live strip needs two rows (nine metrics) at typical widths.
-    let strip = presets::PanelLayout {
-        merge_fans: false,
-        strip_rows: 2,
-    };
+    let strip = presets::PanelLayout { strip_rows: 2 };
     assert_eq!(
         presets::panel_height(&cpu, &live_bindings, &cfg, true, strip),
         (cfg.charts.height + 6) as u16
@@ -353,10 +366,17 @@ fn voltage_and_cpu_metric_slots_bind_on_the_live_fixture() {
     let live = snapshot("lhm-live-5900xt.json");
     let bindings = bindings::resolve(&live, &cfg.panels);
 
+    assert_eq!(
+        bindings.voltage.len(),
+        20,
+        "all voltage sensors are bound; the table hides per-core rails"
+    );
     assert!(
-        bindings.voltage.len() >= 2,
-        "CPU + GPU voltage sensors table: {}",
-        bindings.voltage.len()
+        bindings
+            .voltage
+            .iter()
+            .any(|slot| slot.label.contains("Core #")),
+        "per-core rails remain available for the zoomed detail view"
     );
 
     let cpu = &bindings.cpu[0];
@@ -381,36 +401,24 @@ fn voltage_and_cpu_metric_slots_bind_on_the_live_fixture() {
 }
 
 #[test]
-fn gpu_fan_row_merges_only_when_it_fits() {
+fn gpu_panels_keep_a_dedicated_fan_row() {
     let cfg = Config::default();
     let live = snapshot("lhm-live-5900xt.json");
     let bindings = bindings::resolve(&live, &cfg.panels);
     let panels = presets::panel_list(&cfg, &bindings, Default::default());
-    let rows = presets::layout_rows(&panels, 2);
 
-    // The merge decision and the CPU strip row count are shared with the
-    // height model (`panel_layouts`).
-    let layouts = presets::panel_layouts(&panels, &bindings, &live, &cfg, 149, &rows);
-    assert!(layouts[1].merge_fans, "RTX 3090 row merges at 149 columns");
-    assert!(layouts[2].merge_fans, "AMD row merges at 149 columns");
+    // The CPU strip row count is shared with the height model.
+    let layouts = presets::panel_layouts(&panels, &bindings, &live, &cfg);
     assert_eq!(layouts[0].strip_rows, 2, "CPU strip wraps onto two rows");
 
     let gpu = panels
         .iter()
         .find(|panel| panel.id == "gpu:0")
         .expect("gpu:0");
-    let merged = presets::PanelLayout {
-        merge_fans: true,
-        strip_rows: 0,
-    };
-    let unmerged = presets::PanelLayout::default();
     assert_eq!(
-        presets::panel_height(gpu, &bindings, &cfg, false, unmerged),
-        9
-    );
-    assert_eq!(
-        presets::panel_height(gpu, &bindings, &cfg, false, merged),
-        8
+        presets::panel_height(gpu, &bindings, &cfg, false, presets::PanelLayout::default()),
+        10,
+        "temp/hotspot/mem-temp, load, VRAM, Shared, metrics and fan rows"
     );
 }
 
@@ -433,12 +441,9 @@ fn layout_rows_and_auto_height() {
     // two-row metrics strip; the GPU panels keep the fan row here.
     let rows = presets::layout_rows(&panels, 2);
     let mut layouts = vec![presets::PanelLayout::default(); panels.len()];
-    layouts[0] = presets::PanelLayout {
-        merge_fans: false,
-        strip_rows: 2,
-    };
+    layouts[0] = presets::PanelLayout { strip_rows: 2 };
     let heights = presets::fit_heights(&panels, &bindings, &cfg, 50, true, &rows, &layouts);
-    let base_total = cfg.charts.height + 6 + (cfg.charts.height + 5) + (cfg.charts.height + 4);
+    let base_total = cfg.charts.height + 6 + (cfg.charts.height + 6) + (cfg.charts.height + 4);
     let row_total: u32 = rows.iter().map(|row| u32::from(heights[row[0]])).sum();
     assert_eq!(row_total, 50, "fills the available height: {heights:?}");
     assert!(row_total > base_total);
@@ -449,8 +454,8 @@ fn layout_rows_and_auto_height() {
     assert_eq!(heights[0], 6 + 4, "cpu at minimum chart height");
     assert_eq!(
         heights[1],
-        5 + 4,
-        "gpu at minimum chart height (fans row fixed)"
+        6 + 4,
+        "gpu at minimum chart height (fan + shared rows fixed)"
     );
     assert_eq!(heights[3], 4 + 4, "memory at minimum chart height");
 

@@ -3,8 +3,8 @@
 |              |                                                                                    |
 | ------------ | ---------------------------------------------------------------------------------- |
 | Derived from | [SPEC.md](SPEC.md) v1.0                                                             |
-| Goal         | Ship **v0.1.0** — terminal dashboard for LibreHardwareMonitor (monitoring + the GPU fan anti-stop floor, on by default) |
-| Phases       | P0–P6, mapped 1:1 to SPEC §11 milestones M0–M6                                      |
+| Goal         | Ship **v0.3.0** - terminal dashboard for LibreHardwareMonitor (monitoring, GPU fan anti-stop floor, indicators and UX refinements) |
+| Phases       | P0-P7, mapped to SPEC §11 milestones M0-M8 (P7 covers M7/M8)                        |
 | Effort       | ≈ 10–14 ideal days for one focused developer (see §2)                               |
 | Tracking     | Each task `T<phase>.<n>` becomes a GitHub issue labeled `phase-<n>`, closed by its PR |
 
@@ -323,7 +323,7 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 
 ### Phase P6 — Release v0.1.0 (SPEC §11 M6, §14)
 
-> **Scope note (v0.1.0):** T6.4 and T6.5 are **deferred to v0.1.x** — v0.1.0 ships via GitHub
+> **Scope note:** T6.4 and T6.5 are **deferred to v0.3.x** — v0.1.0 shipped via GitHub
 > Releases (archives + installers from `dist`) plus `cargo install --git`; winget, scoop and
 > crates.io follow in a patch release once a clean-VM run of the remaining tasks exists.
 
@@ -349,13 +349,13 @@ powershell installers), generated `.github/workflows/release.yml`, `[profile.dis
 `dist build --target x86_64-pc-windows-msvc` artifact is smoke-tested here. Tagging + CI run is
 the remaining step (T6.6).
 
-#### T6.4 — Manifests: winget + scoop — **deferred to v0.1.x**
+#### T6.4 — Manifests: winget + scoop — **deferred to v0.3.x**
 **Goal:** winget manifest PR (`baroseiro.lhm-tui`) and scoop bucket entry; both install the windows-msvc binary.
 **Deferred because:** both channels need the public release to point at (T6.6) and clean-VM
 verification; keeping them out of the v0.1.0 critical path. No code impact — the artifacts they
 need are produced by T6.3.
 
-#### T6.5 — crates.io publish — **deferred to v0.1.x**
+#### T6.5 — crates.io publish — **deferred to v0.3.x**
 **Goal:** `cargo publish --dry-run` clean (README/SPEC not required in package; ensure `exclude` list sane), then publish `0.1.0`; verify `cargo install lhm-tui`.
 **Deferred because:** publishing is irreversible-ish for a name + version; wanted after the
 GitHub-Release install path is proven. `cargo install --git https://github.com/baroseiro/lhm-tui`
@@ -375,7 +375,7 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 
 ---
 
-### Phase P7 — Voltage & clock indicators (v0.2.0, SPEC §11 M7)
+### Phase P7 — Indicators & refinements (v0.2.0–v0.3.0, SPEC §11 M7/M8)
 
 #### T7.1 — Voltages table panel
 **Goal:** New `voltage` preset: a sortable table of every `Voltage` sensor across all hardware (`bindings.voltage: Vec<Slot>`), hidden by default, toggled with `v` (`keys.toggle_voltage`), also showable by adding `"voltage"` to `ui.layout`. `panels.voltage.enabled` gates it like every preset.
@@ -406,6 +406,16 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 **Goal:** Version bump `0.1.0` → `0.2.0`; promote `CHANGELOG.md` `[Unreleased]` → `[0.2.0]`; roadmap renumber (control → v0.3); `docs/release-notes-v0.2.0.md`; refresh `docs/demo.tape` captures if the layout moved noticeably; tag `v0.2.0` and verify the release workflow + published artifacts like v0.1.0.
 **Done when:** Release published with all six archives, installers and checksums; README/notes updated; tag verified against the released commit.
 **Shipped:** v0.2.0 released 2026-10-19 (tag on `54e2776`); the release workflow built all six targets + installers, every archive verified against `sha256.sum`, the Windows x64 artifact was re-downloaded and smoke-tested (`--version` 0.2.0, live `--probe`), and the GitHub Release body was set from `docs/release-notes-v0.2.0.md`.
+
+#### T7.6 — Post-v0.2.0 UX refinements
+**Goal:** Feedback round on the new indicators: CPU strip becomes the fixed two-row template (`Pwr · TDC · Volt Core` + right-aligned `Clk Avg · Clk Eff`; `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory`) and the per-core bars get a `Per-Core` label plus spacing; GPU panels gain a `Shared` GPU-memory gauge under `VRAM` (`gpu.<n>.shared_used` / `shared_total`, total estimated from RAM minus VRAM when missing); the GPU metrics row uses `Pwr · Clk · Volt` with fans on their own row beneath; `Virtual` becomes a gauge like `Used`; used/virtual memory and GPU VRAM show `used / total (pct %)`; GPU voltage rails carry the card name; per-core rails stay hidden in the docked voltages table but appear in the zoomed detail view (`enter`); `rust-analyzer` added to the pinned toolchain components.
+**Files:** `src/ui/presets.rs`, `src/ui/widgets.rs`, `src/ui/format.rs`, `src/ui/mod.rs` (`PanelCtx.zoomed`), `src/bindings.rs`, `src/config.rs` (override slots), `rust-toolchain.toml`, tests/snapshots, SPEC §5.2/§6.3/§6.5, README, CHANGELOG.
+**Done when:** Frames at 160/120 show the template rows, the `Per-Core` label, the `Shared` gauge (with the RAM-minus-VRAM estimate when missing), the dedicated fan row and percentage readouts; voltage table snapshots show GPU names and hide per-core rails; zoomed voltage view includes them; docs/captures regenerated.
+**Shipped:** `GpuBindings.shared_used/shared_total` with the RAM-minus-VRAM estimate, dedicated fan row (the fan-merge logic was removed), `Per-Core` label and spacing in `widgets::bars`, short metric labels, fixed two-row CPU template, percentage memory readouts and zoomed-only core rails; snapshots and README captures regenerated.
+
+#### T7.7 — Release v0.3.0
+**Goal:** Version bump `0.2.0` → `0.3.0`; promote `CHANGELOG.md` `[Unreleased]` → `[0.3.0]`; roadmap renumber (control → v0.4, recording → v0.5, multi-host → v0.6); `docs/release-notes-v0.3.0.md`; refresh `docs/demo.tape` captures with the new version header; tag `v0.3.0` and verify the release workflow + published artifacts like v0.2.0.
+**Done when:** Release published with all six archives, installers and checksums; README/notes updated; tag verified against the released commit.
 
 ---
 
@@ -471,7 +481,7 @@ Parallel tracks once the boundary task below exists:
 | R4 braille on legacy conhost          | T3.5 fallback + snapshot modes         | end of P3        |
 | R6 password handling                  | T0.3 (sources) + T4.6 (redaction)      | end of P4        |
 | R7 conhost general                    | T5.4 + T5.7 manual matrix              | end of P5        |
-| R5 mDNS discovery                     | intentionally deferred to v0.3         | n/a              |
+| R5 mDNS discovery                     | intentionally deferred to v0.6         | n/a              |
 
 ## 9. Decisions to settle during implementation (SPEC open points)
 

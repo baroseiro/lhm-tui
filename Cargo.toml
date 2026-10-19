@@ -1,6 +1,6 @@
 [package]
 name = "lhm-tui"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.89"
 description = "Terminal dashboard for LibreHardwareMonitor: live CPU/GPU temperatures, load, memory and charts over its web API."

@@ -16,15 +16,17 @@
 `lhm-tui` talks to LibreHardwareMonitor's built-in **Remote Web Server** over plain HTTP and renders
 live, color-thresholded panels in your terminal:
 
-- **CPU** — temperature & total load gauges, per-core utilization bars, and a metrics strip with
-  `Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric · Clock Uncore · Clock Memory
-  · Voltage Core · Current TDC` (`c` or `--charts` adds live graphs)
-- **GPU** — one panel per GPU (NVIDIA/AMD/Intel, multi-GPU supported): core load, **VRAM usage**,
-  hotspot temperature, power draw, clock & voltage, and every fan on the card (right-aligned on the
-  same row)
-- **Memory** — used/available gauges, page file and virtual memory
+- **CPU** — temperature & total load gauges, `Per-Core`-labelled utilization bars, and a fixed
+  two-row metrics strip (`Pwr · TDC · Volt Core` with `Clk Avg · Clk Eff` right-aligned; `Bus Speed ·
+  Clk Fabric · Clk Uncore · Clk Memory`) (`c` or `--charts` adds live graphs)
+- **GPU** — one panel per GPU (NVIDIA/AMD/Intel, multi-GPU supported): core load, **VRAM usage**
+  (`599 / 24576 MB (2%)`) with **shared GPU memory** (`Shared`) right below it (estimated from RAM
+  minus VRAM when the card reports no total), hotspot temperature, power draw, clock & voltage, and
+  every fan on the card on its own row underneath
+- **Memory** — used and virtual-memory gauges with `used / total (pct %)` readouts, page file info
 - **Temperatures** — sortable table of every thermal sensor in the tree, colored by thresholds
-- **Voltages** — sortable table of every voltage sensor (`v`, hidden by default)
+- **Voltages** — sortable table of every voltage rail (`v`, hidden by default); GPU rails carry the
+  card name, per-core rails appear when the panel is zoomed (`enter`)
 - Plus presets for **fans**, **power**, **storage** and **network**
 - **GPU fan anti-stop floor** (on by default) — keeps NVIDIA/AMD fan curves from parking the fans
   at zero-RPM when idle: a 45 % floor while the GPU is idle, automatic driver control the moment
@@ -37,15 +39,17 @@ live, color-thresholded panels in your terminal:
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
 Windows machine on your network / over SSH — through a small JSON config file.
 
-> **Project status:** v0.1.0 — first public release. The full design — architecture, config
+> **Project status:** v0.3.0 — dashboard refinements: shared GPU memory, a dedicated fan row,
+> labelled per-core bars and compact metric labels. The full design — architecture, config
 > schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
 
 ## Demo
 
 A ~15-second loop on the reference machine (RTX 3090 + RX 7900 XTX): the default gauges view with
-the new CPU metrics strip, `c` switching to live charts, `t` opening the temperatures table, `v`
-opening the voltages table, `?` showing the key map, then a clean quit. Note the status line at the
-bottom — the fan anti-stop floor holding the 3090 at 45 % while idle.
+shared GPU memory, `Per-Core` bars and the two-row CPU strip, `c` switching to live charts, `t`
+opening the temperatures table, `v` opening the voltages table, `?` showing the key map, then a
+clean quit. Note the status line at the bottom — the fan anti-stop floor holding the 3090 at 45 %
+while idle.
 
 ![lhm-tui demo: gauges, charts toggle, temperatures table, help overlay](docs/demo.gif)
 
@@ -80,7 +84,7 @@ LHM).*
    cargo install --git https://github.com/baroseiro/lhm-tui
    ```
 
-   *winget, scoop and crates.io (`cargo install lhm-tui`) are planned for a v0.1.x follow-up.*
+   *winget, scoop and crates.io (`cargo install lhm-tui`) are planned for a v0.3.x follow-up.*
 3. **Run it:**
 
    ```console
@@ -231,12 +235,14 @@ Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itse
   floor, installers via GitHub Releases
 - **v0.1.x** — README captures, public repo, CI housekeeping (shipped alongside v0.2.0)
 - **v0.2.0** — voltage & clock indicators: voltages table (`v`), GPU voltage on the metrics row,
-  the CPU metrics strip *(current)*
-- **v0.2.x** — winget + scoop manifests, crates.io publish
-- **v0.3.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
-- **v0.3.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
-- **v0.4.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
-- **v0.5.0** — multi-host tabs, user theme files
+  the CPU metrics strip
+- **v0.3.0** — dashboard refinements: shared GPU memory row with a RAM-minus-VRAM fallback,
+  dedicated GPU fan row, `Per-Core` bars, short metric labels, two-row CPU template, percentage
+  memory readouts, better voltage names *(current)*
+- **v0.3.x** — winget + scoop manifests, crates.io publish
+- **v0.4.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
+- **v0.5.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
+- **v0.6.0** — multi-host tabs, user theme files
 - Later — template-based custom panels, plugin scripting
 
 See [SPEC.md](SPEC.md) for the full design and milestone acceptance criteria.

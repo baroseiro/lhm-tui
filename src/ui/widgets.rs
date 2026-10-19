@@ -199,14 +199,9 @@ fn compact_pair_rows(pairs: &[(&str, String)], width: u16) -> Vec<std::ops::Rang
     rows
 }
 
-/// Rows a wrapped pair strip needs at `width` (the height model uses this;
-/// the renderer uses the same split so they never disagree).
-pub fn info_lines_needed(pairs: &[(&str, String)], width: u16) -> u16 {
-    compact_pair_rows(pairs, width).len() as u16
-}
-
-/// `label value` pairs wrapped onto consecutive rows of `area` (the CPU
-/// metrics strip, SPEC §6.3). Renders at most `area.height` rows.
+/// `label value` pairs wrapped onto consecutive rows of `area` (compact
+/// rendering; used by the CPU metrics strip rows). Renders at most
+/// `area.height` rows.
 pub fn info_lines_wrapped(
     frame: &mut Frame,
     area: Rect,
@@ -228,7 +223,7 @@ pub fn info_lines_wrapped(
 }
 
 /// `info_line` with a second block pinned to the right edge of the same row
-/// (GPU fans beside power/clock). Both blocks render compactly; callers must
+/// (GPU fans beside the metrics row). Both blocks render compactly; callers must
 /// size the row with [`compact_pairs_width`] and fall back to
 /// [`info_line`] when the two blocks plus a gap column do not fit.
 pub fn info_line_split(
@@ -257,27 +252,48 @@ pub fn info_line_split(
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
-/// Vertical core bars (SPEC §6.2 `bars`), one block glyph per value.
-pub fn bars(frame: &mut Frame, area: Rect, values: &[Option<f64>], theme: &Theme, dim: bool) {
+/// Per-core bar row (SPEC §6.2 `bars`): one block glyph per value, separated
+/// by a space, with an optional muted label in the gauge label column.
+pub fn bars(
+    frame: &mut Frame,
+    area: Rect,
+    label: &str,
+    values: &[Option<f64>],
+    theme: &Theme,
+    dim: bool,
+) {
     if area.width == 0 || area.height == 0 || values.is_empty() {
         return;
     }
-    let per_row = (area.width as usize).saturating_sub(1).max(1);
+    // Label column matches the gauges; every bar keeps one separating space.
+    let show_label = !label.is_empty();
+    let prefix_width = if show_label { LABEL_WIDTH + 2 } else { 0 };
+    let per_row = usize::from(area.width.saturating_sub(prefix_width) / 2).max(1);
     let rows = values.len().div_ceil(per_row).min(area.height as usize);
     let mut lines: Vec<Line> = Vec::new();
     for row in 0..rows {
         let slice = &values[row * per_row..((row + 1) * per_row).min(values.len())];
-        let mut spans: Vec<Span> = vec![Span::raw(" ")];
+        let mut spans: Vec<Span> = Vec::new();
+        if show_label {
+            if row == 0 {
+                spans.push(Span::styled(
+                    format!(" {} ", pad_display(label, LABEL_WIDTH)),
+                    with_dim(Style::new().fg(theme.muted), dim),
+                ));
+            } else {
+                spans.push(Span::raw(" ".repeat(usize::from(prefix_width))));
+            }
+        }
         spans.extend(slice.iter().map(|value| match value {
             Some(v) => {
                 let level = ((v.clamp(0.0, 100.0) / 100.0) * 8.0).round() as usize;
                 Span::styled(
-                    BLOCKS[level.min(8)].to_string(),
+                    format!("{} ", BLOCKS[level.min(8)]),
                     with_dim(theme.value_style(Metric::Load, *v), dim),
                 )
             }
             None => Span::styled(
-                BLOCKS[0].to_string(),
+                format!("{} ", BLOCKS[0]),
                 with_dim(Style::new().fg(theme.muted), dim),
             ),
         }));

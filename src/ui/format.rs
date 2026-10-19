@@ -49,11 +49,17 @@ pub fn small_data_mb(mb: f64) -> String {
     }
 }
 
-/// `"20.1 / 32.0 GB"` (used / total in the kind's native unit).
+/// `"20.1 / 32.0 GB (63%)"` / `"8619 / 24564 MB (35%)"`: used / total in the
+/// kind's native unit plus the used percentage (SPEC §6.5).
 pub fn data_ratio(kind: &SensorKind, used: f64, total: f64) -> String {
+    let percent = if total > 0.0 {
+        used / total * 100.0
+    } else {
+        0.0
+    };
     match kind {
-        SensorKind::SmallData => format!("{used:.0} / {total:.0} MB"),
-        _ => format!("{used:.1} / {total:.1} GB"),
+        SensorKind::SmallData => format!("{used:.0} / {total:.0} MB ({percent:.0}%)"),
+        _ => format!("{used:.1} / {total:.1} GB ({percent:.0}%)"),
     }
 }
 
@@ -151,10 +157,13 @@ mod tests {
         assert_eq!(data_gb(20.1), "20.1 GB");
         assert_eq!(small_data_mb(8619.9), "8.4 GB");
         assert_eq!(small_data_mb(512.0), "512 MB");
-        assert_eq!(data_ratio(&SensorKind::Data, 20.1, 32.0), "20.1 / 32.0 GB");
+        assert_eq!(
+            data_ratio(&SensorKind::Data, 20.1, 32.0),
+            "20.1 / 32.0 GB (63%)"
+        );
         assert_eq!(
             data_ratio(&SensorKind::SmallData, 8619.0, 24564.0),
-            "8619 / 24564 MB"
+            "8619 / 24564 MB (35%)"
         );
         assert_eq!(throughput_bps(12_900_000.0), "12.3 MB/s");
         assert_eq!(throughput_bps(980.0), "980 B/s");

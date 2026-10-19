@@ -58,17 +58,10 @@ fn draw_preset(
     scroll: u16,
     ascii: bool,
 ) {
-    let layout = presets::panel_layouts(
-        std::slice::from_ref(spec),
-        bindings,
-        snapshot,
-        cfg,
-        area.width,
-        &[vec![0]],
-    )
-    .first()
-    .copied()
-    .unwrap_or_default();
+    let layout = presets::panel_layouts(std::slice::from_ref(spec), bindings, snapshot, cfg)
+        .first()
+        .copied()
+        .unwrap_or_default();
     let mut ctx = PanelCtx {
         snapshot,
         bindings,
@@ -86,6 +79,7 @@ fn draw_preset(
         window_label: "5m".to_string(),
         now: Instant::now(),
         layout,
+        zoomed: false,
     };
     presets::draw_panel(frame, area, spec, &mut ctx);
 }
@@ -305,7 +299,7 @@ fn bars_snapshot() {
         Some(42.0),
     ];
     let out = render(40, 2, |frame| {
-        widgets::bars(frame, frame.area(), &values, &theme, false);
+        widgets::bars(frame, frame.area(), "Per-Core", &values, &theme, false);
     });
     insta::assert_snapshot!(out);
 }

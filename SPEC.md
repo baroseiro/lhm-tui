@@ -5,7 +5,7 @@
 |                  |                                                                          |
 | ---------------- | ------------------------------------------------------------------------ |
 | Status           | Draft v1.0                                                               |
-| Target release   | v0.1.0 - monitoring + GPU fan anti-stop floor                             |
+| Target release   | v0.3.0 - monitoring + dashboard refinements                              |
 | Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`      |
 | Data source      | LHM built-in **Remote Web Server** (`GET /data.json`), polling-based      |
 | Platforms        | TUI runs on Windows / Linux / macOS; the LHM host is Windows by definition |
@@ -53,7 +53,8 @@ no good way to watch live sensor data and history.
 and renders btop-style panels and live charts:
 
 - CPU total load graph with per-core bars, package temperature, clocks and power
-- One panel per GPU (multi-GPU aware): load, VRAM usage, core/hotspot temperature, power, fans
+- One panel per GPU (multi-GPU aware): load, VRAM + shared-memory usage, core/hotspot temperature,
+  power, fans
 - Memory usage (physical + virtual) with history graph
 - Sortable temperature table for every thermal sensor in the tree, plus fans, power and
   storage/network presets
@@ -77,10 +78,10 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 
 | #   | Non-goal                                                                    |
 | --- | --------------------------------------------------------------------------- |
-| N1  | General sensor writes (fan/pump control UI, arbitrary `Sensor?action=Set`) - planned v0.2. The single exception is the on-by-default fan anti-stop floor (§7.5), which only ever writes GPU fan `Control` sensors and only ever restores automatic control; disable with `f` or `fan_guard.enabled: false` |
+| N1  | General sensor writes (fan/pump control UI, arbitrary `Sensor?action=Set`) - planned v0.4. The single exception is the on-by-default fan anti-stop floor (§7.5), which only ever writes GPU fan `Control` sensors and only ever restores automatic control; disable with `f` or `fan_guard.enabled: false` |
 | N2  | Direct hardware access; `lhm-tui` never needs admin rights, LHM does         |
 | N3  | Bundling/installing/running LHM itself                                      |
-| N4  | Persisting history to disk (in-memory ring buffers only; CSV recording is v0.3) |
+| N4  | Persisting history to disk (in-memory ring buffers only; CSV recording is v0.5) |
 | N5  | Alerting/notifications (desktop toast, webhook)                              |
 | N6  | Windows service / daemon mode                                                |
 
@@ -380,6 +381,8 @@ hardware order in the tree (stable within a session). Slots:
 | `mem_load`    | Load        | `GPU Memory`, `D3D Dedicated Memory Used`, first containing `Memory` |
 | `mem_used`    | SmallData/Data | `GPU Memory Used`, `D3D Dedicated Memory Used`               |
 | `mem_total`   | SmallData/Data | `GPU Memory Total`, `D3D Dedicated Memory Total`             |
+| `shared_used` | SmallData/Data | `D3D Shared Memory Used`, `Shared Memory Used`, first containing `Shared` + `Used` (Windows shared GPU memory) |
+| `shared_total` | SmallData/Data | `D3D Shared Memory Total`, `Shared Memory Total`, first containing `Shared` + `Total` (absent on NVIDIA - the total is estimated as system RAM total minus this card's VRAM) |
 | `temp`        | Temperature | `GPU Core`, `GPU Hot Spot` (drawn as second series when preset) |
 | `hotspot`     | Temperature | `GPU Hot Spot`, `Hot Spot`                                      |
 | `mem_temp`    | Temperature | `GPU Memory Junction`, `GPU Memory` (VRAM temp; exact names only — never falls back to the core temp) |
@@ -402,8 +405,12 @@ hardware order in the tree (stable within a session). Slots:
 **Thermal table** — every `Temperature` sensor across all hardware, sorted by value desc;
 threshold-colored (theme thresholds), shows LHM min/max and our window min/max toggleable (key `s`).
 
-**Voltage table** — every `Voltage` sensor across all hardware, same table as thermal (values in V,
-never threshold-colored), hidden by default and toggled with `v` (or listed in `ui.layout`).
+**Voltage table** — every `Voltage` sensor across all hardware. The docked table hides per-core
+rails (`Core #<n> VID`, `CPU Core #<n>`, …) — one row per core is noise — while the zoomed panel
+(`enter`) shows them all; graph an individual rail through the sensor browser (`b`) if needed. GPU
+rails carry the card name in parentheses (`GPU Core Voltage (NVIDIA GeForce RTX 3090)`). Same table
+as thermal (values in V, never threshold-colored), hidden by default and toggled with `v` (or
+listed in `ui.layout`).
 
 **Fans table** — every `Fan` sensor + `Control` sensors rendered as secondary column ("ctr 45 %").
 
@@ -460,8 +467,8 @@ Responsive rules:
 - Height allocation: charts `charts.height` rows (default 8, min 5); tables get `min(content, ui.max_height)`.
 - Short screens: when the rows do not fit, charts shrink to `MIN_CHART_HEIGHT` (4) first; then every
   row squeezes towards a 4-row minimum instead of being clipped off-screen. A squeezed gauge panel
-  drops its least important rows first — memory temp → hot spot → VRAM → fan row → info — so a
-  pressed panel still shows load (and temp).
+  drops its least important rows first — memory temp → hot spot → shared → VRAM → fan row → info —
+  so a pressed panel still shows load (and temp).
 
 ### 6.2 Widget catalog
 
@@ -479,9 +486,9 @@ Responsive rules:
 
 | Key           | Contents                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
-| `cpu`         | temp graph + total-load graph (dual series), per-core bars, and a bottom metrics strip — `Power`, `Clock Average`, `Clock Effective`, `Bus Speed`, `Clock Fabric`, `Clock Uncore`, `Clock Memory`, `Voltage Core`, `Current TDC` — wrapping onto extra rows when the panel is narrow (missing sensors are skipped) |
-| `gpu`         | one panel per GPU; load graph + VRAM gauge + temp graph (core / hot spot / memory junction) + a metrics row `Power · Clock · Voltage` with every fan (`Fan 1`, `Fan 2`, …) right-aligned on the same row — fans (and, when cramped, the whole row) fall back to extra rows when the panel is too narrow |
-| `memory`      | used/available gauge + used-load graph + optional page file/virtual gauges       |
+| `cpu`         | temp graph + total-load graph (dual series), `Per-Core`-labelled bars (one column between cores), and a fixed two-row metrics strip — row 1 `Pwr · TDC · Volt Core` with `Clk Avg · Clk Eff` right-aligned, row 2 `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory` (disabled or missing slots are skipped) |
+| `gpu`         | one panel per GPU; load graph + VRAM gauge (`599 / 24576 MB (2%)`) + a `Shared` gauge under it (same `used / total (pct %)` template; when the card reports no total, system RAM total minus this card's VRAM is used) + temp graph (core / hot spot / memory junction) + a metrics row `Pwr · Clk · Volt` and a dedicated fan row (`Fan 1`, `Fan 2`, …) underneath |
+| `memory`      | used-memory gauge, virtual-memory gauge (`42.7 / 140.9 GB (30%)`) and the used-load graph; both gauges show `used / total (pct %)` |
 | `thermal`     | table of all temperature sensors, sorted desc (hidden by default; `t` or list it in `ui.layout`) |
 | `voltage`     | table of all voltage sensors (hidden by default; `v` or list it in `ui.layout`)  |
 | `fans`        | table of fans (+control % column)                                                 |
@@ -520,11 +527,11 @@ Key conflicts after remapping → config validation error listing offending acti
 - Panel chrome: rounded borders; focused panel border in `theme.accent` + title bold; unfocused `theme.muted`.
 - Graph series colors: per-slot palette (`theme.cpu`, `theme.gpu`, `theme.memory`, `theme.network`, `theme.storage`; extra series cycle).
 - Thresholds: values ≥ `warn` → `theme.warn`, ≥ `crit` → `theme.crit`; applies to gauges, bars, tables and graph line/latest-value marker. Defaults: 80/95 °C, 90/98 % load, GPU mem 90/97 %.
-- Numbers right-aligned, `tabular`-friendly fixed decimals: temps `69.5 °C`, loads `41.2 %`, memory `20.1 / 32.0 GB`, clocks `5.42 GHz`, fans `1205 RPM`, power `142 W`.
+- Numbers right-aligned, `tabular`-friendly fixed decimals: temps `69.5 °C`, loads `41.2 %`, memory `20.1 / 32.0 GB (63%)` (VRAM keeps MB: `599 / 24576 MB (2%)`), clocks `5.42 GHz`, fans `1205 RPM`, power `142 W`.
 - Info rows pack `label value` pairs with a minimum 5-column label pad (longer labels, e.g.
   `Clock Effective`, keep their full width — paired columns may start at different offsets). On the
-  GPU panel the fans sit right-aligned on the power/clock/voltage row, and the CPU metrics strip
-  wraps onto extra rows when it does not fit; both fall back to extra rows when the panel is narrow.
+  GPU panel the fans get their own row under the `Pwr · Clk · Volt` metrics, and the CPU metrics
+  strip uses its fixed two-row template.
 - `NO_COLOR` env or `--no-color`: honor by dropping colors but keeping bold/dim and bar glyphs.
   RGB theme colors are downgraded automatically to the terminal's detected color depth
   (truecolor → 256 → 16); built-in palettes: `default`, `gruvbox`, `nord`, `mono` (or a theme
@@ -897,6 +904,7 @@ Each milestone ships green CI and is independently reviewable.
 | M5  | Polish                   | Help/debug overlays, zoom, sensor browser, reload, reset min/max, ascii/no-color, responsive rules       | Manual QA matrix (§12.4) passes on Windows Terminal + tmux + kitty                                   |
 | M6  | Release v0.1.0           | README, packaging (`dist`), CHANGELOG, tag (winget + scoop + crates.io deferred to v0.1.x)               | Release archives attach to a GitHub Release and run `--probe` on clean machines; winget/crates.io validation moved to v0.1.x |
 | M7  | v0.2.0 indicators        | Voltages table (`v`), GPU `Voltage` in the metrics row, CPU metrics strip (`Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric · Clock Uncore · Clock Memory · Voltage Core · Current TDC`) | Voltage/clock values match LHM's own UI within one poll; strip wraps without clipping; `v` toggles the table; release tagged |
+| M8  | v0.3.0 refinements       | Shared GPU-memory gauge (total estimated from RAM minus VRAM when the card reports none), dedicated GPU fan row, `Per-Core` bars with spacing, short metric labels (`Pwr`/`Clk`/`Volt`), fixed two-row CPU template, percentage memory readouts, named GPU voltage rails | Frames/snapshots show every new row; NVIDIA uses the estimate while AMD keeps its reported shared total; zoomed voltages include per-core rails; release tagged |
 
 ---
 
@@ -981,7 +989,7 @@ Each milestone ships green CI and is independently reviewable.
 | R2  | Value formatting is culture-invariant today — could it become localized?                                  | Numeric extraction is lenient (`.`/`,`); unit suffix matched by leading-digit parse; add fixture when observed |
 | R3  | Huge machines (3000+ sensors, 128-core Threadripper) → tall tables, big payloads                          | Payload gzip; table `max_height` + sort/scroll; 2 s minimum poll for >1500 sensors adv. in docs            |
 | R4  | Braille glyph rendering in exotic terminals (legacy conhost)                                              | Auto-detect (probe `TERM`/Windows build) + `a` toggle + `charts.marker` config                             |
-| R5  | mDNS discovery of LHM instances: service type string differs across LHM versions — worth supporting?      | Deferred to v0.3; `--url` + config cover the need; revisit with `mdns-sd` crate                             |
+| R5  | mDNS discovery of LHM instances: service type string differs across LHM versions — worth supporting?      | Deferred to v0.6; `--url` + config cover the need; revisit with `mdns-sd` crate                             |
 | R6  | Basic auth password in config file                                                                        | `password_env`/`password_file` first in docs; redaction in `--print-config`; refuse world-readable config file on Unix with a warning |
 | R7  | Windows conhost default 9001 scrollback / alt-screen semantics in old builds                              | Require Windows Terminal in docs; graceful VT capability check                                              |
 | R8  | `Sensor`-endpoint polling as optimization for pinned-only configs — needed in v0.1?                       | No; keep one `/data.json` fetch (simpler, atomic). Revisit if payload > 500 KB                              |
@@ -991,20 +999,20 @@ Each milestone ships green CI and is independently reviewable.
 
 ## 16. Future Work
 
-Ordered backlog beyond v0.1.0:
+Ordered backlog beyond v0.3.0:
 
-1. **v0.2.x — Release channels**: crates.io publish, winget + scoop manifests (deferred from v0.1.0).
-2. **v0.3 — Control**: set fan/pump `Control` sensors (`Sensor?action=Set`), confirmation modal,
-   safe-range config, `--read-only` lock flag. *(The v0.1 fan anti-stop floor — §7.5 — is a narrow,
+1. **v0.3.x - Release channels**: crates.io publish, winget + scoop manifests (deferred from v0.1.0).
+2. **v0.4 - Control**: set fan/pump `Control` sensors (`Sensor?action=Set`), confirmation modal,
+   safe-range config, `--read-only` lock flag. *(The v0.1 fan anti-stop floor - §7.5 - is a narrow,
    on-by-default slice of this: it only ever writes GPU fan controls and only to auto or the
    configured floor; `f` or `fan_guard.enabled: false` disables it.)*
-3. **v0.4 — Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
+3. **v0.5 - Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
    (terminal bell, OSC 9 desktop notification, webhook).
-4. **v0.4 — History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
+4. **v0.5 - History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
    charts at startup.
-5. **v0.5 — Multi-host**: tabs/sidebar monitoring several LHM hosts concurrently.
-6. **v0.5 — Theme editor** + user theme file drop-in directory.
-7. **v0.6 — Plugins/scripting**: template-based custom panels in config (no code), later Lua/WASM.
+5. **v0.6 - Multi-host**: tabs/sidebar monitoring several LHM hosts concurrently.
+6. **v0.6 - Theme editor** + user theme file drop-in directory.
+7. **v0.7 - Plugins/scripting**: template-based custom panels in config (no code), later Lua/WASM.
 
 ---
 

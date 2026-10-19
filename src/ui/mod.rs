@@ -155,6 +155,7 @@ fn render_adhoc(
             window_label,
             now: Instant::now(),
             layout: Default::default(),
+            zoomed: false,
         };
         let series = Series {
             label,
@@ -668,14 +669,7 @@ fn render_panels(
     if zoomed {
         let spec = &panels[focused_index];
         let scroll = scrolls.get(&spec.id).copied().unwrap_or(0);
-        let layouts = presets::panel_layouts(
-            &panels,
-            bindings,
-            snapshot,
-            cfg,
-            area.width,
-            &[vec![focused_index]],
-        );
+        let layouts = presets::panel_layouts(&panels, bindings, snapshot, cfg);
         let mut ctx = PanelCtx {
             snapshot,
             bindings,
@@ -693,6 +687,7 @@ fn render_panels(
             window_label: window_label.clone(),
             now,
             layout: layouts.get(focused_index).copied().unwrap_or_default(),
+            zoomed: true,
         };
         presets::draw_panel(frame, area, spec, &mut ctx);
         return;
@@ -704,7 +699,7 @@ fn render_panels(
         1
     };
     let rows = presets::layout_rows(&panels, per_row);
-    let layouts = presets::panel_layouts(&panels, bindings, snapshot, cfg, area.width, &rows);
+    let layouts = presets::panel_layouts(&panels, bindings, snapshot, cfg);
     let heights = presets::fit_heights(
         &panels,
         bindings,
@@ -750,6 +745,7 @@ fn render_panels(
                 window_label: window_label.clone(),
                 now,
                 layout: layouts.get(*panel_index).copied().unwrap_or_default(),
+                zoomed: false,
             };
             presets::draw_panel(frame, column, spec, &mut ctx);
         }

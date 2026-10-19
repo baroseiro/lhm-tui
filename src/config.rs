@@ -1162,6 +1162,8 @@ const GPU_OVERRIDE_SLOTS: &[&str] = &[
     "mem_load",
     "mem_used",
     "mem_total",
+    "shared_used",
+    "shared_total",
     "temp",
     "hotspot",
     "mem_temp",
