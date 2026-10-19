@@ -58,6 +58,27 @@ fn draw_preset(
     scroll: u16,
     ascii: bool,
 ) {
+    draw_preset_state(
+        frame, area, spec, snapshot, bindings, cfg, theme, charts, history, scroll, ascii, false, 0,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_preset_state(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    spec: &PanelSpec,
+    snapshot: &Snapshot,
+    bindings: &Bindings,
+    cfg: &Config,
+    theme: &Theme,
+    charts: &mut ChartsState,
+    history: Option<&History>,
+    scroll: u16,
+    ascii: bool,
+    focused: bool,
+    fan_selected: usize,
+) {
     let layout = presets::panel_layouts(std::slice::from_ref(spec), bindings, snapshot, cfg)
         .first()
         .copied()
@@ -72,13 +93,14 @@ fn draw_preset(
         charts_enabled: cfg.charts.enabled,
         stale: false,
         ascii,
-        focused: false,
+        focused,
         sort: cfg.ui.table_sort,
         scroll,
         window: Duration::from_secs(300),
         window_label: "5m".to_string(),
         now: Instant::now(),
         layout,
+        fan_selected,
         zoomed: false,
     };
     presets::draw_panel(frame, area, spec, &mut ctx);
@@ -857,6 +879,53 @@ fn fans_power_storage_panels_snapshot() {
                 false,
             );
         }
+    });
+    insta::assert_snapshot!(out);
+}
+
+#[test]
+fn fans_panel_shows_device_and_auto_setting() {
+    let cfg = Config::default();
+    let mut snapshot = fixture_snapshot("lhm-live-5900xt.json");
+    // LHM's "Default" control mode comes through as a valueless sensor. Keep
+    // the AMD control numeric so the snapshot covers both displays.
+    for hardware in &mut snapshot.hardware {
+        if hardware.id != "/gpu-nvidia/0" {
+            continue;
+        }
+        for group in &mut hardware.groups {
+            for sensor in &mut group.sensors {
+                if sensor.kind == SensorKind::Control {
+                    sensor.value = None;
+                    sensor.value_text = String::new();
+                }
+            }
+        }
+    }
+    let bindings = bindings::resolve(&snapshot, &cfg.panels);
+    let theme = theme();
+    let mut charts = ChartsState::new();
+    let spec = PanelSpec {
+        id: "fans".to_string(),
+        kind: PanelKind::Fans,
+        scrollable: true,
+    };
+    let out = render(80, 10, |frame| {
+        draw_preset_state(
+            frame,
+            frame.area(),
+            &spec,
+            &snapshot,
+            &bindings,
+            &cfg,
+            &theme,
+            &mut charts,
+            None,
+            0,
+            false,
+            true,
+            1,
+        );
     });
     insta::assert_snapshot!(out);
 }

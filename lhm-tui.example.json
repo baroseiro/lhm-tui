@@ -128,7 +128,7 @@
       "enabled": true
     },
     "fans": {
-      "enabled": false
+      "enabled": true
     },
     "power": {
       "enabled": false
@@ -160,6 +160,17 @@
     ],
     "debug": [
       "d"
+    ],
+    "fan_control_auto": [
+      "0"
+    ],
+    "fan_control_down": [
+      "left",
+      "-"
+    ],
+    "fan_control_up": [
+      "right",
+      "+"
     ],
     "focus_next": [
       "tab"
@@ -194,6 +205,9 @@
       "c"
     ],
     "toggle_fan_guard": [
+      "n"
+    ],
+    "toggle_fans": [
       "f"
     ],
     "toggle_thermal": [

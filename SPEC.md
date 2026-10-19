@@ -5,7 +5,7 @@
 |                  |                                                                          |
 | ---------------- | ------------------------------------------------------------------------ |
 | Status           | Draft v1.0                                                               |
-| Target release   | v0.3.0 - monitoring + dashboard refinements                              |
+| Target release   | v0.4.0 - monitoring + fan controls                                       |
 | Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`      |
 | Data source      | LHM built-in **Remote Web Server** (`GET /data.json`), polling-based      |
 | Platforms        | TUI runs on Windows / Linux / macOS; the LHM host is Windows by definition |
@@ -56,8 +56,9 @@ and renders btop-style panels and live charts:
 - One panel per GPU (multi-GPU aware): load, VRAM + shared-memory usage, core/hotspot temperature,
   power, fans
 - Memory usage (physical + virtual) with history graph
-- Sortable temperature table for every thermal sensor in the tree, plus fans, power and
-  storage/network presets
+- Sortable temperature and voltage tables grouped per hardware device, plus a flat fans/controls table that names the device in parentheses; fan and pump
+  settings are writable from the Fans panel (LHM `Control` sensors only)
+- Plus power and storage/network presets
 - Behavior controlled by a JSON config file, CLI flags and environment variables
 
 Because the data source is HTTP, the dashboard can monitor this machine or any reachable Windows
@@ -78,7 +79,7 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 
 | #   | Non-goal                                                                    |
 | --- | --------------------------------------------------------------------------- |
-| N1  | General sensor writes (fan/pump control UI, arbitrary `Sensor?action=Set`) - planned v0.4. The single exception is the on-by-default fan anti-stop floor (§7.5), which only ever writes GPU fan `Control` sensors and only ever restores automatic control; disable with `f` or `fan_guard.enabled: false` |
+| N1  | Arbitrary sensor writes beyond fan/pump `Control` sensors (any other `Sensor?action=Set`). The Fans panel writes fan/pump controls (`§6.3`, `§7.5`) and the anti-stop floor only ever writes GPU fan controls; nothing else is writable |
 | N2  | Direct hardware access; `lhm-tui` never needs admin rights, LHM does         |
 | N3  | Bundling/installing/running LHM itself                                      |
 | N4  | Persisting history to disk (in-memory ring buffers only; CSV recording is v0.5) |
@@ -145,8 +146,8 @@ LHM has no TLS and no WebSocket; the API is plain HTTP request/response JSON.
 | ------------------------------ | -------- | -------------------------------------------------- | ------------ |
 | `/data.json`                   | GET      | Full hardware/sensor tree (the primary source)      | **primary**  |
 | `/Sensor?action=Get&id=<ID>`   | GET/POST | Single sensor value/min/max/format                  | optional     |
-| `/Sensor?action=Set&id=<ID>&value=<pct>` | POST | Set a `Control` sensor's software duty cycle (0-100) | fan anti-stop floor only (§7.5) |
-| `/Sensor?action=Set&id=<ID>&value=null` | POST | `SetDefault()`: hand the sensor back to driver control | fan anti-stop floor only (§7.5) |
+| `/Sensor?action=Set&id=<ID>&value=<pct>` | POST | Set a `Control` sensor's software duty cycle (0-100) | Fans panel + anti-stop floor (§6.3/§7.5) |
+| `/Sensor?action=Set&id=<ID>&value=null` | POST | `SetDefault()`: hand the sensor back to driver control | Fans panel + anti-stop floor (§6.3/§7.5) |
 | `/Sensor?action=ResetMinMax&id=<ID>` | GET/POST | Reset one sensor's min/max                    | future       |
 | `/ResetAllMinMax`              | GET      | Reset min/max of all sensors                        | keybinding `m` |
 | `/metrics`                     | GET      | Prometheus text exposition (incl. `archive=` history) | future (see §16) |
@@ -402,17 +403,25 @@ hardware order in the tree (stable within a session). Slots:
 | `virtual_*`  | Data       | `Virtual Memory Used/Available` (optional) |
 | `pagefile`   | Data       | `Page File Used` (optional)                |
 
-**Thermal table** — every `Temperature` sensor across all hardware, sorted by value desc;
-threshold-colored (theme thresholds), shows LHM min/max and our window min/max toggleable (key `s`).
+**Thermal table** — every `Temperature` sensor across all hardware, grouped under a heading per
+hardware device and sorted within each group; threshold-colored (theme thresholds), shows LHM
+min/max and our window min/max toggleable (key `s`).
 
-**Voltage table** — every `Voltage` sensor across all hardware. The docked table hides per-core
-rails (`Core #<n> VID`, `CPU Core #<n>`, …) — one row per core is noise — while the zoomed panel
-(`enter`) shows them all; graph an individual rail through the sensor browser (`b`) if needed. GPU
-rails carry the card name in parentheses (`GPU Core Voltage (NVIDIA GeForce RTX 3090)`). Same table
-as thermal (values in V, never threshold-colored), hidden by default and toggled with `v` (or
-listed in `ui.layout`).
+**Voltage table** — every `Voltage` sensor across all hardware, grouped per hardware device. The
+docked table hides per-core rails (`Core #<n> VID`, `CPU Core #<n>`, …) — one row per core is
+noise — while the zoomed panel (`enter`) shows them all; graph an individual rail through the
+sensor browser (`b`) if needed. The device heading identifies the card, so GPU rails no longer
+repeat the name. Same table as thermal (values in V, never threshold-colored), hidden by default
+and toggled with `v` (or listed in `ui.layout`).
 
-**Fans table** — every `Fan` sensor + `Control` sensors rendered as secondary column ("ctr 45 %").
+**Fans & controls table** — every `Fan` sensor with its paired `Control` sensor in one flat table,
+with the device in parentheses (`GPU Fan 1 (NVIDIA GeForce RTX 3090)`). `Speed` is the current
+tachometer reading and `Setting` the current software duty cycle (`63 %`). LHM's `Default` mode (a
+valueless control) is shown as `Auto`; Default and Auto mean the same. The two can differ — the
+setting is what was requested, the speed is what the fan is doing. Hidden by default and toggled
+with `f` (or listed in `ui.layout`). Focus the panel with `Tab`, select a fan with `↑`/`↓`, adjust
+by 5 % with `←`/`→` (or `-`/`+`), and press `0` for Auto/Default. Manual writes go only to fan/pump
+`Control` sensors and use the same background write task as the anti-stop floor (§7.5).
 
 **Power panel** — every `Power` sensor, totals row for CPU+GPU package where available.
 
@@ -433,11 +442,12 @@ sensor returns. `--probe` prints a binding report (slot → SensorId) to make mi
 ### 6.1 Default layout
 
 Panels flow vertically in the order of `ui.layout` (default `["cpu", "gpu", "memory"]`;
-the temperatures table is hidden by default — add `thermal` to the layout or press `t`). With
-`ui.auto_height` (default true) charts absorb spare vertical space first, then tables grow up to
-`ui.max_height`, so no blank band is left at the bottom.
+the temperatures, voltages and fans tables are hidden by default — add them to the layout or press
+`t` / `v` / `f`). With `ui.auto_height` (default true) charts absorb spare vertical space first,
+then tables grow up to `ui.max_height`, so no blank band is left at the bottom.
 CPU, memory and each GPU occupy the full width; two GPUs (or GPU + thermal) sit side-by-side when
-`width ≥ 120`; thermal/fans/power tables are full-width and grow to fit content up to `ui.max_height`.
+`width ≥ 120`; temperature/voltage/fans/power tables are full-width and grow to fit content up to
+`ui.max_height`.
 
 ```text
 ┌─ lhm-tui ───────────── AMD Ryzen 9 7950X3D ─────── LHM 0.9.6 ───── 128×40 ──● live ──┐
@@ -486,12 +496,12 @@ Responsive rules:
 
 | Key           | Contents                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
-| `cpu`         | temp graph + total-load graph (dual series), `Per-Core`-labelled bars (one column between cores), and a fixed two-row metrics strip — row 1 `Pwr · TDC · Volt Core` with `Clk Avg · Clk Eff` right-aligned, row 2 `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory` (disabled or missing slots are skipped) |
+| `cpu`         | temp graph + total-load graph (dual series), `Per-Core`-labelled bars (one column between cores), and a fixed two-row metrics strip — row 1 `Pwr · TDC · Volt Core` with `Clk Avg · Clk Eff` right-aligned, row 2 `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory · Speed` (`Speed` = 2 × memory clock, in MHz: `Clk Memory 1.80 GHz · Speed 3600 MHz`; disabled or missing slots are skipped) |
 | `gpu`         | one panel per GPU; load graph + VRAM gauge (`599 / 24576 MB (2%)`) + a `Shared` gauge under it (same `used / total (pct %)` template; when the card reports no total, system RAM total minus this card's VRAM is used) + temp graph (core / hot spot / memory junction) + a metrics row `Pwr · Clk · Volt` and a dedicated fan row (`Fan 1`, `Fan 2`, …) underneath |
 | `memory`      | used-memory gauge, virtual-memory gauge (`42.7 / 140.9 GB (30%)`) and the used-load graph; both gauges show `used / total (pct %)` |
-| `thermal`     | table of all temperature sensors, sorted desc (hidden by default; `t` or list it in `ui.layout`) |
-| `voltage`     | table of all voltage sensors (hidden by default; `v` or list it in `ui.layout`)  |
-| `fans`        | table of fans (+control % column)                                                 |
+| `thermal`     | all temperature sensors grouped per hardware device, sorted within each group (hidden by default; `t` or list it in `ui.layout`) |
+| `voltage`     | all voltage sensors grouped per hardware device; per-core rails only when zoomed (hidden by default; `v` or list it in `ui.layout`) |
+| `fans`        | every fan with the device in parentheses and `Speed` + `Setting` (`Auto` for LHM `Default`); `↑`/`↓` select, `←`/`→` adjust 5 %, `0` = Auto (hidden by default; `f` or list it in `ui.layout`) |
 | `power`       | table of power sensors with total row                                             |
 | `storage`     | table: temperature/activity/used/free per drive                                  |
 | `network`     | table + sparkline: throughput per adapter                                        |
@@ -506,7 +516,7 @@ Responsive rules:
 | `p`, `Space`             | Pause / resume polling (charts keep rendering last data)         |
 | `g` / `G`                | Cycle chart window forward/backward through `charts.window_cycle` |
 | `Tab` / `Shift+Tab`      | Move focus to next/previous panel                               |
-| `←` `↓` `↑` `→`, `j` `k` | Scroll focused table / move selection                    |
+| `↑` `↓`, `j` `k`         | Scroll focused table / move fan selection                       |
 | `Enter`                  | Toggle zoom: focused panel fullscreen                            |
 | `b`                      | Sensor browser overlay (searchable list; `Enter` pins sensor to zoom chart) |
 | `s`                      | Cycle table sort: value ↓ · value ↑ · name · default             |
@@ -515,19 +525,32 @@ Responsive rules:
 | `a`                      | Toggle ASCII rendering (overrides config)                        |
 | `t`                      | Toggle the temperatures table visibility                         |
 | `v`                      | Toggle the voltages table visibility                             |
+| `f`                      | Toggle the fans & controls table visibility                      |
 | `c`                      | Toggle charts (metric graphs ↔ gauges/bars)                      |
-| `f`                      | Toggle the GPU fan anti-stop floor (§7.5); on by default         |
+| `n`                      | Toggle the GPU fan anti-stop floor (§7.5); on by default         |
+| `←`, `-`                 | Fans panel: lower the selected control by 5 %                    |
+| `→`, `+`                 | Fans panel: raise the selected control by 5 %                    |
+| `0`                      | Fans panel: hand the selected control back to Auto/Default       |
 | `d`                      | Debug overlay: poll latency, payload size, sensor/hw counts, last error, LHM version |
 | `y`                      | Copy current snapshot summary to clipboard (OSC 52) — optional v0.1.1 |
 
 Key conflicts after remapping → config validation error listing offending actions.
+
+**Mouse:** left-click a panel's title line to focus it; a second click within 400 ms (double-click)
+toggles zoom, exactly like `Enter`. The scroll wheel behaves like `↑`/`↓`: it scrolls the focused
+table, or moves the fan-control selection when the Fans panel is focused. Mouse events are ignored
+while the help/browser/ad-hoc overlays are open.
 
 ### 6.5 Visual language
 
 - Panel chrome: rounded borders; focused panel border in `theme.accent` + title bold; unfocused `theme.muted`.
 - Graph series colors: per-slot palette (`theme.cpu`, `theme.gpu`, `theme.memory`, `theme.network`, `theme.storage`; extra series cycle).
 - Thresholds: values ≥ `warn` → `theme.warn`, ≥ `crit` → `theme.crit`; applies to gauges, bars, tables and graph line/latest-value marker. Defaults: 80/95 °C, 90/98 % load, GPU mem 90/97 %.
-- Numbers right-aligned, `tabular`-friendly fixed decimals: temps `69.5 °C`, loads `41.2 %`, memory `20.1 / 32.0 GB (63%)` (VRAM keeps MB: `599 / 24576 MB (2%)`), clocks `5.42 GHz`, fans `1205 RPM`, power `142 W`.
+- Numbers right-aligned, `tabular`-friendly fixed decimals: temps `69.5 °C`, loads `41.2 %`, memory `20.1 / 32.0 GB (63%)` (VRAM keeps MB: `599 / 24576 MB (2%)`), clocks `5.42 GHz`, fans `1205 RPM`, fan settings `63 %` or `Auto`, power `142 W`.
+- Grouped tables (temperatures, voltages) put a bold accent device heading before each hardware
+  group; sorting applies within a group. The fans table is flat, names the device in parentheses
+  (`GPU Fan 1 (NVIDIA GeForce RTX 3090)`), and its selected control row is accent/bold with a `▸`
+  marker (`>` in ASCII mode) and stays scrolled into view.
 - Info rows pack `label value` pairs with a minimum 5-column label pad (longer labels, e.g.
   `Clock Effective`, keep their full width — paired columns may start at different offsets). On the
   GPU panel the fans get their own row under the `Pwr · Clk · Volt` metrics, and the CPU metrics
@@ -602,11 +625,10 @@ separately and labeled "LHM min/max" (since-boot or since-reset values).
 Stock NVIDIA fan curves stop the fans entirely below a driver-defined temperature (zero-RPM /
 silent mode) and expose no switch to disable it. `fan_guard` works around that by holding every
 controllable GPU fan at a software floor while the GPU is idle and handing control back to the
-driver as soon as real work starts. It is the only hardware write the tool performs, it is
-**enabled by default** (disable with `f` at runtime or `fan_guard.enabled: false`), and it only
-ever touches
-`Control` sensors (LHM `Sensor.Control.SetSoftware` / `SetDefault`) — never tachometers, voltages
-or anything else.
+driver as soon as real work starts. It only ever touches `Control` sensors (LHM
+`Sensor.Control.SetSoftware` / `SetDefault`) — never tachometers, voltages or anything else — and is
+**enabled by default** (disable with `n` at runtime or `fan_guard.enabled: false`). The Fans panel
+(§6.3) uses the same write path for manual fan/pump control.
 
 **Only auto-stop capable cards are touched** (`fan_guard.only_auto_stop`, default `true`). Most AMD
 cards keep their fans turning no matter what — the driver curve never reaches 0 % and software
@@ -621,7 +643,13 @@ control bottoms out above 0 % — so flooring them would be wrong:
 
 A skipped card gets a one-time status note (`… left to its driver curve (fans cannot stop)`), the
 `d` overlay reports `N skipped`, and `only_auto_stop: false` restores the blanket behaviour (floor
-every controllable GPU). The `f` toggle message counts only eligible controls.
+every controllable GPU). The `n` toggle message counts only eligible controls.
+
+**Manual controls vs the guard.** The Fans panel writes the same `Control` sensors. If a manual
+percentage is set on a GPU fan while the anti-stop floor is active, the guard switches itself off
+for the session (the status message says `anti-stop off`) so the two writers cannot fight; `n`
+re-enables it and may re-floor an idle GPU. Setting a control back to `Auto`/`Default` does not
+disable the guard.
 
 Decision per GPU, evaluated on every applied snapshot (load = bound GPU load; temp = hottest of
 core / hot spot / memory junction; eligible cards only):
@@ -638,7 +666,7 @@ core / hot spot / memory junction; eligible cards only):
   line and leaves the GPU tracked as released, so the next idle snapshot retries.
 - `floor_percent` must be ≥ 5 — 0 % would stop the fans the guard exists to keep spinning — and
   validation rejects smaller values.
-- On quit, and on `f` toggle-off, every engaged control gets a best-effort `SetDefault()` (1 s
+- On quit, and on `n` toggle-off, every engaged control gets a best-effort `SetDefault()` (1 s
   timeout per fan) so no manual duty cycle is left behind on the LHM side.
 - Writes need LHM to run with the privileges to control the GPU (Windows: administrator). Without
   a `Controls` group the guard reports "no controllable fans" and does nothing.
@@ -749,7 +777,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
     "memory": { "enabled": true, "show": ["used", "load", "virtual"] },
     "thermal": { "enabled": true },
     "voltage": { "enabled": true },   // hidden until `v` (or added to ui.layout)
-    "fans":   { "enabled": false },
+    "fans":   { "enabled": true },    // hidden until `f` (or added to ui.layout)
     "power":  { "enabled": false },
 
     // Slot overrides: pin exact SensorIds, or describe a match rule.
@@ -772,7 +800,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   },
 
   "fan_guard": {
-    "enabled": true,                  // on by default; f or false disables (§7.5 writes Control sensors)
+    "enabled": true,                  // on by default; n or false disables (writes Control sensors, §7.5)
     "only_auto_stop": true,           // skip cards whose fans can never stop (most AMD); false floors all
     "floor_percent": 45.0,            // duty held while idle; 5..=100 (0 would stop the fans)
     "idle_load_percent": 10.0,        // floor engages when load ≤ this …
@@ -784,9 +812,16 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   "keys": {
     "quit":  ["q", "esc", "ctrl+c"],
     "pause": ["p", "space"],
-    "window": ["g"],
+    "window_next": ["g"],
     "reload": ["r"],
-    "reset_minmax": ["m"]
+    "reset_minmax": ["m"],
+    "toggle_thermal": ["t"],
+    "toggle_voltage": ["v"],
+    "toggle_fans": ["f"],
+    "toggle_fan_guard": ["n"],
+    "fan_control_up": ["right", "+"],
+    "fan_control_down": ["left", "-"],
+    "fan_control_auto": ["0"]
   }
 }
 ```
@@ -800,7 +835,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `server.request_timeout_ms`       | int             | `2000`           | Per request                                  |
 | `server.username`/`password*`     | string/null     | `null`           | Exactly one password source may be set       |
 | `history.window_s`                | int             | `900`            | 60–86400                                     |
-| `ui.layout`                       | string[]        | `["cpu","gpu","memory"]` | Valid panel keys enforced; `thermal` hidden by default |
+| `ui.layout`                       | string[]        | `["cpu","gpu","memory"]` | Valid panel keys enforced; thermal/voltage/fans hidden by default |
 | `ui.auto_height`                  | bool            | `true`           | Charts absorb spare space, then tables to `max_height` |
 | `charts.enabled`                  | bool            | `false`          | `true`/`--charts` adds graphs; `c` toggles at runtime |
 | `charts.marker`                   | enum            | `braille`        | Fallback automatically if glyph unsupported  |
@@ -808,9 +843,10 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `theme.*`                         | color/float     | see example      | Names or `#RRGGBB`; downgraded for 256/16 colors |
 | `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors. CPU slots: `temp`, `load`, `core_loads`, `clock`, `power`, `voltage`, `current`; GPU slots: `load`, `memory`, `temp`, `power`, `voltage`, `fan`, `clock` |
 | `panels.voltage`                  | toggle          | `true`           | Voltages table; hidden until `v` or added to `ui.layout` |
+| `panels.fans`                     | toggle          | `true`           | Fans & controls table; hidden until `f` or added to `ui.layout` |
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
-| `fan_guard.enabled`               | bool            | `true`           | GPU fan floor; the only hardware write (§7.5) |
+| `fan_guard.enabled`               | bool            | `true`           | GPU fan floor; writes fan `Control` sensors like the Fans panel (§7.5) |
 | `fan_guard.only_auto_stop`        | bool            | `true`           | Only cards whose fan curve can stop (zero-RPM); spinners are skipped |
 | `fan_guard.floor_percent`         | float           | `45.0`           | 5–100 (0 rejected)                           |
 | `fan_guard.idle_load_percent` / `idle_temp_c` | float | `10.0` / `65.0` | Engage thresholds; unknown data never engages |
@@ -905,6 +941,7 @@ Each milestone ships green CI and is independently reviewable.
 | M6  | Release v0.1.0           | README, packaging (`dist`), CHANGELOG, tag (winget + scoop + crates.io deferred to v0.1.x)               | Release archives attach to a GitHub Release and run `--probe` on clean machines; winget/crates.io validation moved to v0.1.x |
 | M7  | v0.2.0 indicators        | Voltages table (`v`), GPU `Voltage` in the metrics row, CPU metrics strip (`Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric · Clock Uncore · Clock Memory · Voltage Core · Current TDC`) | Voltage/clock values match LHM's own UI within one poll; strip wraps without clipping; `v` toggles the table; release tagged |
 | M8  | v0.3.0 refinements       | Shared GPU-memory gauge (total estimated from RAM minus VRAM when the card reports none), dedicated GPU fan row, `Per-Core` bars with spacing, short metric labels (`Pwr`/`Clk`/`Volt`), fixed two-row CPU template, percentage memory readouts, named GPU voltage rails | Frames/snapshots show every new row; NVIDIA uses the estimate while AMD keeps its reported shared total; zoomed voltages include per-core rails; release tagged |
+| M9  | v0.4.0 controls & grouping | Fans & controls panel with the device in parentheses (`Speed` + `Setting`, LHM `Default` shown as `Auto`, `←`/`→` ±5 %, `0` = Auto), temperature/voltage tables grouped per device, `f` opens fans and `n` toggles the guard, manual GPU control hands the guard off | Writes reach only fan/pump `Control` sensors (mock-server tests); frames show device names in parentheses and `Auto`; `f`/`n` toggles and control keys covered by interaction tests; release tagged |
 
 ---
 
@@ -941,9 +978,9 @@ Each milestone ships green CI and is independently reviewable.
 - Windows 11 + Windows Terminal (truecolor + conhost fallback), WSL2, tmux over SSH, kitty, wezterm.
 - Real hardware: AMD CPU + Nvidia GPU; Intel CPU + iGPU; AMD GPU; 2 GPUs (mixed vendor); no GPU;
   memory-only machine; LHM 0.9.5 and 0.9.6; with and without Basic auth.
-- Fan anti-stop floor (§7.5), on real hardware at idle: `f` drops every fan control to the floor
+- Fan anti-stop floor (§7.5), on real hardware at idle: `n` drops every fan control to the floor
   (zero-RPM stops, fans spin again), a load spike returns them to the driver curve, and quitting
-  the TUI (or `f` off) leaves LHM back in automatic control — verify in LHM's own UI.
+  the TUI (or `n` off) leaves LHM back in automatic control — verify in LHM's own UI.
 - 24 h soak: memory flat (±2 MB), no fd leak, reconnect after LHM restart and network flicker.
 
 ---
@@ -993,19 +1030,17 @@ Each milestone ships green CI and is independently reviewable.
 | R6  | Basic auth password in config file                                                                        | `password_env`/`password_file` first in docs; redaction in `--print-config`; refuse world-readable config file on Unix with a warning |
 | R7  | Windows conhost default 9001 scrollback / alt-screen semantics in old builds                              | Require Windows Terminal in docs; graceful VT capability check                                              |
 | R8  | `Sensor`-endpoint polling as optimization for pinned-only configs — needed in v0.1?                       | No; keep one `/data.json` fetch (simpler, atomic). Revisit if payload > 500 KB                              |
-| R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | On by default (disable with `f` or `fan_guard.enabled: false`); only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
+| R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | On by default (disable with `n` or `fan_guard.enabled: false`); only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
 
 ---
 
 ## 16. Future Work
 
-Ordered backlog beyond v0.3.0:
+Ordered backlog beyond v0.4.0:
 
-1. **v0.3.x - Release channels**: crates.io publish, winget + scoop manifests (deferred from v0.1.0).
-2. **v0.4 - Control**: set fan/pump `Control` sensors (`Sensor?action=Set`), confirmation modal,
-   safe-range config, `--read-only` lock flag. *(The v0.1 fan anti-stop floor - §7.5 - is a narrow,
-   on-by-default slice of this: it only ever writes GPU fan controls and only to auto or the
-   configured floor; `f` or `fan_guard.enabled: false` disables it.)*
+1. **v0.4.x - Release channels**: crates.io publish, winget + scoop manifests (deferred from v0.1.0).
+2. **v0.5 - Control hardening**: confirmation modal for manual writes, safe-range config and a
+   `--read-only` lock flag (basic fan/pump controls shipped in v0.4.0).
 3. **v0.5 - Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
    (terminal bell, OSC 9 desktop notification, webhook).
 4. **v0.5 - History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill

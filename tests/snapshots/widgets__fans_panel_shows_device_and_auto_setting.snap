@@ -1,0 +1,14 @@
+---
+source: tests/widgets.rs
+expression: out
+---
+╭ Fans & Controls ─────────────────────────────────────────────────────────────╮
+│Fan                                                         Speed      Setting│
+│GPU Fan (AMD Radeon RX 7900 XTX)                          534 RPM         15 %│
+│▸ GPU Fan 1 (NVIDIA GeForce RTX 3090)                       0 RPM         Auto│
+│GPU Fan 2 (NVIDIA GeForce RTX 3090)                         0 RPM         Auto│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

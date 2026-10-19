@@ -4,15 +4,16 @@
 
 - **Rust crate + docs.** `src/` holds the ratatui TUI, `tests/` the fixture/snapshot contract;
   `SPEC.md` (frozen design, v1.0), `PLAN.md` (execution plan), `README.md` (public) and
-  `CHANGELOG.md` document it. v0.3.0 is released (2026-10-19). Verify with `git ls-files` before
+  `CHANGELOG.md` document it. v0.3.0 is released (2026-10-19); v0.4.0 (fan controls, grouped
+  tables, mouse support) is prepared and pending its tag. Verify with `git ls-files` before
   assuming a file or feature is missing.
 - **Git history is live and intentional:** one `initial commit` on `main`, tracking
   `origin` = `https://github.com/baroseiro/lhm-tui.git`. Commit forward; don't re-init, rewrite or
   orphan that history. PR/commit expectations are in PLAN §0 (one PR per task, CHANGELOG updates).
-- **Reading order before any work:** `SPEC.md` in full, then `PLAN.md`. Plan phases P0–P7 map to
-  SPEC §11 milestones M0–M8 (P7 covers M7/M8); tasks (`T<phase>.<n>`) are in dependency order, and
+- **Reading order before any work:** `SPEC.md` in full, then `PLAN.md`. Plan phases P0–P8 map to
+  SPEC §11 milestones M0–M9; tasks (`T<phase>.<n>`) are in dependency order, and
   `SPEC.md` / `PLAN.md` must stay consistent — update both together.
-- **Roadmap files**: the P0–P7 scaffolding is in place (LICENSE, `lhm-tui.example.json`,
+- **Roadmap files**: the P0–P8 scaffolding is in place (LICENSE, `lhm-tui.example.json`,
   `schema/`, `docs/`, `.github/`). UI captures (`docs/preview.png`, `docs/demo.gif`) are generated
   from `docs/demo.tape` with VHS — regenerate them when the layout changes noticeably (the version
   header in them comes from `Cargo.toml`, so regenerate after a bump); never "fix" a doc by

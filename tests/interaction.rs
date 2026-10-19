@@ -7,9 +7,12 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
+use ratatui::layout::Rect;
 
-use lhm_tui::app::{handle_event, AppState, PollEvent};
+use lhm_tui::app::{handle_event, AppState, PanelHitbox, PollEvent};
 use lhm_tui::config::{Config, TableSort};
 use lhm_tui::lhm::client::Fetched;
 use lhm_tui::lhm::parse::parse_payload;
@@ -194,18 +197,18 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
     // `f` turns the default off and releases any floor.
     apply(&mut app, &idle, &cfg);
     assert!(app.fan_guard_state["/gpu-nvidia/0"].engaged);
-    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    handle_event(&mut app, key(KeyCode::Char('n')), &cfg);
     assert_eq!(app.fan_guard_override, Some(false));
     assert!(app.status.is_some(), "toggle feedback on the status line");
     assert!(
         !app.fan_guard_state["/gpu-nvidia/0"].engaged,
-        "f off releases the floor immediately"
+        "n off releases the floor immediately"
     );
     apply(&mut app, &idle, &cfg);
     assert!(!app.fan_guard_state["/gpu-nvidia/0"].engaged);
 
-    // `f` again re-enables it on the current snapshot.
-    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    // `n` again re-enables it on the current snapshot.
+    handle_event(&mut app, key(KeyCode::Char('n')), &cfg);
     assert_eq!(app.fan_guard_override, Some(true));
     assert!(app.fan_guard_state["/gpu-nvidia/0"].engaged);
 
@@ -218,6 +221,130 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
         app.fan_guard_state.values().all(|state| !state.engaged),
         "no floor while config-disabled"
     );
+}
+
+#[test]
+fn fans_panel_toggle_and_control_keys() {
+    let (mut app, cfg) = live_app();
+
+    // `f` reveals the fans & controls table (hidden by default).
+    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    assert_eq!(app.fans_override, Some(true), "f shows the fans panel");
+    assert!(app
+        .status
+        .as_ref()
+        .is_some_and(|status| status.text.contains("fans:")));
+
+    // Default panels: cpu:0, gpu:0, gpu:1, memory, fans → focus index 4.
+    app.focus = 4;
+    // Default sort is RPM descending: AMD (534) is first, then the two
+    // NVIDIA fans (0 RPM). Down must move to the next *visible* row.
+    handle_event(&mut app, key(KeyCode::Down), &cfg);
+    assert_eq!(app.fan_selected, 1, "down moves the fan-control cursor");
+
+    // The live fixture's NVIDIA Fan 1 sits at 0 %, so +5 % writes 5 %.
+    handle_event(&mut app, key(KeyCode::Right), &cfg);
+    let status = app.status.as_ref().expect("control feedback");
+    assert!(
+        status.text.contains("GPU Fan 1 set to 5%"),
+        "selection follows the displayed order, got: {}",
+        status.text
+    );
+    assert_eq!(
+        app.fan_guard_override,
+        Some(false),
+        "a manual GPU setting stops the anti-stop guard from fighting it"
+    );
+
+    // Next visible control row: NVIDIA Fan 2.
+    handle_event(&mut app, key(KeyCode::Down), &cfg);
+    handle_event(&mut app, key(KeyCode::Right), &cfg);
+    let status = app.status.as_ref().expect("second control feedback");
+    assert!(
+        status.text.contains("GPU Fan 2 set to 5%"),
+        "got: {}",
+        status.text
+    );
+
+    // 0 hands the selected control back to LHM (Default/Auto).
+    handle_event(&mut app, key(KeyCode::Char('0')), &cfg);
+    let status = app.status.as_ref().expect("auto feedback");
+    assert!(
+        status.text.contains("GPU Fan 2 back to Auto"),
+        "got: {}",
+        status.text
+    );
+
+    // `f` again hides the panel.
+    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    assert_eq!(app.fans_override, Some(false));
+}
+
+#[test]
+fn mouse_wheel_scrolls_like_up_down() {
+    let (mut app, cfg) = live_app();
+    let wheel = |kind| {
+        Event::Mouse(MouseEvent {
+            kind,
+            column: 5,
+            row: 5,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+
+    // Thermal table: wheel changes the scroll offset.
+    app.thermal_override = Some(true);
+    app.focus = 4;
+    handle_event(&mut app, wheel(MouseEventKind::ScrollDown), &cfg);
+    assert_eq!(app.scrolls.get("thermal").copied(), Some(1));
+    handle_event(&mut app, wheel(MouseEventKind::ScrollUp), &cfg);
+    assert_eq!(app.scrolls.get("thermal").copied(), Some(0));
+
+    // Fans panel: wheel moves the control cursor exactly like Up/Down.
+    app.thermal_override = Some(false);
+    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    app.focus = 4;
+    handle_event(&mut app, wheel(MouseEventKind::ScrollDown), &cfg);
+    assert_eq!(app.fan_selected, 1);
+    handle_event(&mut app, wheel(MouseEventKind::ScrollUp), &cfg);
+    assert_eq!(app.fan_selected, 0);
+}
+
+#[test]
+fn mouse_title_click_focuses_and_double_click_zooms() {
+    let (mut app, cfg) = live_app();
+    app.mouse_hitboxes = vec![
+        PanelHitbox {
+            id: "cpu:0".to_string(),
+            title: Rect::new(0, 0, 80, 1),
+        },
+        PanelHitbox {
+            id: "gpu:0".to_string(),
+            title: Rect::new(0, 10, 80, 1),
+        },
+    ];
+    let click = |column, row| {
+        Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    };
+
+    handle_event(&mut app, click(5, 10), &cfg);
+    assert_eq!(app.focus, 1, "clicking a title focuses that panel");
+    assert!(!app.zoomed, "one click does not zoom");
+
+    handle_event(&mut app, click(5, 10), &cfg);
+    assert!(app.zoomed, "double-click zooms the focused panel");
+
+    handle_event(&mut app, click(5, 50), &cfg);
+    assert!(app.zoomed, "clicks outside a title are ignored");
+
+    handle_event(&mut app, click(5, 10), &cfg);
+    handle_event(&mut app, click(5, 10), &cfg);
+    assert!(!app.zoomed, "double-click again unzooms");
 }
 
 #[test]
@@ -240,7 +367,7 @@ fn h_opens_help_and_status_line_keeps_the_last_message() {
     );
 
     // Actions write the bottom status line, highlighted while fresh.
-    handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
+    handle_event(&mut app, key(KeyCode::Char('n')), &cfg);
     let status = app.status.as_ref().expect("status message");
     assert!(status.text.contains("anti-stop"), "got: {}", status.text);
     assert!(!status.dimmed, "fresh messages are highlighted");

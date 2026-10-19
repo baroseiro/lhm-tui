@@ -19,7 +19,7 @@ failures and list deferrals in the release notes.
 | 11 | No GPU (VM) | 0.9.6 | ☐ | graceful presets |
 | 12 | LHM 0.9.5 (old tuple) | 0.9.5 | ☐ | version warning |
 | 13 | `NO_COLOR=1` / `--no-color` | — | ☐ | plain rendering |
-| 14 | Fan anti-stop floor, NVIDIA at idle | 0.9.6, LHM as admin | ☐ | §7.5: `f` spins stopped fans; load spike → auto; quit → auto |
+| 14 | Fan anti-stop floor, NVIDIA at idle | 0.9.6, LHM as admin | ☐ | §7.5: `n` spins stopped fans; load spike → auto; quit → auto |
 
 ## Checklist per row
 
@@ -28,19 +28,29 @@ failures and list deferrals in the release notes.
    one poll interval.
 3. Press `c` (or run with `--charts`): charts fill over ~5 minutes; `g` cycles the window; `c`
    switches back to gauges.
-4. `t` shows/hides the temperatures table; `s` sorts it; `j`/`k` scroll it.
+4. `t` shows/hides the grouped temperatures table; rows sit under a device heading; `s` sorts
+   within each device; `j`/`k` scroll it.
 5. `enter` zooms; `tab` cycles focus; `b` searches sensors; Enter graphs a
    sensor; `q`/`esc` close overlays without quitting.
 6. `p` pauses (header shows `paused`); `r` reloads an edited config without
    losing history; `m` reports the min/max reset result on the status line.
-7. `t` and `v` toggle the temperatures and voltages tables; `s` sorts them; `j`/`k` scroll them;
-   voltage rows show min/max with two decimals.
-7. Kill/restart LHM mid-session: status goes `stale` then `live` again.
-8. Quit restores the terminal (no raw mode, cursor visible, shell usable).
-9. `--once` and `--dump -` produce output and exit 0.
-10. Fan anti-stop floor (row 14 only): it is on by default and only touches cards that can park
+7. `v` shows/hides the grouped voltages table; per-core rails appear only when zoomed; voltage
+   rows show min/max with two decimals.
+8. `f` shows/hides the fans panel: every fan is in one flat table with the device in parentheses and
+   `Speed` + `Setting` (LHM `Default` shows as `Auto`). Focus it with `tab`, select with `↑`/`↓`
+   (each press moves exactly one visible row, even after sorting), change the setting with `←`/`→`;
+   the status line confirms the write and LHM's UI shows the new value; `0` returns the fan to
+   Auto/Default.
+9. Mouse: clicking a panel title focuses it; double-clicking the title toggles zoom exactly like
+   `Enter`; clicks outside titles do nothing. The wheel scrolls the focused table and moves the fan
+   selection exactly like `↑`/`↓`.
+10. Kill/restart LHM mid-session: status goes `stale` then `live` again.
+11. Quit restores the terminal (no raw mode, cursor visible, shell usable).
+12. `--once` and `--dump -` produce output and exit 0.
+13. Fan anti-stop floor (row 14 only): it is on by default and only touches cards that can park
     their fans — on a machine with an AMD that always turns, that card must stay untouched (status
     note says so, `d` overlay reports it skipped). With the GPU idle the fans spin at the floor and
     LHM's UI shows a manual control value; start a GPU load → the guard releases and the driver
-    curve takes over; stop the load → floor returns; `f` off / quit → LHM shows automatic control
-    again.
+    curve takes over; stop the load → floor returns; `n` off / quit → LHM shows automatic control
+    again. A manual GPU fan percentage must switch the guard off (`anti-stop off` on the status
+    line) and `n` must re-enable it.

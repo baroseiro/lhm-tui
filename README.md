@@ -18,40 +18,47 @@ live, color-thresholded panels in your terminal:
 
 - **CPU** — temperature & total load gauges, `Per-Core`-labelled utilization bars, and a fixed
   two-row metrics strip (`Pwr · TDC · Volt Core` with `Clk Avg · Clk Eff` right-aligned; `Bus Speed ·
-  Clk Fabric · Clk Uncore · Clk Memory`) (`c` or `--charts` adds live graphs)
+  Clk Fabric · Clk Uncore · Clk Memory · Speed`, where `Speed` is the DDR transfer rate in MHz,
+  twice the memory clock: `Speed 3600 MHz`) (`c` or `--charts` adds live graphs)
 - **GPU** — one panel per GPU (NVIDIA/AMD/Intel, multi-GPU supported): core load, **VRAM usage**
   (`599 / 24576 MB (2%)`) with **shared GPU memory** (`Shared`) right below it (estimated from RAM
   minus VRAM when the card reports no total), hotspot temperature, power draw, clock & voltage, and
   every fan on the card on its own row underneath
 - **Memory** — used and virtual-memory gauges with `used / total (pct %)` readouts, page file info
-- **Temperatures** — sortable table of every thermal sensor in the tree, colored by thresholds
-- **Voltages** — sortable table of every voltage rail (`v`, hidden by default); GPU rails carry the
-  card name, per-core rails appear when the panel is zoomed (`enter`)
-- Plus presets for **fans**, **power**, **storage** and **network**
+- **Temperatures** — sortable table of every thermal sensor in the tree, grouped per hardware
+  device and colored by thresholds
+- **Voltages** — sortable table of every voltage rail (`v`, hidden by default), grouped per hardware
+  device; per-core rails appear when the panel is zoomed (`enter`)
+- **Fans & controls** (`f`, hidden by default) — every fan in one flat table, with the device in
+  parentheses (`GPU Fan 1 (NVIDIA GeForce RTX 3090)`), showing its **current speed** and **current
+  setting**. LHM's `Default` mode is shown as `Auto`. Focus the panel with `Tab`, pick a fan with
+  `↑`/`↓`, adjust it with `←`/`→` (±5 %) and press `0` for Auto/Default. Writes go only to
+  fan/pump `Control` sensors
+- Plus presets for **power**, **storage** and **network**
 - **GPU fan anti-stop floor** (on by default) — keeps NVIDIA/AMD fan curves from parking the fans
   at zero-RPM when idle: a 45 % floor while the GPU is idle, automatic driver control the moment
   load or temperature rises. Only cards whose fans *can* stop are touched (detected from the fan
-  control's software range), so an AMD that always turns is left alone. It is the only feature that
-  writes to hardware, and only ever to the fan controls — press `f` or set
+  control's software range), so an AMD that always turns is left alone. Press `n` or set
   `"fan_guard": { "enabled": false }` to turn it off
   ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default))
 
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
 Windows machine on your network / over SSH — through a small JSON config file.
 
-> **Project status:** v0.3.0 — dashboard refinements: shared GPU memory, a dedicated fan row,
-> labelled per-core bars and compact metric labels. The full design — architecture, config
-> schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
+> **Project status:** v0.4.0 — fan and pump control from the Fans & Controls panel, grouped
+> temperature/voltage tables, mouse navigation and a CPU memory-speed readout. The full design —
+> architecture, config schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
 
 ## Demo
 
-A ~15-second loop on the reference machine (RTX 3090 + RX 7900 XTX): the default gauges view with
+A ~17-second loop on the reference machine (RTX 3090 + RX 7900 XTX): the default gauges view with
 shared GPU memory, `Per-Core` bars and the two-row CPU strip, `c` switching to live charts, `t`
-opening the temperatures table, `v` opening the voltages table, `?` showing the key map, then a
+opening the temperatures table, `v` opening the voltages table, `f` opening the fans & controls
+table (focused and zoomed to show every device, speed and setting), `?` showing the key map, then a
 clean quit. Note the status line at the bottom — the fan anti-stop floor holding the 3090 at 45 %
 while idle.
 
-![lhm-tui demo: gauges, charts toggle, temperatures table, help overlay](docs/demo.gif)
+![lhm-tui demo: gauges, charts toggle, temperatures, voltages and fans tables, help overlay](docs/demo.gif)
 
 *Regenerate with [`vhs docs/demo.tape`](docs/demo.tape) (needs `vhs`, `ttyd`, `ffmpeg` and a running
 LHM).*
@@ -84,7 +91,7 @@ LHM).*
    cargo install --git https://github.com/baroseiro/lhm-tui
    ```
 
-   *winget, scoop and crates.io (`cargo install lhm-tui`) are planned for a v0.3.x follow-up.*
+   *winget, scoop and crates.io (`cargo install lhm-tui`) are planned for a v0.4.x follow-up.*
 3. **Run it:**
 
    ```console
@@ -128,19 +135,27 @@ lhm-tui --help
 | `p` / `Space`         | Pause / resume polling                  |
 | `g` / `G`             | Cycle chart window (1m · 5m · 15m)      |
 | `Tab` / `Shift+Tab`   | Focus next / previous panel             |
+| `↑` / `↓`             | Scroll table / move fan selection       |
 | `Enter`               | Zoom focused panel fullscreen           |
 | `b`                   | Sensor browser                          |
 | `s`                   | Change table sort                       |
 | `r`                   | Reload config from disk                 |
 | `m`                   | Reset LHM min/max counters              |
 | `a` / `d`             | ASCII mode / debug overlay              |
-| `t` / `v`             | Toggle temperatures / voltages tables   |
+| `t` / `v`             | Toggle temperatures / voltages tables    |
+| `f`                   | Toggle fans & controls table            |
 | `c`                   | Toggle charts                           |
-| `f`                   | Toggle GPU fan anti-stop floor (on by default) |
+| `n`                   | Toggle GPU fan anti-stop floor (on by default) |
+| `←` / `-`             | Fans panel: lower selected control by 5 % |
+| `→` / `+`             | Fans panel: raise selected control by 5 % |
+| `0`                   | Fans panel: back to Auto/Default         |
 
 All keys are remappable in the config file. The overlay (`h` or `?`) shows the live key map for
 your remaps, and the bottom line is a status line with the latest message (reload results, fan
-anti-stop state, errors) — the chart window label moved into the header.
+anti-stop state, controls, errors) - the chart window label moved into the header.
+
+**Mouse:** click a panel title to focus it; double-click the title to toggle zoom (same as `Enter`);
+the scroll wheel scrolls the focused table or moves the fan selection, exactly like `↑`/`↓`.
 
 ## Configuration
 
@@ -193,7 +208,9 @@ Common things people change:
 | Turn charts on                      | Press `c`, run with `--charts`, or set `charts.enabled: true`          |
 | Show the temperatures table         | Press `t`, or add `"thermal"` to `ui.layout`                            |
 | Show the voltages table             | Press `v`, or add `"voltage"` to `ui.layout`                            |
-| Keep GPU fans spinning when idle    | On by default — press `f` or `"fan_guard": { "enabled": false }` to disable ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default)) |
+| Show the fans & controls table      | Press `f`, or add `"fans"` to `ui.layout`                               |
+| Change a fan/pump setting           | Focus the Fans panel (`Tab`), select with `↑`/`↓`, adjust with `←`/`→` (±5 %), `0` for Auto ([SPEC §6.3](SPEC.md#63-preset-panels)) |
+| Keep GPU fans spinning when idle    | On by default - press `n` or `"fan_guard": { "enabled": false }` to disable ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default)) |
 | Switch theme                        | `theme.name`: `default`, `gruvbox`, `nord` or `mono`                    |
 | Custom theme file                   | `lhm-tui --theme path/to/theme.json` (same shape as the `theme` block)  |
 | Strip all colors                    | `NO_COLOR=1 lhm-tui` or `--no-color`                                    |
@@ -223,7 +240,8 @@ otherwise use the gateway IP (`ip route | grep default`) or the LAN IP.
 | Nothing but `—` on an NVIDIA laptop GPU   | Some mobile dGPUs only expose sensors while the GPU is active                              |
 | Braille graphs look broken                | Press `a` for ASCII mode or set `charts.marker` to `halfblock` in the config               |
 | Wrong sensor bound to a chart             | `lhm-tui --probe` prints the binding report; pin the sensor via `panels.sensor_overrides`  |
-| `f` says "no controllable GPU fans"       | LHM needs to run as administrator so the `Controls` group exists (NVIDIA/AMD cards)        |
+| `n` says "no controllable GPU fans"       | LHM needs to run as administrator so the `Controls` group exists (NVIDIA/AMD cards)        |
+| A fan setting is rejected                 | LHM must run as administrator; some SuperIO headers expose a control without write support |
 | AMD card untouched by the anti-stop floor | Expected: cards whose fan curve can never stop are skipped (`only_auto_stop`; SPEC §7.5)   |
 | Anti-stop floor fights Afterburner/Adrenalin | Stop the vendor tool while the floor is enabled, or leave `fan_guard.enabled` off        |
 
@@ -238,9 +256,11 @@ Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itse
   the CPU metrics strip
 - **v0.3.0** — dashboard refinements: shared GPU memory row with a RAM-minus-VRAM fallback,
   dedicated GPU fan row, `Per-Core` bars, short metric labels, two-row CPU template, percentage
-  memory readouts, better voltage names *(current)*
-- **v0.3.x** — winget + scoop manifests, crates.io publish
-- **v0.4.0** — full fan/pump control from the TUI (`Sensor?action=Set`) with confirmation dialogs
+  memory readouts, better voltage names
+- **v0.4.0** — fan/pump control from the Fans panel (flat, device in parentheses, speed + setting,
+  Auto/Default), grouped temperature/voltage tables, mouse navigation and a CPU `Speed` readout
+  *(current)*
+- **v0.4.x** — winget + scoop manifests, crates.io publish
 - **v0.5.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
 - **v0.6.0** — multi-host tabs, user theme files
 - Later — template-based custom panels, plugin scripting

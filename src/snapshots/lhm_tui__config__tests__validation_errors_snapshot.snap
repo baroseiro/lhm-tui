@@ -5,6 +5,6 @@ expression: validate(&config)
 [
     "server.poll_interval_ms: must be between 250 and 60000 ms (got 100)",
     "panels.cpu.show: unknown slot `temperatures` (expected one of temp, load, core_loads, clock, power, voltage, current)",
-    "keys.fire_lasers: unknown action (valid: quit, help, pause, window_next, window_prev, focus_next, focus_prev, zoom, browser, sort, reload, reset_minmax, ascii, debug, toggle_thermal, toggle_voltage, toggle_charts, toggle_fan_guard)",
+    "keys.fire_lasers: unknown action (valid: quit, help, pause, window_next, window_prev, focus_next, focus_prev, zoom, browser, sort, reload, reset_minmax, ascii, debug, toggle_thermal, toggle_voltage, toggle_fans, toggle_charts, toggle_fan_guard, fan_control_up, fan_control_down, fan_control_auto)",
     "theme.name: unknown theme `neon` (built-ins: default, gruvbox, nord, mono, custom; use --theme <file> for custom themes)",
 ]

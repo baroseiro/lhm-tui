@@ -284,6 +284,7 @@ fn panel_list_expands_layout() {
     let overrides = presets::PanelOverrides {
         thermal: Some(true),
         voltage: None,
+        fans: None,
     };
     let panels = presets::panel_list(&cfg, &bindings, overrides);
     let ids: Vec<&str> = panels.iter().map(|panel| panel.id.as_str()).collect();
@@ -302,6 +303,7 @@ fn panel_list_expands_layout() {
     let overrides = presets::PanelOverrides {
         thermal: Some(false),
         voltage: Some(true),
+        fans: None,
     };
     let panels = presets::panel_list(&cfg, &live_bindings, overrides);
     let ids: Vec<&str> = panels.iter().map(|panel| panel.id.as_str()).collect();
@@ -329,6 +331,7 @@ fn panel_list_expands_layout() {
     let overrides = presets::PanelOverrides {
         thermal: Some(true),
         voltage: None,
+        fans: None,
     };
     let thermal = presets::panel_list(&cfg, &live_bindings, overrides)
         .into_iter()

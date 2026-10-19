@@ -54,6 +54,35 @@ fn frame_live_160x50_snapshot() {
 }
 
 #[test]
+fn frame_records_panel_title_hitboxes() {
+    let cfg = Config::default();
+    let mut app = live_app(&cfg);
+    let _ = frame_text(&mut app, &cfg, 160, 50);
+    let ids: Vec<&str> = app
+        .mouse_hitboxes
+        .iter()
+        .map(|hitbox| hitbox.id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["cpu:0", "gpu:0", "gpu:1", "memory"]);
+    assert!(app
+        .mouse_hitboxes
+        .iter()
+        .all(|hitbox| hitbox.title.height == 1));
+
+    app.zoomed = true;
+    app.focus = 0;
+    let _ = frame_text(&mut app, &cfg, 160, 50);
+    assert_eq!(
+        app.mouse_hitboxes
+            .iter()
+            .map(|hitbox| hitbox.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["cpu:0"],
+        "only the zoomed panel is clickable"
+    );
+}
+
+#[test]
 fn frame_live_120x40_snapshot() {
     let cfg = Config::default();
     let mut app = live_app(&cfg);

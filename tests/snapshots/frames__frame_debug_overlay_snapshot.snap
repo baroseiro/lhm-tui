@@ -2,16 +2,16 @@
 source: tests/frames.rs
 expression: "frame_text(&mut app, &cfg, 100, 34)"
 ---
- lhm-tui v0.3.0  ● live   100×34   http://127.0.0.1:8085
+ lhm-tui v0.4.0  ● live   100×34   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 9 5900XT ────────────────────────────────────────────────────────────────────────╮
 │ Temp     ███████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░ 69.6 °C │
 │ Load     ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 7.5 % │
 │ Pwr   87 W TDC   41.02 A Volt Core 1.39 V                       Clk Avg 4.06 GHz Clk Eff 321 MHz │
-│ Bus Speed 100 MHz Clk Fabric 1.80 GHz Clk Uncore 1.80 GHz Clk Memory 1.80 GHz                    │
+│ Bus Speed 100 MHz Clk Fabric 1.80 GHz Clk Uncore 1.80 GHz Clk Memory 1.80 GHz Speed 3600 MHz     │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭ GPU 0 · NVID╭ Debug — d closes ────────────────────────────────────────────────────╮─────────────╮
-│ Temp     ███│  version        0.3.0                                                │░░░░ 50.0 °C │
+│ Temp     ███│  version        0.4.0                                                │░░░░ 50.0 °C │
 │ Hot Spot ███│  link           Live                                                 │░░░░ 60.5 °C │
 │ Mem Temp ███│  flags          paused=false charts=false ascii=false zoom=false help│░░░░ 54.0 °C │
 │ Load     █░░│  url            http://127.0.0.1:8085                                │░░░░░░ 0.0 % │

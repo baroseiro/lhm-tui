@@ -11,7 +11,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+    MouseButton, MouseEvent, MouseEventKind,
+};
+use ratatui::layout::Rect;
 use ratatui::DefaultTerminal;
 
 use crate::bindings::{self, Bindings};
@@ -80,6 +84,13 @@ pub enum LinkStatus {
     Reconnecting,
 }
 
+/// Clickable title area of a panel from the last rendered frame.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelHitbox {
+    pub id: String,
+    pub title: Rect,
+}
+
 pub struct AppState {
     pub should_quit: bool,
     /// Set when the screen needs a redraw (SPEC §4.2 redraw policy).
@@ -99,6 +110,10 @@ pub struct AppState {
     pub bindings_fingerprint: u64,
     /// Focused panel index into the current panel list (wraps at draw time).
     pub focus: usize,
+    /// Panel title hitboxes from the last frame (mouse focus/zoom).
+    pub mouse_hitboxes: Vec<PanelHitbox>,
+    /// Last left click on a panel title, for double-click zoom detection.
+    pub last_title_click: Option<(Instant, String)>,
     /// Per-panel scroll offsets, keyed by panel id.
     pub scrolls: BTreeMap<String, u16>,
     /// `s` key sort override; `None` → `ui.table_sort` from config.
@@ -115,6 +130,10 @@ pub struct AppState {
     pub thermal_override: Option<bool>,
     /// `v` key override for the voltages table visibility.
     pub voltage_override: Option<bool>,
+    /// `f` key override for the fans & controls table visibility.
+    pub fans_override: Option<bool>,
+    /// Selected controllable fan row (index into the controllable fan list).
+    pub fan_selected: usize,
     /// `c` key override for `charts.enabled`.
     pub charts_override: Option<bool>,
     /// `?`/`h` help overlay visibility (any key press closes it).
@@ -170,6 +189,8 @@ impl AppState {
             bindings: None,
             bindings_fingerprint: 0,
             focus: 0,
+            mouse_hitboxes: Vec::new(),
+            last_title_click: None,
             scrolls: BTreeMap::new(),
             sort_override: None,
             history: None,
@@ -177,6 +198,8 @@ impl AppState {
             ascii_override: None,
             thermal_override: None,
             voltage_override: None,
+            fans_override: None,
+            fan_selected: 0,
             charts_override: None,
             help_visible: false,
             status: None,
@@ -276,12 +299,18 @@ impl AppState {
             .unwrap_or_else(|| cfg.ui.layout.iter().any(|key| key == "voltage"))
     }
 
+    /// Effective fans table visibility: `f` override, else `ui.layout`.
+    pub fn effective_fans(&self, cfg: &Config) -> bool {
+        self.fans_override
+            .unwrap_or_else(|| cfg.ui.layout.iter().any(|key| key == "fans"))
+    }
+
     /// Effective charts mode: `c` override, else `charts.enabled` from config.
     pub fn effective_charts(&self, cfg: &Config) -> bool {
         self.charts_override.unwrap_or(cfg.charts.enabled)
     }
 
-    /// Effective fan anti-stop state: `f` override, else `fan_guard.enabled`.
+    /// Effective fan anti-stop state: `n` override, else `fan_guard.enabled`.
     pub fn effective_fan_guard(&self, cfg: &Config) -> bool {
         self.fan_guard_override.unwrap_or(cfg.fan_guard.enabled)
     }
@@ -291,6 +320,7 @@ impl AppState {
         crate::ui::presets::PanelOverrides {
             thermal: Some(self.effective_thermal(cfg)),
             voltage: Some(self.effective_voltage(cfg)),
+            fans: Some(self.effective_fans(cfg)),
         }
     }
 
@@ -386,12 +416,30 @@ impl Default for AppState {
     }
 }
 
+/// Enables terminal mouse reporting for the session and always turns it off.
+struct MouseCapture;
+
+impl MouseCapture {
+    fn enable() -> Self {
+        let _ = ratatui::crossterm::execute!(std::io::stdout(), EnableMouseCapture);
+        Self
+    }
+}
+
+impl Drop for MouseCapture {
+    fn drop(&mut self) {
+        let _ = ratatui::crossterm::execute!(std::io::stdout(), DisableMouseCapture);
+    }
+}
+
 /// Run the TUI until the user quits. Owns the terminal lifecycle, including
 /// restore on every exit path (SPEC §4.2 shutdown). Startup config warnings
 /// are surfaced on the status line (T4.6).
 pub async fn run(cfg: &Config, options: SessionOptions) -> Result<()> {
     let mut terminal = ratatui::init();
+    let mouse = MouseCapture::enable();
     let result = run_loop(&mut terminal, cfg, options).await;
+    drop(mouse);
     ratatui::restore();
     result
 }
@@ -618,8 +666,67 @@ pub fn handle_event(app: &mut AppState, event: Event, cfg: &Config) {
     match event {
         Event::Resize(_, _) => app.dirty = true,
         Event::Key(key) if key.kind != KeyEventKind::Release => handle_key(app, key, cfg),
+        Event::Mouse(mouse) => handle_mouse(app, mouse, cfg),
         _ => {}
     }
+}
+
+/// Click a panel title to focus it; double-click toggles the zoom (same as
+/// `Enter`). Only left-button presses on the top border row are handled.
+fn handle_mouse(app: &mut AppState, mouse: MouseEvent, cfg: &Config) {
+    const DOUBLE_CLICK_MS: u64 = 400;
+    if app.help_visible || app.browser_open || app.adhoc_sensor.is_some() {
+        return;
+    }
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            scroll_or_select_focused(app, cfg, -1);
+            return;
+        }
+        MouseEventKind::ScrollDown => {
+            scroll_or_select_focused(app, cfg, 1);
+            return;
+        }
+        MouseEventKind::Down(MouseButton::Left) => {}
+        _ => return,
+    }
+
+    let Some(id) = app
+        .mouse_hitboxes
+        .iter()
+        .find(|hitbox| {
+            let title = hitbox.title;
+            let column = u32::from(mouse.column);
+            let row = u32::from(mouse.row);
+            column >= u32::from(title.x)
+                && column < u32::from(title.x) + u32::from(title.width)
+                && row >= u32::from(title.y)
+                && row < u32::from(title.y) + u32::from(title.height)
+        })
+        .map(|hitbox| hitbox.id.clone())
+    else {
+        return;
+    };
+    let Some(bindings) = app.bindings.as_ref() else {
+        return;
+    };
+    let panels = crate::ui::presets::panel_list(cfg, bindings, app.panel_overrides(cfg));
+    let Some(index) = panels.iter().position(|panel| panel.id == id) else {
+        return;
+    };
+    app.focus = index;
+
+    let now = Instant::now();
+    let double = app.last_title_click.as_ref().is_some_and(|(at, last)| {
+        last == &id && now.duration_since(*at) <= Duration::from_millis(DOUBLE_CLICK_MS)
+    });
+    if double {
+        app.zoomed = !app.zoomed;
+        app.last_title_click = None;
+    } else {
+        app.last_title_click = Some((now, id));
+    }
+    app.dirty = true;
 }
 
 /// Modal overlays get first refusal on keys (T5.1/T5.2).
@@ -692,6 +799,17 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
         let current = app.effective_voltage(cfg);
         app.voltage_override = Some(!current);
         app.dirty = true;
+    } else if action_matches(cfg, "toggle_fans", &key) {
+        let current = app.effective_fans(cfg);
+        app.fans_override = Some(!current);
+        app.fan_selected = 0;
+        app.dirty = true;
+        let message = if current {
+            "fans panel hidden".to_string()
+        } else {
+            "fans: tab to focus - left/right adjust 5 %, 0 = auto".to_string()
+        };
+        app.set_status(message);
     } else if action_matches(cfg, "toggle_charts", &key) {
         let current = app.effective_charts(cfg);
         app.charts_override = Some(!current);
@@ -726,10 +844,16 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
             )
         };
         app.set_status(message);
+    } else if action_matches(cfg, "fan_control_up", &key) {
+        adjust_fan_control(app, cfg, 5.0);
+    } else if action_matches(cfg, "fan_control_down", &key) {
+        adjust_fan_control(app, cfg, -5.0);
+    } else if action_matches(cfg, "fan_control_auto", &key) {
+        auto_fan_control(app, cfg);
     } else if key_matches(&key, "down") || key_matches(&key, "j") {
-        scroll_focused(app, cfg, 1);
+        scroll_or_select_focused(app, cfg, 1);
     } else if key_matches(&key, "up") || key_matches(&key, "k") {
-        scroll_focused(app, cfg, -1);
+        scroll_or_select_focused(app, cfg, -1);
     } else {
         app.dirty = true;
     }
@@ -946,7 +1070,7 @@ async fn control_loop(
                 .map(|client| (url, client));
         }
         let Some((_, client)) = client.as_ref() else {
-            let _ = notices.send("fan anti-stop: cannot create HTTP client".to_string());
+            let _ = notices.send("fan control: cannot create HTTP client".to_string());
             continue;
         };
         match client
@@ -959,7 +1083,7 @@ async fn control_loop(
                 }
             }
             Err(err) => {
-                let _ = notices.send(format!("fan anti-stop failed: {err}"));
+                let _ = notices.send(format!("fan control failed: {err}"));
             }
         }
     }
@@ -1075,6 +1199,144 @@ fn scroll_focused(app: &mut AppState, cfg: &Config, delta: i32) {
         scroll.saturating_sub((-delta) as u16)
     };
     app.dirty = true;
+}
+
+/// `↑`/`↓` and the mouse wheel: move the fan cursor or scroll the focused table.
+fn scroll_or_select_focused(app: &mut AppState, cfg: &Config, delta: i32) {
+    if fans_focused(app, cfg) {
+        move_fan_selection(app, cfg, delta);
+    } else {
+        scroll_focused(app, cfg, delta);
+    }
+}
+
+/// True when the focused panel is the fans & controls table.
+fn fans_focused(app: &AppState, cfg: &Config) -> bool {
+    let Some(bindings) = app.bindings.as_ref() else {
+        return false;
+    };
+    let panels = crate::ui::presets::panel_list(cfg, bindings, app.panel_overrides(cfg));
+    if panels.is_empty() {
+        return false;
+    }
+    matches!(
+        panels[app.focus % panels.len()].kind,
+        crate::ui::presets::PanelKind::Fans
+    )
+}
+
+/// Controllable fan binding indices in the fans table's current display order.
+fn fan_selection_order(app: &AppState, cfg: &Config) -> Vec<usize> {
+    let Some(bindings) = app.bindings.as_ref() else {
+        return Vec::new();
+    };
+    let Some(snapshot) = app.snapshot() else {
+        return Vec::new();
+    };
+    crate::ui::presets::fan_control_order(&bindings.fans, snapshot, app.effective_sort(cfg))
+}
+
+/// Move the fan-control cursor without leaving the controllable rows.
+fn move_fan_selection(app: &mut AppState, cfg: &Config, delta: i32) {
+    let count = fan_selection_order(app, cfg).len();
+    if count == 0 {
+        return;
+    }
+    let current = app.fan_selected.min(count - 1) as i32;
+    let next = (current + delta).clamp(0, count as i32 - 1) as usize;
+    if next != app.fan_selected {
+        app.fan_selected = next;
+        app.dirty = true;
+    }
+}
+
+/// `(hardware_id, fan label, control sensor id, current setting)`.
+fn selected_fan_control(
+    app: &AppState,
+    cfg: &Config,
+) -> Option<(String, String, String, Option<f64>)> {
+    let bindings = app.bindings.as_ref()?;
+    let index = fan_selection_order(app, cfg)
+        .get(app.fan_selected)
+        .copied()?;
+    let fan = bindings.fans.get(index)?;
+    let control = fan.control.as_ref()?;
+    let current = app
+        .snapshot()
+        .and_then(|snapshot| bindings::slot_sensor(snapshot, control))
+        .and_then(|sensor| sensor.value);
+    Some((
+        fan.hardware_id.clone(),
+        fan.fan.label.clone(),
+        control.sensor_id.clone(),
+        current,
+    ))
+}
+
+/// Adjust the selected control by `delta` percentage points; Auto starts at 50 %.
+fn adjust_fan_control(app: &mut AppState, cfg: &Config, delta: f32) {
+    if !fans_focused(app, cfg) {
+        return;
+    }
+    let Some((hardware_id, label, control_id, current)) = selected_fan_control(app, cfg) else {
+        app.set_status("fan control: no controllable fan selected".to_string());
+        return;
+    };
+    let value = (current.unwrap_or(50.0) + f64::from(delta)).clamp(0.0, 100.0);
+    write_fan_control(
+        app,
+        cfg,
+        &hardware_id,
+        &label,
+        &control_id,
+        Some(value as f32),
+    );
+}
+
+/// Hand the selected control back to LHM's automatic/default mode.
+fn auto_fan_control(app: &mut AppState, cfg: &Config) {
+    if !fans_focused(app, cfg) {
+        return;
+    }
+    let Some((hardware_id, label, control_id, _)) = selected_fan_control(app, cfg) else {
+        app.set_status("fan control: no controllable fan selected".to_string());
+        return;
+    };
+    write_fan_control(app, cfg, &hardware_id, &label, &control_id, None);
+}
+
+/// Write one manual control value. A manual GPU setting turns the anti-stop
+/// floor off for the session so the two writers cannot fight (`n` re-enables).
+fn write_fan_control(
+    app: &mut AppState,
+    cfg: &Config,
+    hardware_id: &str,
+    label: &str,
+    control_id: &str,
+    value: Option<f32>,
+) {
+    let mut notice = match value {
+        Some(value) => format!("fan control: {label} set to {value:.0}%"),
+        None => format!("fan control: {label} back to Auto"),
+    };
+    if value.is_some()
+        && app
+            .fan_guard_state
+            .get(hardware_id)
+            .is_some_and(|state| state.eligible)
+        && app.effective_fan_guard(cfg)
+    {
+        app.fan_guard_override = Some(false);
+        update_fan_guard(app, cfg);
+        notice.push_str(" (anti-stop off)");
+    }
+    app.set_status(notice.clone());
+    dispatch_control(
+        app,
+        cfg,
+        vec![(control_id.to_string(), value)],
+        Some(notice),
+    );
 }
 
 /// True when `key` matches any key spec configured for `action` (SPEC §6.4).

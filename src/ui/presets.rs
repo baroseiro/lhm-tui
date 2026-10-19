@@ -13,7 +13,7 @@ use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, BorderType, Cell, Row};
 use ratatui::Frame;
 
-use crate::bindings::{self, Bindings, CpuBindings, GpuBindings, MemoryBindings, Slot};
+use crate::bindings::{self, Bindings, CpuBindings, FanRow, GpuBindings, MemoryBindings, Slot};
 use crate::charts::{self, ChartsState, GraphSpec, Series};
 use crate::config::{Config, CustomPanel, CustomWidget, Marker, TableSort, WidgetKind, YMode};
 use crate::history::History;
@@ -65,6 +65,8 @@ pub struct PanelCtx<'a> {
     pub now: Instant,
     /// Height decisions shared with the height model (`panel_layouts`).
     pub layout: PanelLayout,
+    /// Selected controllable fan row (index into the controllable fan list).
+    pub fan_selected: usize,
     /// True when the panel owns the whole body (`enter` zoom): the voltages
     /// table then also shows per-core rails (SPEC §6.3).
     pub zoomed: bool,
@@ -97,6 +99,8 @@ pub struct PanelOverrides {
     pub thermal: Option<bool>,
     /// `v` override for the voltages table.
     pub voltage: Option<bool>,
+    /// `f` override for the fans & controls table.
+    pub fans: Option<bool>,
 }
 
 /// Per-panel layout decisions that depend on the current readings. Computed
@@ -118,6 +122,10 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
     let voltage_visible = overrides.voltage.unwrap_or(layout_has_voltage)
         && cfg.panels.voltage.enabled
         && !bindings.voltage.is_empty();
+    let layout_has_fans = cfg.ui.layout.iter().any(|key| key == "fans");
+    let fans_visible = overrides.fans.unwrap_or(layout_has_fans)
+        && cfg.panels.fans.enabled
+        && !bindings.fans.is_empty();
 
     let mut panels = Vec::new();
     for key in &cfg.ui.layout {
@@ -161,7 +169,7 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
                     scrollable: true,
                 });
             }
-            "fans" if cfg.panels.fans.enabled && !bindings.fans.is_empty() => {
+            "fans" if fans_visible => {
                 panels.push(PanelSpec {
                     id: "fans".to_string(),
                     kind: PanelKind::Fans,
@@ -212,7 +220,7 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
         }
     }
 
-    // `t` / `v` can reveal the tables even when they are not in ui.layout.
+    // `t` / `v` / `f` can reveal the tables even when they are not in ui.layout.
     if thermal_visible && !layout_has_thermal {
         panels.push(PanelSpec {
             id: "thermal".to_string(),
@@ -224,6 +232,13 @@ pub fn panel_list(cfg: &Config, bindings: &Bindings, overrides: PanelOverrides) 
         panels.push(PanelSpec {
             id: "voltage".to_string(),
             kind: PanelKind::Voltage,
+            scrollable: true,
+        });
+    }
+    if fans_visible && !layout_has_fans {
+        panels.push(PanelSpec {
+            id: "fans".to_string(),
+            kind: PanelKind::Fans,
             scrollable: true,
         });
     }
@@ -338,8 +353,20 @@ pub fn panel_height(
             };
             (content + 2).max(3)
         }
-        PanelKind::Thermal => (bindings.thermal.len() + 3).clamp(4, max) as u16,
-        PanelKind::Voltage => (bindings.voltage.len() + 3).clamp(4, max) as u16,
+        PanelKind::Thermal => {
+            let groups = hardware_groups(
+                bindings
+                    .thermal
+                    .iter()
+                    .map(|slot| slot.hardware_id.as_str()),
+            );
+            (bindings.thermal.len() + groups + 3).clamp(4, max) as u16
+        }
+        PanelKind::Voltage => {
+            let slots = voltage_table_slots(&bindings.voltage, false);
+            let groups = hardware_groups(slots.iter().map(|slot| slot.hardware_id.as_str()));
+            (slots.len() + groups + 3).clamp(4, max) as u16
+        }
         PanelKind::Fans => (bindings.fans.len() + 3).clamp(4, max) as u16,
         PanelKind::Power => (bindings.power.len() + 4).clamp(4, max) as u16,
         PanelKind::Storage => (bindings.storage.len() + 3).clamp(4, max) as u16,
@@ -356,6 +383,11 @@ pub fn panel_height(
             None => 5,
         },
     }
+}
+
+/// Number of distinct hardware devices in a table (group header rows).
+fn hardware_groups<'a>(ids: impl Iterator<Item = &'a str>) -> usize {
+    ids.collect::<std::collections::BTreeSet<_>>().len()
 }
 
 /// `(label, value)` pairs borrowed as the slice shape the info widgets take.
@@ -457,6 +489,12 @@ fn cpu_strip(cpu: &CpuBindings, snapshot: &Snapshot, cfg: &Config) -> CpuStrip {
                 "Clk Memory".to_string(),
                 slot_display(snapshot, &cpu.clock_memory),
             ));
+            // DDR transfer rate: LHM exposes the memory clock (usually half).
+            if let Some((_, mhz)) = slot_value(snapshot, &cpu.clock_memory) {
+                strip
+                    .second
+                    .push(("Speed".to_string(), format::memory_speed_mhz(mhz * 2.0)));
+            }
         }
     }
     strip
@@ -692,21 +730,16 @@ pub fn draw_panel(frame: &mut Frame, area: Rect, spec: &PanelSpec, ctx: &mut Pan
                 draw_memory(frame, area, &memory, ctx);
             }
         }
-        PanelKind::Thermal => draw_slot_table(
-            frame,
-            area,
-            "Temperatures",
-            &ctx.bindings.thermal,
-            false,
-            ctx,
-        ),
+        PanelKind::Thermal => {
+            draw_slot_table(frame, area, "Temperatures", &ctx.bindings.thermal, ctx)
+        }
         PanelKind::Voltage => {
             // Per-core rails are hidden unless the panel is zoomed (`enter`).
             let visible: Vec<Slot> = voltage_table_slots(&ctx.bindings.voltage, ctx.zoomed)
                 .into_iter()
                 .cloned()
                 .collect();
-            draw_slot_table(frame, area, "Voltages", &visible, true, ctx)
+            draw_slot_table(frame, area, "Voltages", &visible, ctx)
         }
         PanelKind::Fans => draw_fans(frame, area, ctx),
         PanelKind::Power => draw_power(frame, area, ctx),
@@ -1968,8 +2001,8 @@ fn duplicate_labels(labels: &[String]) -> Vec<bool> {
     duplicated
 }
 
-fn sort_table_rows(sort: TableSort, rows: &mut Vec<(Option<f64>, String, Row<'static>)>) {
-    let by_value = |a: Option<f64>, b: Option<f64>, descending: bool| match (a, b) {
+fn cmp_values(a: Option<f64>, b: Option<f64>, descending: bool) -> std::cmp::Ordering {
+    match (a, b) {
         (Some(a), Some(b)) => {
             if descending {
                 b.partial_cmp(&a).unwrap_or(std::cmp::Ordering::Equal)
@@ -1980,13 +2013,118 @@ fn sort_table_rows(sort: TableSort, rows: &mut Vec<(Option<f64>, String, Row<'st
         (Some(_), None) => std::cmp::Ordering::Less,
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (None, None) => std::cmp::Ordering::Equal,
-    };
+    }
+}
+
+fn sort_table_rows(sort: TableSort, rows: &mut Vec<(Option<f64>, String, Row<'static>)>) {
     match sort {
-        TableSort::ValueDesc => rows.sort_by(|a, b| by_value(a.0, b.0, true)),
-        TableSort::ValueAsc => rows.sort_by(|a, b| by_value(a.0, b.0, false)),
+        TableSort::ValueDesc => rows.sort_by(|a, b| cmp_values(a.0, b.0, true)),
+        TableSort::ValueAsc => rows.sort_by(|a, b| cmp_values(a.0, b.0, false)),
         TableSort::Name => rows.sort_by_key(|row| row.1.to_ascii_lowercase()),
         TableSort::Unspecified => {}
     }
+}
+
+/// One row before grouping; `selected` marks the selectable fan cursor.
+struct TableRow {
+    value: Option<f64>,
+    label: String,
+    row: Row<'static>,
+    selected: bool,
+}
+
+struct TableGroup {
+    hardware_id: String,
+    hardware_name: String,
+    rows: Vec<TableRow>,
+}
+
+fn sort_table_entries(sort: TableSort, rows: &mut [TableRow]) {
+    match sort {
+        TableSort::ValueDesc => rows.sort_by(|a, b| cmp_values(a.value, b.value, true)),
+        TableSort::ValueAsc => rows.sort_by(|a, b| cmp_values(a.value, b.value, false)),
+        TableSort::Name => rows.sort_by_key(|row| row.label.to_ascii_lowercase()),
+        TableSort::Unspecified => {}
+    }
+}
+
+/// Device-qualified label used by the flat fans table and its sort order.
+fn fan_display_label(fan: &FanRow, snapshot: &Snapshot) -> String {
+    let hardware_name = snapshot
+        .hardware(&fan.hardware_id)
+        .map(|hardware| hardware.name.clone())
+        .unwrap_or_else(|| fan.hardware_id.clone());
+    format!("{} ({hardware_name})", fan.fan.label)
+}
+
+/// Controllable fan indices in the order the fans table displays them, so
+/// keyboard selection moves one visible row at a time.
+pub fn fan_control_order(fans: &[FanRow], snapshot: &Snapshot, sort: TableSort) -> Vec<usize> {
+    let mut rows: Vec<(Option<f64>, String, usize)> = fans
+        .iter()
+        .enumerate()
+        .filter(|(_, fan)| fan.control.is_some())
+        .map(|(index, fan)| {
+            let value = bindings::slot_sensor(snapshot, &fan.fan).and_then(|sensor| sensor.value);
+            (value, fan_display_label(fan, snapshot), index)
+        })
+        .collect();
+    match sort {
+        TableSort::ValueDesc => rows.sort_by(|a, b| cmp_values(a.0, b.0, true)),
+        TableSort::ValueAsc => rows.sort_by(|a, b| cmp_values(a.0, b.0, false)),
+        TableSort::Name => rows.sort_by_key(|row| row.1.to_ascii_lowercase()),
+        TableSort::Unspecified => {}
+    }
+    rows.into_iter().map(|(_, _, index)| index).collect()
+}
+
+/// Group rows per hardware device (first-seen tree order), sort within each
+/// device, and insert one bold device heading before its rows. Returns the
+/// flattened rows and the flattened index of the row whose `id` is selected.
+fn grouped_rows(
+    entries: Vec<(String, String, TableRow)>,
+    columns: usize,
+    ctx: &PanelCtx,
+) -> (Vec<Row<'static>>, Option<usize>) {
+    let mut groups: Vec<TableGroup> = Vec::new();
+    for (hardware_id, hardware_name, row) in entries {
+        if let Some(index) = groups
+            .iter()
+            .position(|group| group.hardware_id == hardware_id)
+        {
+            groups[index].rows.push(row);
+        } else {
+            groups.push(TableGroup {
+                hardware_id,
+                hardware_name,
+                rows: vec![row],
+            });
+        }
+    }
+
+    let mut rows = Vec::new();
+    let mut selected_index = None;
+    for mut group in groups {
+        sort_table_entries(ctx.sort, &mut group.rows);
+        rows.push(group_header_row(&group.hardware_name, columns, ctx));
+        for row in group.rows {
+            if row.selected {
+                selected_index = Some(rows.len());
+            }
+            rows.push(row.row);
+        }
+    }
+    (rows, selected_index)
+}
+
+fn group_header_row(name: &str, columns: usize, ctx: &PanelCtx) -> Row<'static> {
+    let marker = if ctx.ascii { "> " } else { "▸ " };
+    let style = with_dim(Style::new().fg(ctx.theme.accent).bold(), ctx.stale);
+    let mut cells = vec![Cell::from(format!("{marker}{name}"))];
+    for _ in 1..columns {
+        cells.push(Cell::from(""));
+    }
+    Row::new(cells).style(style)
 }
 
 /// Per-core voltage rails (`Core #1 VID`, `CPU Core #2`, …) are hidden from
@@ -2017,41 +2155,25 @@ fn voltage_table_slots(slots: &[Slot], zoomed: bool) -> Vec<&Slot> {
     }
 }
 
-fn draw_slot_table(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    slots: &[Slot],
-    qualify_gpu: bool,
-    ctx: &PanelCtx,
-) {
+fn draw_slot_table(frame: &mut Frame, area: Rect, title: &str, slots: &[Slot], ctx: &PanelCtx) {
     let narrow = area.width < 80; // drop Min/Max columns (SPEC §6.1)
     let block = panel_block(title.to_string(), ctx.theme, ctx.stale, ctx.focused);
-    let labels: Vec<String> = slots.iter().map(|slot| slot.label.clone()).collect();
-    let duplicated = duplicate_labels(&labels);
-
-    let mut rows: Vec<(Option<f64>, String, Row<'static>)> = slots
+    let columns = if narrow { 2 } else { 4 };
+    let entries: Vec<(String, String, TableRow)> = slots
         .iter()
-        .zip(duplicated)
-        .filter_map(|(slot, duplicated)| {
+        .filter_map(|slot| {
             let sensor = bindings::slot_sensor(ctx.snapshot, slot)?;
-            let hardware = ctx.snapshot.hardware(&slot.hardware_id);
-            let hardware_name = hardware
+            let hardware_name = ctx
+                .snapshot
+                .hardware(&slot.hardware_id)
                 .map(|hardware| hardware.name.clone())
-                .unwrap_or_default();
-            // GPU rails always carry the card name; other tables only when a
-            // label is ambiguous within the table.
-            let name = if qualify_gpu && hardware.is_some_and(|hardware| hardware.kind.is_gpu()) {
-                format!("{} ({hardware_name})", slot.label)
-            } else {
-                distinct_label(&slot.label, &hardware_name, duplicated)
-            };
+                .unwrap_or_else(|| slot.hardware_id.clone());
             let style = with_dim(
                 ctx.theme.sensor_style(&sensor.kind, sensor.value),
                 ctx.stale,
             );
             let mut cells = vec![
-                Cell::from(name.clone()),
+                Cell::from(slot.label.clone()),
                 widgets::right_cell(format::sensor_value(sensor), style),
             ];
             if !narrow {
@@ -2064,12 +2186,20 @@ fn draw_slot_table(
                     with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
                 ));
             }
-            Some((sensor.value, name, Row::new(cells).style(style)))
+            Some((
+                slot.hardware_id.clone(),
+                hardware_name,
+                TableRow {
+                    value: sensor.value,
+                    label: slot.label.clone(),
+                    row: Row::new(cells).style(style),
+                    selected: false,
+                },
+            ))
         })
         .collect();
 
-    sort_table_rows(ctx.sort, &mut rows);
-    let rows: Vec<Row<'static>> = rows.into_iter().map(|(_, _, row)| row).collect();
+    let (rows, _) = grouped_rows(entries, columns, ctx);
     let (headers, widths): (&[&str], Vec<Constraint>) = if narrow {
         (
             &["Sensor", "Value"],
@@ -2091,59 +2221,108 @@ fn draw_slot_table(
     );
 }
 
-fn draw_fans(frame: &mut Frame, area: Rect, ctx: &PanelCtx) {
-    let block = panel_block("Fans".to_string(), ctx.theme, ctx.stale, ctx.focused);
-    let labels: Vec<String> = ctx
-        .bindings
-        .fans
-        .iter()
-        .map(|row| row.fan.label.clone())
-        .collect();
-    let duplicated = duplicate_labels(&labels);
+/// Speed/setting pair for a fan row. A valueless Control sensor is LHM's
+/// Default mode; it renders as `Auto` (Default and Auto mean the same).
+fn control_setting(snapshot: &Snapshot, control: &Option<Slot>) -> (String, bool) {
+    let Some(slot) = control else {
+        return ("n/a".to_string(), false);
+    };
+    match bindings::slot_sensor(snapshot, slot) {
+        None => ("n/a".to_string(), false),
+        Some(sensor) => match sensor.value {
+            Some(value) => (format!("{value:.0} %"), false),
+            None => ("Auto".to_string(), true),
+        },
+    }
+}
 
-    let mut rows: Vec<(Option<f64>, String, Row<'static>)> = ctx
+fn draw_fans(frame: &mut Frame, area: Rect, ctx: &PanelCtx) {
+    let block = panel_block(
+        "Fans & Controls".to_string(),
+        ctx.theme,
+        ctx.stale,
+        ctx.focused,
+    );
+    let selected_binding = fan_control_order(&ctx.bindings.fans, ctx.snapshot, ctx.sort)
+        .get(ctx.fan_selected)
+        .copied();
+
+    let mut entries: Vec<TableRow> = ctx
         .bindings
         .fans
         .iter()
-        .zip(duplicated)
-        .map(|(fan, duplicated)| {
-            let hardware_name = ctx
-                .snapshot
-                .hardware(&fan.hardware_id)
-                .map(|hardware| hardware.name.clone())
-                .unwrap_or_default();
-            let name = distinct_label(&fan.fan.label, &hardware_name, duplicated);
-            let value = slot_value(ctx.snapshot, &Some(fan.fan.clone()));
+        .enumerate()
+        .map(|(index, fan)| {
+            let speed_value =
+                slot_value(ctx.snapshot, &Some(fan.fan.clone())).map(|(_, value)| value);
+            let speed = slot_display(ctx.snapshot, &Some(fan.fan.clone()));
+            let (setting, auto) = control_setting(ctx.snapshot, &fan.control);
+            let selected = ctx.focused && selected_binding == Some(index);
+            let marker = if selected {
+                if ctx.ascii {
+                    "> "
+                } else {
+                    "▸ "
+                }
+            } else {
+                ""
+            };
+            // One flat table: the device name in parentheses identifies the
+            // hardware, and there are no group headings to confuse with the
+            // selected control row.
+            let label = fan_display_label(fan, ctx.snapshot);
+            let name = format!("{marker}{label}");
+            let base = if selected {
+                Style::new().fg(ctx.theme.accent).bold()
+            } else {
+                Style::new().fg(ctx.theme.text)
+            };
+            let base = with_dim(base, ctx.stale);
+            let setting_style = if selected || !auto {
+                base
+            } else {
+                with_dim(Style::new().fg(ctx.theme.muted), ctx.stale)
+            };
             let row = Row::new(vec![
-                Cell::from(name.clone()),
-                widgets::right_cell(
-                    slot_display(ctx.snapshot, &Some(fan.fan.clone())),
-                    with_dim(Style::new().fg(ctx.theme.text), ctx.stale),
-                ),
-                widgets::right_cell(
-                    slot_display(ctx.snapshot, &fan.control),
-                    with_dim(Style::new().fg(ctx.theme.muted), ctx.stale),
-                ),
-            ]);
-            (value.map(|(_, value)| value), name, row)
+                Cell::from(name),
+                widgets::right_cell(speed, base),
+                widgets::right_cell(setting, setting_style),
+            ])
+            .style(base);
+            TableRow {
+                value: speed_value,
+                label,
+                row,
+                selected,
+            }
         })
         .collect();
 
-    sort_table_rows(ctx.sort, &mut rows);
-    let rows: Vec<Row<'static>> = rows.into_iter().map(|(_, _, row)| row).collect();
+    sort_table_entries(ctx.sort, &mut entries);
+    let mut selected_row = None;
+    let mut rows = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.into_iter().enumerate() {
+        if entry.selected {
+            selected_row = Some(index);
+        }
+        rows.push(entry.row);
+    }
+    // Keep the selected control row visible.
+    let visible = usize::from(area.height.saturating_sub(3));
+    let offset = selected_row.map_or(0, |row| row.saturating_sub(visible.saturating_sub(1)));
     let widths = vec![
         Constraint::Min(12),
         Constraint::Length(12),
-        Constraint::Length(10),
+        Constraint::Length(12),
     ];
     widgets::table(
         frame,
         area,
         block,
-        &["Fan", "Speed", "Control"],
+        &["Fan", "Speed", "Setting"],
         widths,
         rows,
-        ctx.scroll,
+        offset as u16,
         ctx.theme,
         ctx.stale,
     );

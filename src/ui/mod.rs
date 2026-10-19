@@ -17,7 +17,7 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use ratatui::Frame;
 
-use crate::app::{AppState, LinkStatus};
+use crate::app::{AppState, LinkStatus, PanelHitbox};
 use crate::bindings::Bindings;
 use crate::charts::Series;
 use crate::config::Config;
@@ -34,6 +34,7 @@ pub fn draw(frame: &mut Frame, app: &mut AppState, cfg: &Config) {
     }
     theme = theme.downgraded(crate::theme::detect_color_depth());
     let area = frame.area();
+    app.mouse_hitboxes.clear();
 
     if area.width < 60 || area.height < 20 {
         render_too_small(frame, area, &theme);
@@ -155,6 +156,7 @@ fn render_adhoc(
             window_label,
             now: Instant::now(),
             layout: Default::default(),
+            fan_selected: 0,
             zoomed: false,
         };
         let series = Series {
@@ -382,8 +384,8 @@ fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, the
 /// `?`/`h` overlay: remapped keys with their action descriptions (T4.4).
 fn render_help(frame: &mut Frame, area: Rect, cfg: &Config, theme: &Theme) {
     let width = area.width.saturating_sub(8).clamp(30, 66);
-    let height = (crate::config::KNOWN_ACTIONS.len() as u16 + 5)
-        .min(area.height.saturating_sub(2))
+    let height = (crate::config::KNOWN_ACTIONS.len() as u16 + 6)
+        .min(area.height)
         .max(6);
     let popup = Rect {
         x: area.x + (area.width - width) / 2,
@@ -414,11 +416,18 @@ fn render_help(frame: &mut Frame, area: Rect, cfg: &Config, theme: &Theme) {
     // Scroll/move keys are fixed shortcuts, not remappable actions (SPEC §6.4).
     lines.push(Line::from(vec![
         Span::styled(
-            format!("  {:<18} ", "↓ ↑, j k"),
+            format!("  {:<18} ", "↑ ↓, j k, wheel"),
             Style::new().fg(theme.muted),
         ),
         Span::styled(
-            "Scroll focused table / move selection".to_string(),
+            "Scroll table / move fan selection".to_string(),
+            Style::new().fg(theme.text),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("  {:<18} ", "mouse"), Style::new().fg(theme.muted)),
+        Span::styled(
+            "Click title = focus, double-click = zoom".to_string(),
             Style::new().fg(theme.text),
         ),
     ]));
@@ -637,7 +646,9 @@ fn render_panels(
     let overrides = presets::PanelOverrides {
         thermal: Some(app.effective_thermal(cfg)),
         voltage: Some(app.effective_voltage(cfg)),
+        fans: Some(app.effective_fans(cfg)),
     };
+    let fan_selected = app.fan_selected;
     let (window, window_label) = app.effective_window(cfg);
     let now = Instant::now();
 
@@ -649,6 +660,7 @@ fn render_panels(
         charts,
         scrolls,
         focus,
+        mouse_hitboxes,
         ..
     } = app;
     let (Some(fetched), Some(bindings)) = (last_fetch.as_deref(), bindings.as_ref()) else {
@@ -669,6 +681,15 @@ fn render_panels(
     if zoomed {
         let spec = &panels[focused_index];
         let scroll = scrolls.get(&spec.id).copied().unwrap_or(0);
+        mouse_hitboxes.push(PanelHitbox {
+            id: spec.id.clone(),
+            title: Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+        });
         let layouts = presets::panel_layouts(&panels, bindings, snapshot, cfg);
         let mut ctx = PanelCtx {
             snapshot,
@@ -687,6 +708,7 @@ fn render_panels(
             window_label: window_label.clone(),
             now,
             layout: layouts.get(focused_index).copied().unwrap_or_default(),
+            fan_selected,
             zoomed: true,
         };
         presets::draw_panel(frame, area, spec, &mut ctx);
@@ -745,8 +767,18 @@ fn render_panels(
                 window_label: window_label.clone(),
                 now,
                 layout: layouts.get(*panel_index).copied().unwrap_or_default(),
+                fan_selected,
                 zoomed: false,
             };
+            mouse_hitboxes.push(PanelHitbox {
+                id: spec.id.clone(),
+                title: Rect {
+                    x: column.x,
+                    y: column.y,
+                    width: column.width,
+                    height: 1,
+                },
+            });
             presets::draw_panel(frame, column, spec, &mut ctx);
         }
     }

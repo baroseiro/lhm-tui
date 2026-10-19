@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
+### Added
+
+- **Fans & controls panel** (`f`, enabled but hidden by default): every fan in one flat table with
+  the device in parentheses (`GPU Fan 1 (NVIDIA GeForce RTX 3090)`), showing its current **speed**
+  and current **setting**. LHM's `Default`/Auto mode is shown as `Auto`; `↑`/`↓` select a fan,
+  `←`/`→` (`-`/`+`) adjust it by 5 %, and `0` hands it back to Auto/Default. Manual writes go only
+  to fan/pump `Control` sensors through the same background `/Sensor?action=Set` task as the
+  anti-stop floor.
+- **Grouped tables**: temperature and voltage sensors are grouped under a heading per hardware
+  device; sorting applies within each group. The device heading replaces the repeated GPU card name
+  on voltage rails.
+- **Mouse support**: left-click a panel title to focus it; double-click toggles zoom (same as
+  `Enter`).
+
+### Changed
+
+- **CPU strip `Speed`**: row 2 now ends with `Speed`, twice the `Clk Memory` sensor (`3600 MHz`
+  for a 1.80 GHz memory clock) — the DDR transfer rate.
+- **`f` opens the fans & controls panel**; the GPU fan anti-stop floor moved to **`n`**. New
+  remappable actions: `toggle_fans`, `fan_control_up`, `fan_control_down`, `fan_control_auto`.
+- **Manual GPU fan control hands the anti-stop floor off** for the session so the two writers
+  cannot fight; the status line says `anti-stop off` and `n` re-enables it.
+- `panels.fans` is enabled by default (still hidden until `f` or listed in `ui.layout`);
+  `lhm-tui.example.json` and the key-action list were regenerated.
+
+### Fixed
+
+- **Mouse wheel** scrolls the focused table / moves the fan selection exactly like `↑`/`↓`
+  (restored after mouse reporting was enabled).
+- **Fans panel selection** now follows the displayed (sorted) row order, so `↑`/`↓` move one
+  visible row at a time instead of jumping between devices.
+
 ## [0.3.0] - 2026-10-19
 
 ### Added

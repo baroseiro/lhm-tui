@@ -2,9 +2,9 @@
 source: tests/widgets.rs
 expression: out
 ---
-╭ Fans ────────────────────────────────────────────────────────╮
-│Fan                                           Speed    Control│
-│GPU Fan                                    1205 RPM        n/a│
+╭ Fans & Controls ─────────────────────────────────────────────╮
+│Fan                                         Speed      Setting│
+│GPU Fan (NVIDIA GeForce RTX 4090)        1205 RPM          n/a│
 ╰──────────────────────────────────────────────────────────────╯
 ╭ Power ───────────────────────────────────────────────────────╮
 │Sensor                                                   Power│

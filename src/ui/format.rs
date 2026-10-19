@@ -25,6 +25,11 @@ pub fn clock_mhz(mhz: f64) -> String {
     }
 }
 
+/// `"3600 MHz"` - memory transfer rate; always MHz, never switched to GHz.
+pub fn memory_speed_mhz(mhz: f64) -> String {
+    format!("{mhz:.0} MHz")
+}
+
 /// `"1205 RPM"`
 pub fn fan_rpm(rpm: f64) -> String {
     format!("{rpm:.0} RPM")
@@ -152,6 +157,7 @@ mod tests {
         assert_eq!(percent(41.2), "41.2 %");
         assert_eq!(clock_mhz(5420.0), "5.42 GHz");
         assert_eq!(clock_mhz(800.0), "800 MHz");
+        assert_eq!(memory_speed_mhz(3600.0), "3600 MHz");
         assert_eq!(fan_rpm(1205.0), "1205 RPM");
         assert_eq!(power_w(142.0), "142 W");
         assert_eq!(data_gb(20.1), "20.1 GB");

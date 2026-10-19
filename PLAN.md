@@ -3,8 +3,8 @@
 |              |                                                                                    |
 | ------------ | ---------------------------------------------------------------------------------- |
 | Derived from | [SPEC.md](SPEC.md) v1.0                                                             |
-| Goal         | Ship **v0.3.0** - terminal dashboard for LibreHardwareMonitor (monitoring, GPU fan anti-stop floor, indicators and UX refinements) |
-| Phases       | P0-P7, mapped to SPEC §11 milestones M0-M8 (P7 covers M7/M8)                        |
+| Goal         | Ship **v0.4.0** - terminal dashboard for LibreHardwareMonitor (monitoring, fan controls, anti-stop floor, grouped tables) |
+| Phases       | P0-P8, mapped to SPEC §11 milestones M0-M9                        |
 | Effort       | ≈ 10–14 ideal days for one focused developer (see §2)                               |
 | Tracking     | Each task `T<phase>.<n>` becomes a GitHub issue labeled `phase-<n>`, closed by its PR |
 
@@ -21,7 +21,7 @@
 - **Daily loop.** `cargo fmt` → `cargo clippy --all-targets -- -D warnings` → `cargo test` →
   manual smoke (`cargo run -- --probe` / `cargo run`) against a real LHM instance. Fix red CI
   before starting the next task.
-- **Ordering.** The critical path is P0 → P1 → P2 → P3 → P4 → P5 → P6. Within a phase, tasks are
+- **Ordering.** The critical path is P0 → P1 → P2 → P3 → P4 → P5 → P6 → P7 → P8. Within a phase, tasks are
   listed in dependency order; §4 marks the two places where work can be parallelized.
 
 ## 1. Ground rules (apply to every task)
@@ -313,17 +313,17 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Exit checklist P5:** QA matrix complete; soak passed; `--once`/`--dump` documented; no known S1/S2 bugs.
 
 #### T5.8 — GPU fan anti-stop floor (pulled forward from v0.2)
-**Goal:** GPU fan floor (SPEC §7.5), on by default: while a GPU is idle (load ≤ `fan_guard.idle_load_percent` **and** hottest temperature ≤ `idle_temp_c`), hold every bound fan `Control` at `fan_guard.floor_percent`; hand control back to the driver (`value=null` → `SetDefault`) when load/temp cross the hysteresis margins, on `f` toggle-off, on quit, and whenever load/temp are unknown (fail-safe). The only hardware write in v0.1.
-**Files:** `src/fan_guard.rs`, `src/lhm/client.rs` (`set_sensor_control`), `src/app.rs` (control task, `f`, exit sweep), `src/ui/mod.rs` (status line + debug), `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, SPEC §7.5/§8.2/§8.3/§3.2/§6.4.
-**Notes:** `/Sensor?action=Set` answers HTTP 200 — accept/reject must be read from the JSON body (`result: ok|fail`). Write only on state transitions. `floor_percent < 5` is a validation error so the guard can never stop the fans. On by default (disable with `f` or `fan_guard.enabled: false`) and restricted to auto-stop capable cards (`only_auto_stop`); the only hardware write in v0.1.
-**Done when:** Mock-server tests for set/null/rejection; decision-table unit tests (idle, hysteresis, fail-safe, no controls); interaction test for `f` engage → release; frames/help snapshots updated; real-hardware smoke recorded in `docs/qa-matrix.md`.
-**Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table + zero-RPM eligibility from the control range / observed parked fans), background control task with per-URL client cache and status-line reporting, `f` toggle (message lands on the status line) + debug overlay line (`N skipped`), hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
+**Goal:** GPU fan floor (SPEC §7.5), on by default: while a GPU is idle (load ≤ `fan_guard.idle_load_percent` **and** hottest temperature ≤ `idle_temp_c`), hold every bound fan `Control` at `fan_guard.floor_percent`; hand control back to the driver (`value=null` → `SetDefault`) when load/temp cross the hysteresis margins, on `n` toggle-off, on quit, and whenever load/temp are unknown (fail-safe). The only hardware write in v0.1.
+**Files:** `src/fan_guard.rs`, `src/lhm/client.rs` (`set_sensor_control`), `src/app.rs` (control task, `n`, exit sweep), `src/ui/mod.rs` (status line + debug), `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, SPEC §7.5/§8.2/§8.3/§3.2/§6.4.
+**Notes:** `/Sensor?action=Set` answers HTTP 200 — accept/reject must be read from the JSON body (`result: ok|fail`). Write only on state transitions. `floor_percent < 5` is a validation error so the guard can never stop the fans. On by default (disable with `n` or `fan_guard.enabled: false`) and restricted to auto-stop capable cards (`only_auto_stop`); the only hardware write in v0.1.
+**Done when:** Mock-server tests for set/null/rejection; decision-table unit tests (idle, hysteresis, fail-safe, no controls); interaction test for `n` engage → release; frames/help snapshots updated; real-hardware smoke recorded in `docs/qa-matrix.md`.
+**Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table + zero-RPM eligibility from the control range / observed parked fans), background control task with per-URL client cache and status-line reporting, `n` toggle (message lands on the status line) + debug overlay line (`N skipped`), hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
 
 ---
 
 ### Phase P6 — Release v0.1.0 (SPEC §11 M6, §14)
 
-> **Scope note:** T6.4 and T6.5 are **deferred to v0.3.x** — v0.1.0 shipped via GitHub
+> **Scope note:** T6.4 and T6.5 are **deferred to v0.4.x** — v0.1.0 shipped via GitHub
 > Releases (archives + installers from `dist`) plus `cargo install --git`; winget, scoop and
 > crates.io follow in a patch release once a clean-VM run of the remaining tasks exists.
 
@@ -349,13 +349,13 @@ powershell installers), generated `.github/workflows/release.yml`, `[profile.dis
 `dist build --target x86_64-pc-windows-msvc` artifact is smoke-tested here. Tagging + CI run is
 the remaining step (T6.6).
 
-#### T6.4 — Manifests: winget + scoop — **deferred to v0.3.x**
+#### T6.4 — Manifests: winget + scoop — **deferred to v0.4.x**
 **Goal:** winget manifest PR (`baroseiro.lhm-tui`) and scoop bucket entry; both install the windows-msvc binary.
 **Deferred because:** both channels need the public release to point at (T6.6) and clean-VM
 verification; keeping them out of the v0.1.0 critical path. No code impact — the artifacts they
 need are produced by T6.3.
 
-#### T6.5 — crates.io publish — **deferred to v0.3.x**
+#### T6.5 — crates.io publish — **deferred to v0.4.x**
 **Goal:** `cargo publish --dry-run` clean (README/SPEC not required in package; ensure `exclude` list sane), then publish `0.1.0`; verify `cargo install lhm-tui`.
 **Deferred because:** publishing is irreversible-ish for a name + version; wanted after the
 GitHub-Release install path is proven. `cargo install --git https://github.com/baroseiro/lhm-tui`
@@ -420,10 +420,54 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 
 ---
 
+### Phase P8 — Fan controls & grouped tables (v0.4.0, SPEC §11 M9)
+
+#### T8.1 — Group temperature and voltage tables per device
+**Goal:** Insert a hardware-device heading before each table group; sort rows within each device (the `s` key still cycles value/name sort); drop the per-row GPU-name suffix because the group heading identifies the card.
+**Files:** `src/ui/presets.rs` (grouped row builder), tests/snapshots, SPEC §5.2/§6.3/§6.5.
+**Done when:** Thermal/voltage snapshots show one heading per device, rows stay grouped and sort within groups; zoomed voltages still reveal per-core rails.
+**Shipped:** `grouped_rows` + `group_header_row`, group-aware table heights, GPU rails no longer repeat the card name.
+
+#### T8.2 — Fans & controls panel
+**Goal:** Fans panel as one flat table with the device in parentheses and `Speed` + `Setting` columns; LHM `Default`/Auto displayed as `Auto`; panel enabled by default but hidden until `f`; selected controllable row highlighted and scrolled into view.
+**Files:** `src/config.rs` (`FansPanel`, `toggle_fans`), `src/ui/presets.rs` (flat fan rows), `tests/widgets.rs`, SPEC §6.3/§6.4.
+**Done when:** `f` toggles the panel; snapshots show device names in parentheses, speed + setting, and `Auto` for valueless controls.
+**Shipped:** flat fans table with device names in parentheses, `control_setting` (`Auto` for a valueless Control), selection marker, and a focused fans snapshot.
+
+#### T8.3 — Manual fan controls + key swap
+**Goal:** Write the selected fan/pump `Control` sensor through the existing background `/Sensor?action=Set` task: `←`/`-` and `→`/`+` adjust by 5 %, `0` sends `null` (Auto/Default); move the anti-stop toggle from `f` to `n`; a manual GPU percentage switches the guard off so the two writers cannot fight.
+**Files:** `src/app.rs` (selection/adjust helpers, `write_fan_control`), `src/bindings.rs` (`control_fan_indices`), `src/config.rs` (default keys), `tests/interaction.rs`.
+**Done when:** Interaction tests cover `f` toggle, selection, adjustment and Auto; mock-server set/null tests still pass; the status line reports writes and guard handoff.
+**Shipped:** `fan_control_up/down/auto` actions, cursor-aware list, manual GPU handoff (`n` re-enables), generalized `fan control` status errors.
+
+#### T8.4 — Docs, example, schema, CHANGELOG, captures
+**Goal:** Update SPEC (non-goals, endpoints, tables, keys, §7.5, §8.2/8.3, M9, future work), PLAN/AGENTS versions, README features/keybindings/tweaks/troubleshooting, `lhm-tui.example.json`, CHANGELOG `[Unreleased]`, `docs/demo.tape` + captures (show the fans panel).
+**Done when:** Example config round-trips; schema tests pass; README/help overlay reflect the new keys; captures show the flat fans table.
+**Shipped:** SPEC/PLAN/AGENTS/README/CHANGELOG/QA matrix and `lhm-tui.example.json` updated; captures re-recorded with the zoomed fans panel (speed + setting, devices in parentheses).
+
+#### T8.5 — CPU memory `Speed` readout
+**Goal:** After `Clk Memory` on CPU strip row 2, add `Speed` = 2 × memory clock (MHz), formatted like other clocks; gated by the `clock` show slot and omitted when the memory clock is missing/valueless.
+**Files:** `src/ui/presets.rs`, tests/snapshots, SPEC §6.3, README, CHANGELOG.
+**Done when:** Frames show e.g. `Clk Memory 1.80 GHz · Speed 3600 MHz`; a missing memory clock omits the pair.
+**Shipped:** derived from `cpu.clock_memory` through `format::memory_speed_mhz(2 × MHz)`; live fixture frames show `Speed 3600 MHz`.
+
+#### T8.6 — Sequential fans selection + mouse titles
+**Goal:** Navigate fan controls in the rendered (sorted) row order so `↑`/`↓` move one visible row at a time; add mouse support where clicking a panel title focuses it and double-clicking toggles zoom like `Enter` (400 ms window), with mouse reporting enabled and restored around the session.
+**Files:** `src/ui/presets.rs` (`fan_control_order` shared by UI and app), `src/app.rs` (selection helpers, `PanelHitbox`, mouse capture guard), `src/ui/mod.rs` (hitboxes in the last frame + help hint), tests.
+**Done when:** Interaction tests prove sequential selection after the default RPM sort and mouse focus/double-click zoom; frame test records one hitbox per drawn panel (only the zoomed panel when zoomed); help/README/SPEC document the mouse.
+**Shipped:** `fan_control_order` + `fan_display_label` shared by app/UI, `PanelHitbox` recorded during rendering, 400 ms double-click, `MouseCapture` guard, mouse wheel routed through the same up/down helper.
+
+#### T8.7 — Release v0.4.0
+**Goal:** Version bump `0.3.0` → `0.4.0`; promote `[Unreleased]`; `docs/release-notes-v0.4.0.md`; tag `v0.4.0`; verify all assets like v0.3.0.
+**Done when:** Release published with all six archives, installers and checksums; Windows artifact smoke-tested; release body set.
+**Prepared:** version 0.4.0, `[0.4.0]` changelog section, `docs/release-notes-v0.4.0.md` and regenerated captures are committed; tag/release pending.
+
+---
+
 ## 4. Critical path & parallelization
 
 ```text
-P0 ─▶ P1 ─▶ P2 ─▶ P3 ─▶ P4 ─▶ P5 ─▶ P6
+P0 ─▶ P1 ─▶ P2 ─▶ P3 ─▶ P4 ─▶ P5 ─▶ P6 ─▶ P7 ─▶ P8
         │         ↑
         └─ T1.6 fixture corpus feeds T2.2 binding tests (keep fixtures current from P2 on)
 

@@ -4,9 +4,9 @@ expression: out
 ---
 ╭ Temperatures ────────────────────────────────────────────────╮
 │Sensor                                                   Value│
-│GPU Hot Spot                                           61.5 °C│
-│GPU Core                                               52.0 °C│
+│▸ AMD Ryzen 7 7800X3D                                         │
 │Core (Tctl/Tdie)                                       46.9 °C│
-│Temperature                                            38.0 °C│
 │Core Max                                                     —│
+│▸ NVIDIA GeForce RTX 4090                                     │
+│GPU Hot Spot                                           61.5 °C│
 ╰──────────────────────────────────────────────────────────────╯

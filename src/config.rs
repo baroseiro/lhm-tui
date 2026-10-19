@@ -53,12 +53,12 @@ impl Default for Config {
 
 /// GPU fan anti-stop guard (T5.8): keeps fans spinning at `floor_percent` when
 /// the GPU is idle, handing control back to the driver as soon as load or
-/// temperature rises. This is the **only** hardware write the tool performs;
-/// it is off by default and writable only on `Control` sensors (SPEC §3.2).
+/// temperature rises. It only ever writes GPU fan `Control` sensors (SPEC
+/// §3.2), like the manual controls in the Fans panel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FanGuardConfig {
-    /// Off by default — enabling this writes to LHM control sensors.
+    /// On by default; disabling leaves every GPU fan to its driver curve.
     pub enabled: bool,
     /// Only floor GPUs whose fan curve can stop the fans (zero-RPM / auto-stop):
     /// detected from the fan control's software range and from observed stopped
@@ -82,7 +82,7 @@ impl Default for FanGuardConfig {
     fn default() -> Self {
         Self {
             // On by default: the guard is the reason many NVIDIA cards expose
-            // no way to stop the zero-RPM parking. Disable with `f` or
+            // no way to stop the zero-RPM parking. Disable with `n` or
             // `fan_guard.enabled: false`.
             enabled: true,
             only_auto_stop: true,
@@ -346,7 +346,8 @@ pub struct PanelsConfig {
     pub thermal: ThermalPanel,
     /// Voltages table (`v`, same table shape as thermal, enabled by default).
     pub voltage: ThermalPanel,
-    pub fans: TogglePanel,
+    /// Fans & controls table (`f`, enabled by default, hidden until toggled).
+    pub fans: FansPanel,
     pub power: TogglePanel,
     pub storage: TogglePanel,
     pub network: TogglePanel,
@@ -433,7 +434,21 @@ impl Default for ThermalPanel {
     }
 }
 
-/// Optional preset (fans, power, storage, network): disabled by default.
+/// Fans & controls table: enabled by default, hidden until `f` or listed in
+/// `ui.layout`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FansPanel {
+    pub enabled: bool,
+}
+
+impl Default for FansPanel {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+/// Optional preset (power, storage, network): disabled by default.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TogglePanel {
@@ -526,15 +541,19 @@ pub const KNOWN_ACTIONS: &[(&str, &str)] = &[
     ("debug", "Debug overlay"),
     ("toggle_thermal", "Toggle temperatures table"),
     ("toggle_voltage", "Toggle voltages table"),
+    ("toggle_fans", "Toggle fans & controls table"),
     ("toggle_charts", "Toggle charts"),
     ("toggle_fan_guard", "GPU fan anti-stop floor"),
+    ("fan_control_up", "Fans panel: raise control by 5 %"),
+    ("fan_control_down", "Fans panel: lower control by 5 %"),
+    ("fan_control_auto", "Fans panel: back to auto/default"),
 ];
 
 /// Built-in theme names (T4.3); `custom` is used for `--theme <file>`.
 pub const BUILTIN_THEMES: &[&str] = &["default", "gruvbox", "nord", "mono", "custom"];
 
 fn default_keys() -> BTreeMap<String, Vec<String>> {
-    let entries: [(&str, &[&str]); 18] = [
+    let entries: [(&str, &[&str]); 22] = [
         ("quit", &["q", "esc", "ctrl+c"]),
         ("help", &["?", "h"]),
         ("pause", &["p", "space"]),
@@ -551,8 +570,12 @@ fn default_keys() -> BTreeMap<String, Vec<String>> {
         ("debug", &["d"]),
         ("toggle_thermal", &["t"]),
         ("toggle_voltage", &["v"]),
+        ("toggle_fans", &["f"]),
         ("toggle_charts", &["c"]),
-        ("toggle_fan_guard", &["f"]),
+        ("toggle_fan_guard", &["n"]),
+        ("fan_control_up", &["right", "+"]),
+        ("fan_control_down", &["left", "-"]),
+        ("fan_control_auto", &["0"]),
     ];
     entries
         .iter()
@@ -1322,16 +1345,23 @@ mod tests {
             config.panels.voltage.enabled,
             "voltage table binds, hidden by layout"
         );
-        assert!(!config.panels.fans.enabled);
+        assert!(
+            config.panels.fans.enabled,
+            "fans table enabled, hidden until `f`"
+        );
         assert!(!config.panels.storage.enabled);
         assert_eq!(config.keys["quit"], vec!["q", "esc", "ctrl+c"]);
         assert_eq!(config.keys["pause"], vec!["p", "space"]);
         assert_eq!(config.keys["toggle_thermal"], vec!["t"]);
         assert_eq!(config.keys["toggle_voltage"], vec!["v"]);
         assert_eq!(config.keys["toggle_charts"], vec!["c"]);
-        assert_eq!(config.keys["toggle_fan_guard"], vec!["f"]);
+        assert_eq!(config.keys["toggle_fan_guard"], vec!["n"]);
+        assert_eq!(config.keys["toggle_fans"], vec!["f"]);
+        assert_eq!(config.keys["fan_control_up"], vec!["right", "+"]);
+        assert_eq!(config.keys["fan_control_down"], vec!["left", "-"]);
+        assert_eq!(config.keys["fan_control_auto"], vec!["0"]);
         assert_eq!(config.keys["help"], vec!["?", "h"]);
-        assert_eq!(config.keys.len(), 18);
+        assert_eq!(config.keys.len(), 22);
         assert!(config.fan_guard.enabled, "fan anti-stop on by default");
         assert_eq!(config.fan_guard.floor_percent, 45.0);
         assert_eq!(config.fan_guard.idle_load_percent, 10.0);

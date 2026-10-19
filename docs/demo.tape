@@ -39,6 +39,22 @@ Type "v"
 Sleep 2000ms
 Type "v"
 Sleep 400ms
+Type "f"
+Sleep 800ms
+Tab
+Sleep 200ms
+Tab
+Sleep 200ms
+Tab
+Sleep 200ms
+Tab
+Sleep 400ms
+Enter
+Sleep 1800ms
+Enter
+Sleep 300ms
+Type "f"
+Sleep 300ms
 Type "?"
 Sleep 1800ms
 Type "?"

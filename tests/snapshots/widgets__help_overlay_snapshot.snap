@@ -2,27 +2,29 @@
 source: tests/widgets.rs
 expression: out
 ---
- lhm-tui v0.3.0  ● live   80×26   http://127.0.0.1:8085
-╭ CPU ·╭ Help — any key closes ─────────────────────────────────────────╮──────╮
-│ Temp │  q, esc, ctrl+c     Quit                                       │.9 °C │
-│ Load │  ?, h               Help overlay                               │1.2 % │
-│ Per-C│  p, space           Pause / resume polling                     │      │
-│      │  g                  Chart window forward                       │      │
-│ Pwr  │  G                  Chart window backward                      │8 GHz │
-╰──────│  tab                Focus next panel                           │──────╯
-╭ GPU 0│  shift+tab, backtab Focus previous panel                       │──────╮
-│ Temp │  enter              Zoom focused panel                         │.0 °C │
-│ Hot S│  b                  Sensor browser                             │.5 °C │
-│ Mem T│  s                  Cycle table sort                           │░ n/a │
-│ Load │  r                  Reload config                              │8.0 % │
-│ VRAM │  m                  Reset LHM min/max                          │(35%) │
-│ Pwr  │  a                  Toggle ASCII rendering                     │      │
-│ Fan  │  d                  Debug overlay                              │      │
-╰──────│  t                  Toggle temperatures table                  │──────╯
-╭ Memor│  v                  Toggle voltages table                      │──────╮
+ lhm-tu╭ Help — any key closes ─────────────────────────────────────────╮
+╭ CPU ·│  q, esc, ctrl+c     Quit                                       │──────╮
+│ Temp │  ?, h               Help overlay                               │.9 °C │
+│ Load │  p, space           Pause / resume polling                     │1.2 % │
+│ Per-C│  g                  Chart window forward                       │      │
+│      │  G                  Chart window backward                      │      │
+│ Pwr  │  tab                Focus next panel                           │8 GHz │
+╰──────│  shift+tab, backtab Focus previous panel                       │──────╯
+╭ GPU 0│  enter              Zoom focused panel                         │──────╮
+│ Temp │  b                  Sensor browser                             │.0 °C │
+│ Hot S│  s                  Cycle table sort                           │.5 °C │
+│ Mem T│  r                  Reload config                              │░ n/a │
+│ Load │  m                  Reset LHM min/max                          │8.0 % │
+│ VRAM │  a                  Toggle ASCII rendering                     │(35%) │
+│ Pwr  │  d                  Debug overlay                              │      │
+│ Fan  │  t                  Toggle temperatures table                  │      │
+╰──────│  v                  Toggle voltages table                      │──────╯
+╭ Memor│  f                  Toggle fans & controls table               │──────╮
 │ Used │  c                  Toggle charts                              │(63%) │
-│ Load │  f                  GPU fan anti-stop floor                    │2.8 % │
-│ Virtu│  ↓ ↑, j k           Scroll focused table / move selection      │░ n/a │
-╰──────│                                                                │──────╯
-       │                                                                │
+│ Load │  n                  GPU fan anti-stop floor                    │2.8 % │
+│ Virtu│  right, +           Fans panel: raise control by 5 %           │░ n/a │
+╰──────│  left, -            Fans panel: lower control by 5 %           │──────╯
+       │  0                  Fans panel: back to auto/default           │
+       │  ↑ ↓, j k, wheel    Scroll table / move fan selection          │
+       │  mouse              Click title = focus, double-click = zoom   │
        ╰────────────────────────────────────────────────────────────────╯
