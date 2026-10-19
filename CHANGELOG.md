@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- v0.3.0 published: GitHub Release with six archives, installers and checksums (all verified), the
+  Windows x64 artifact re-downloaded and smoke-tested (`--version` 0.3.0, live `--probe`); release
+  body set from `docs/release-notes-v0.3.0.md`.
 - **GPU fans** always get their own row underneath the `Pwr · Clk · Volt` metrics instead of being
   right-aligned on the metrics row.
 - **CPU per-core bars** carry a `Per-Core` label and one column of spacing between cores.
