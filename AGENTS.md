@@ -4,9 +4,9 @@
 
 - **Rust crate + docs.** `src/` holds the ratatui TUI, `tests/` the fixture/snapshot contract;
   `SPEC.md` (frozen design, v1.0), `PLAN.md` (execution plan), `README.md` (public) and
-  `CHANGELOG.md` document it. v0.3.0 is released (2026-10-19); v0.4.0 (fan controls, grouped
-  tables, mouse support) is prepared and pending its tag. Verify with `git ls-files` before
-  assuming a file or feature is missing.
+  `CHANGELOG.md` document it. v0.4.0 is released (2026-10-19); v0.5 (recording/alerts and
+  control hardening) is next. Verify with `git ls-files` before assuming a file or feature is
+  missing.
 - **Git history is live and intentional:** one `initial commit` on `main`, tracking
   `origin` = `https://github.com/baroseiro/lhm-tui.git`. Commit forward; don't re-init, rewrite or
   orphan that history. PR/commit expectations are in PLAN §0 (one PR per task, CHANGELOG updates).

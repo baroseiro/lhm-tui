@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- v0.4.0 published: GitHub Release with six archives, installers and checksums (all verified), the
+  Windows x64 artifact re-downloaded and smoke-tested (`--version` 0.4.0, live `--probe`); release
+  body set from `docs/release-notes-v0.4.0.md`.
 - **CPU strip `Speed`**: row 2 now ends with `Speed`, twice the `Clk Memory` sensor (`3600 MHz`
   for a 1.80 GHz memory clock) — the DDR transfer rate.
 - **`f` opens the fans & controls panel**; the GPU fan anti-stop floor moved to **`n`**. New
