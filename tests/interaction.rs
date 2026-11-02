@@ -170,31 +170,38 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
     }
 
     let (mut app, mut cfg) = live_app();
+    // The guard is opt-in now; enable it for this behaviour test.
+    cfg.fan_guard.enabled = true;
     // Idle NVIDIA GPU: 0 % load and every temperature pinned at or below 45 °C
     // (deterministic, independent of the fixture's fluctuating hot spot).
     let mut idle = parse_payload(&support::fixture("lhm-live-5900xt.json")).expect("parses");
     set_sensor(&mut idle, "/gpu-nvidia/0/temperature/0", 45.0);
     set_sensor(&mut idle, "/gpu-nvidia/0/temperature/2", 45.0);
     set_sensor(&mut idle, "/gpu-nvidia/0/temperature/3", 44.0);
+    // An idle AMD card must still be left alone (the guard is NVIDIA-only).
+    set_sensor(&mut idle, "/gpu-amd/0/load/0", 0.0);
+    set_sensor(&mut idle, "/gpu-amd/0/temperature/0", 40.0);
+    set_sensor(&mut idle, "/gpu-amd/0/temperature/1", 40.0);
+    set_sensor(&mut idle, "/gpu-amd/0/temperature/7", 40.0);
     let mut busy = idle.clone();
     set_sensor(&mut busy, "/gpu-nvidia/0/load/0", 60.0);
 
-    // On by default: an idle GPU enters the floor without any opt-in.
-    assert!(app.effective_fan_guard(&cfg), "anti-stop on by default");
+    // Enabled for the test: an idle NVIDIA enters the floor.
+    assert!(app.effective_fan_guard(&cfg), "anti-stop enabled for test");
     apply(&mut app, &idle, &cfg);
     let state = app.fan_guard_state.get("/gpu-nvidia/0").expect("tracked");
     assert!(state.engaged, "idle GPU held at the floor");
     assert_eq!(state.control_ids.len(), 2, "both RTX 3090 fans armed");
     assert!(
         !app.fan_guard_state["/gpu-amd/0"].engaged,
-        "83 °C AMD keeps driver control"
+        "an idle AMD card is still left alone"
     );
 
     // Load spike → released (fail-safe to automatic control).
     apply(&mut app, &busy, &cfg);
     assert!(!app.fan_guard_state["/gpu-nvidia/0"].engaged);
 
-    // `f` turns the default off and releases any floor.
+    // `n` turns it off and releases any floor.
     apply(&mut app, &idle, &cfg);
     assert!(app.fan_guard_state["/gpu-nvidia/0"].engaged);
     handle_event(&mut app, key(KeyCode::Char('n')), &cfg);
@@ -225,7 +232,9 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
 
 #[test]
 fn fans_panel_toggle_and_control_keys() {
-    let (mut app, cfg) = live_app();
+    let (mut app, mut cfg) = live_app();
+    // Enabling the opt-in guard lets the manual-write handoff be asserted.
+    cfg.fan_guard.enabled = true;
 
     // `f` reveals the fans & controls table (hidden by default).
     handle_event(&mut app, key(KeyCode::Char('f')), &cfg);
@@ -348,6 +357,20 @@ fn mouse_title_click_focuses_and_double_click_zooms() {
 }
 
 #[test]
+fn fan_guard_is_off_by_default() {
+    let (app, cfg) = live_app();
+    assert!(
+        !cfg.fan_guard.enabled,
+        "default config leaves fans to the GPU"
+    );
+    assert!(!app.effective_fan_guard(&cfg));
+    assert!(
+        app.fan_guard_state.values().all(|state| !state.engaged),
+        "no floor is applied on startup"
+    );
+}
+
+#[test]
 fn h_opens_help_and_status_line_keeps_the_last_message() {
     let (mut app, cfg) = live_app();
 
@@ -357,16 +380,8 @@ fn h_opens_help_and_status_line_keeps_the_last_message() {
     handle_event(&mut app, key(KeyCode::Esc), &cfg);
     assert!(!app.help_visible, "any key closes it");
 
-    // Applying the live fixture already left one note: the AMD card cannot
-    // stop its fans, so the guard skips it (SPEC §7.5).
-    let note = app.status.as_ref().expect("skip note");
-    assert!(
-        note.text.contains("left to its driver curve"),
-        "got: {}",
-        note.text
-    );
-
-    // Actions write the bottom status line, highlighted while fresh.
+    // Actions write the bottom status line, highlighted while fresh. The guard
+    // is off by default, so `n` enables it and reports the new state.
     handle_event(&mut app, key(KeyCode::Char('n')), &cfg);
     let status = app.status.as_ref().expect("status message");
     assert!(status.text.contains("anti-stop"), "got: {}", status.text);

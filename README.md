@@ -35,12 +35,12 @@ live, color-thresholded panels in your terminal:
   `↑`/`↓`, adjust it with `←`/`→` (±5 %) and press `0` for Auto/Default. Writes go only to
   fan/pump `Control` sensors
 - Plus presets for **power**, **storage** and **network**
-- **GPU fan anti-stop floor** (on by default) — keeps NVIDIA/AMD fan curves from parking the fans
-  at zero-RPM when idle: a 45 % floor while the GPU is idle, automatic driver control the moment
-  load or temperature rises. Only cards whose fans *can* stop are touched (detected from the fan
-  control's software range), so an AMD that always turns is left alone. Press `n` or set
-  `"fan_guard": { "enabled": false }` to turn it off
-  ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default))
+- **GPU fan anti-stop floor** (off by default; NVIDIA only) — keeps NVIDIA zero-RPM fan curves from
+  parking the fans when idle: a 45 % floor while the GPU is idle, automatic driver control the
+  moment load or temperature rises. Only NVIDIA cards whose fans *can* stop are touched; AMD/Intel
+  cards and their vendor curves are never written to. Press `n` (or set
+  `"fan_guard": { "enabled": true }`) to enable it
+  ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-off-by-default-nvidia-only))
 
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
 Windows machine on your network / over SSH — through a small JSON config file.
@@ -55,8 +55,7 @@ A ~17-second loop on the reference machine (RTX 3090 + RX 7900 XTX): the default
 shared GPU memory, `Per-Core` bars and the two-row CPU strip, `c` switching to live charts, `t`
 opening the temperatures table, `v` opening the voltages table, `f` opening the fans & controls
 table (focused and zoomed to show every device, speed and setting), `?` showing the key map, then a
-clean quit. Note the status line at the bottom — the fan anti-stop floor holding the 3090 at 45 %
-while idle.
+clean quit. The fan anti-stop guard is off by default, so each GPU is on its own driver curve.
 
 ![lhm-tui demo: gauges, charts toggle, temperatures, voltages and fans tables, help overlay](docs/demo.gif)
 
@@ -145,7 +144,7 @@ lhm-tui --help
 | `t` / `v`             | Toggle temperatures / voltages tables    |
 | `f`                   | Toggle fans & controls table            |
 | `c`                   | Toggle charts                           |
-| `n`                   | Toggle GPU fan anti-stop floor (on by default) |
+| `n`                   | Toggle GPU fan anti-stop floor (off by default; NVIDIA only) |
 | `←` / `-`             | Fans panel: lower selected control by 5 % |
 | `→` / `+`             | Fans panel: raise selected control by 5 % |
 | `0`                   | Fans panel: back to Auto/Default         |
@@ -210,7 +209,7 @@ Common things people change:
 | Show the voltages table             | Press `v`, or add `"voltage"` to `ui.layout`                            |
 | Show the fans & controls table      | Press `f`, or add `"fans"` to `ui.layout`                               |
 | Change a fan/pump setting           | Focus the Fans panel (`Tab`), select with `↑`/`↓`, adjust with `←`/`→` (±5 %), `0` for Auto ([SPEC §6.3](SPEC.md#63-preset-panels)) |
-| Keep GPU fans spinning when idle    | On by default - press `n` or `"fan_guard": { "enabled": false }` to disable ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-on-by-default)) |
+| Keep NVIDIA idle fans spinning      | Off by default - press `n` or set `"fan_guard": { "enabled": true }`; AMD/Intel are never touched ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-off-by-default-nvidia-only)) |
 | Switch theme                        | `theme.name`: `default`, `gruvbox`, `nord` or `mono`                    |
 | Custom theme file                   | `lhm-tui --theme path/to/theme.json` (same shape as the `theme` block)  |
 | Strip all colors                    | `NO_COLOR=1 lhm-tui` or `--no-color`                                    |
@@ -242,8 +241,8 @@ otherwise use the gateway IP (`ip route | grep default`) or the LAN IP.
 | Wrong sensor bound to a chart             | `lhm-tui --probe` prints the binding report; pin the sensor via `panels.sensor_overrides`  |
 | `n` says "no controllable GPU fans"       | LHM needs to run as administrator so the `Controls` group exists (NVIDIA/AMD cards)        |
 | A fan setting is rejected                 | LHM must run as administrator; some SuperIO headers expose a control without write support |
-| AMD card untouched by the anti-stop floor | Expected: cards whose fan curve can never stop are skipped (`only_auto_stop`; SPEC §7.5)   |
-| Anti-stop floor fights Afterburner/Adrenalin | Stop the vendor tool while the floor is enabled, or leave `fan_guard.enabled` off        |
+| AMD card untouched by the anti-stop floor | Expected: the guard is NVIDIA-only; AMD/Intel cards are never written to (SPEC §7.5)       |
+| Anti-stop floor fights Afterburner/Adrenalin | Off by default; if you enable it, stop the vendor tool while the floor is active         |
 
 Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itself).
 

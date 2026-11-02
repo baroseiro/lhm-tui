@@ -143,7 +143,7 @@
     "custom": []
   },
   "fan_guard": {
-    "enabled": true,
+    "enabled": false,
     "only_auto_stop": true,
     "floor_percent": 45.0,
     "idle_load_percent": 10.0,

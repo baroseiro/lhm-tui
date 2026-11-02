@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Fan anti-stop guard is opt-in**: `fan_guard.enabled` now defaults to `false`, so each GPU
+  manages its own fans out of the box. Enable it with `n` or `"fan_guard": { "enabled": true }`.
+
+### Fixed
+
+- **The anti-stop floor is NVIDIA-only**: AMD/Intel fan controls are never written to, even when
+  the guard is enabled, so swapping GPU cards or PCIe slots cannot arm the floor on an AMD card.
+
 ## [0.4.0] - 2026-10-19
 
 ### Added

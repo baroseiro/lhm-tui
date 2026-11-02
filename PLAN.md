@@ -318,6 +318,7 @@ reference: nvtop's per-GPU stacked metric graphs (SPEC §7.4) — ideas only, it
 **Notes:** `/Sensor?action=Set` answers HTTP 200 — accept/reject must be read from the JSON body (`result: ok|fail`). Write only on state transitions. `floor_percent < 5` is a validation error so the guard can never stop the fans. On by default (disable with `n` or `fan_guard.enabled: false`) and restricted to auto-stop capable cards (`only_auto_stop`); the only hardware write in v0.1.
 **Done when:** Mock-server tests for set/null/rejection; decision-table unit tests (idle, hysteresis, fail-safe, no controls); interaction test for `n` engage → release; frames/help snapshots updated; real-hardware smoke recorded in `docs/qa-matrix.md`.
 **Shipped:** `src/fan_guard.rs` (owned per-GPU views + pure decision table + zero-RPM eligibility from the control range / observed parked fans), background control task with per-URL client cache and status-line reporting, `n` toggle (message lands on the status line) + debug overlay line (`N skipped`), hysteresis/fail-safe/validation rails, best-effort `SetDefault()` sweep on quit. Real-hardware smoke is a QA-matrix row (needs an interactive session).
+**Later:** the guard became opt-in and NVIDIA-only after v0.4.0 (T8.8).
 
 ---
 
@@ -461,6 +462,12 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 **Goal:** Version bump `0.3.0` → `0.4.0`; promote `[Unreleased]`; `docs/release-notes-v0.4.0.md`; tag `v0.4.0`; verify all assets like v0.3.0.
 **Done when:** Release published with all six archives, installers and checksums; Windows artifact smoke-tested; release body set.
 **Shipped:** v0.4.0 released 2026-10-19 (tag on `74b0aab`); the release workflow built all six targets + installers, every archive verified against `sha256.sum`, the Windows x64 artifact re-downloaded and smoke-tested (`--version` 0.4.0, live `--probe`), and the GitHub Release body was set from `docs/release-notes-v0.4.0.md`.
+
+#### T8.8 — Opt-in, NVIDIA-only fan guard (post-v0.4.0)
+**Goal:** Default `fan_guard.enabled` to `false` so every GPU manages its own fans; hard-gate the guard to NVIDIA `GpuNvidia` hardware so AMD/Intel controls are never written even when enabled; explain the skip (`NVIDIA only`) on the status line.
+**Files:** `src/config.rs`, `src/fan_guard.rs` (vendor flag + decision gate), `src/app.rs` (eligibility/notes), `lhm-tui.example.json`, SPEC §6.4/§7.5/§8.2/§8.3, README, CHANGELOG, QA matrix, captures.
+**Done when:** Default config leaves fans alone; enabling floors only NVIDIA auto-stop cards; a non-NVIDIA view returns `Hold`/`Release`; example config and captures updated.
+**Shipped:** vendor gate and opt-in default, NVIDIA-only skip note, updated toggle messages, example config and docs.
 
 ---
 

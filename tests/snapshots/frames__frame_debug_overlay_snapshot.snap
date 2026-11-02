@@ -24,9 +24,9 @@ expression: "frame_text(&mut app, &cfg, 100, 34)"
 │ Temp     ███│  hardware       9 items · 276 sensors · 0 skipped                    │░░░░ 60.0 °C │
 │ Hot Spot ███│  history        275 series · cap 900 pts                             │░░░░ 68.0 °C │
 │ Mem Temp ███│  chart axes     0 tracked                                            │░░░░ 83.0 °C │
-│ Load     ███│  fan guard      on · 2 controls · 1 at floor · 1 skipped             │░░░░░░ 7.0 % │
+│ Load     ███│  fan guard      off                                                  │░░░░░░ 7.0 % │
 │ VRAM     ███│  failed polls   0                                                    │4560 MB (9%) │
-│ Shared   █░░│  status         fan anti-stop: AMD Radeon RX 7900 XTX left to its dri│4796 MB (1%) │
+│ Shared   █░░│                                                                      │4796 MB (1%) │
 │ Pwr   105 W ╰──────────────────────────────────────────────────────────────────────╯             │
 │ Fan   534 RPM                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -35,4 +35,3 @@ expression: "frame_text(&mut app, &cfg, 100, 34)"
 │ Load     █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 21.0 % │
 │ Virtual  ████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 42.7 / 140.9 GB (30%) │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- fan anti-stop: AMD Radeon RX 7900 XTX left to its driver curve (fans cannot stop)

@@ -19,7 +19,7 @@ failures and list deferrals in the release notes.
 | 11 | No GPU (VM) | 0.9.6 | ☐ | graceful presets |
 | 12 | LHM 0.9.5 (old tuple) | 0.9.5 | ☐ | version warning |
 | 13 | `NO_COLOR=1` / `--no-color` | — | ☐ | plain rendering |
-| 14 | Fan anti-stop floor, NVIDIA at idle | 0.9.6, LHM as admin | ☐ | §7.5: `n` spins stopped fans; load spike → auto; quit → auto |
+| 14 | Fan anti-stop floor, NVIDIA at idle | 0.9.6, LHM as admin | ☐ | §7.5: enable with `n`; spins stopped fans; load spike → auto; quit → auto |
 
 ## Checklist per row
 
@@ -47,10 +47,10 @@ failures and list deferrals in the release notes.
 10. Kill/restart LHM mid-session: status goes `stale` then `live` again.
 11. Quit restores the terminal (no raw mode, cursor visible, shell usable).
 12. `--once` and `--dump -` produce output and exit 0.
-13. Fan anti-stop floor (row 14 only): it is on by default and only touches cards that can park
-    their fans — on a machine with an AMD that always turns, that card must stay untouched (status
-    note says so, `d` overlay reports it skipped). With the GPU idle the fans spin at the floor and
-    LHM's UI shows a manual control value; start a GPU load → the guard releases and the driver
-    curve takes over; stop the load → floor returns; `n` off / quit → LHM shows automatic control
-    again. A manual GPU fan percentage must switch the guard off (`anti-stop off` on the status
-    line) and `n` must re-enable it.
+13. Fan anti-stop floor (row 14 only): it is **off by default** and NVIDIA-only. Press `n` to
+    enable it; an AMD card must stay untouched even when enabled (status note says `NVIDIA only`,
+    `d` overlay reports it skipped). With the NVIDIA GPU idle the fans spin at the floor and LHM's
+    UI shows a manual control value; start a GPU load → the guard releases and the driver curve
+    takes over; stop the load → floor returns; `n` off / quit → LHM shows automatic control again.
+    A manual GPU fan percentage must switch the guard off (`anti-stop off` on the status line) and
+    `n` must re-enable it.

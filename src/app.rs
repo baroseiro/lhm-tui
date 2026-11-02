@@ -160,7 +160,7 @@ pub struct AppState {
     pub cli: Option<crate::cli::Cli>,
     /// Sender for async notices (`m` reset result); `None` in unit tests.
     pub notice_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
-    /// `f` override for `fan_guard.enabled` (T5.8).
+    /// `n` override for `fan_guard.enabled` (T5.8).
     pub fan_guard_override: Option<bool>,
     /// Per-GPU fan-guard tracking, keyed by HardwareId.
     pub fan_guard_state: BTreeMap<String, GpuFanState>,
@@ -829,9 +829,9 @@ fn handle_key(app: &mut AppState, key: KeyEvent, cfg: &Config) {
             "fan anti-stop OFF — GPU fans are back to automatic".to_string()
         } else if armed == 0 {
             let target = if cfg.fan_guard.only_auto_stop {
-                "cards whose fans can stop"
+                "NVIDIA cards whose fans can stop"
             } else {
-                "any controllable GPU"
+                "any controllable NVIDIA GPU"
             };
             format!(
                 "fan anti-stop ON — no auto-stop GPU fans found ({target}; LHM needs the Controls \
@@ -950,7 +950,7 @@ fn update_fan_guard(app: &mut AppState, cfg: &Config) {
             .entry(view.hardware_id.clone())
             .or_default();
         state.control_ids = view.control_ids.clone();
-        state.eligible = view.zero_rpm_capable(state.eligible);
+        state.eligible = view.nvidia && view.zero_rpm_capable(state.eligible);
         let eligible = state.eligible;
         let action = if enabled {
             fan_guard::decide(&view, state.engaged, &cfg.fan_guard, eligible)
@@ -962,20 +962,27 @@ fn update_fan_guard(app: &mut AppState, cfg: &Config) {
         planned.push((view, action));
     }
 
-    // Cards that can never stop their fans are left alone; say so once, so
-    // the asymmetry between GPUs is explained (SPEC §7.5).
+    // Cards the guard deliberately leaves alone; say so once, so the
+    // asymmetry between GPUs is explained (SPEC §7.5).
     if enabled {
         let mut skipped: Option<String> = None;
         for (view, _) in &planned {
-            if view.can_park != Some(false) {
+            let reason = if !view.nvidia {
+                Some("NVIDIA only")
+            } else if view.can_park == Some(false) {
+                Some("fans cannot stop")
+            } else {
+                None
+            };
+            let Some(reason) = reason else {
                 continue;
-            }
+            };
             if let Some(state) = app.fan_guard_state.get_mut(&view.hardware_id) {
                 if !state.skip_noticed {
                     state.skip_noticed = true;
                     if skipped.is_none() {
                         skipped = Some(format!(
-                            "fan anti-stop: {} left to its driver curve (fans cannot stop)",
+                            "fan anti-stop: {} left to its driver curve ({reason})",
                             view.name
                         ));
                     }

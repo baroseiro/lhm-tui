@@ -29,4 +29,3 @@ expression: "frame_text(&mut app, &cfg, 100, 28)"
 │                                                                                                  │
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
- fan anti-stop: AMD Radeon RX 7900 XTX left to its driver curve (fans cannot stop)

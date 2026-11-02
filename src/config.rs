@@ -51,18 +51,20 @@ impl Default for Config {
     }
 }
 
-/// GPU fan anti-stop guard (T5.8): keeps fans spinning at `floor_percent` when
-/// the GPU is idle, handing control back to the driver as soon as load or
-/// temperature rises. It only ever writes GPU fan `Control` sensors (SPEC
-/// §3.2), like the manual controls in the Fans panel.
+/// GPU fan anti-stop guard (T5.8): keeps NVIDIA fans spinning at
+/// `floor_percent` when the GPU is idle, handing control back to the driver as
+/// soon as load or temperature rises. Off by default; AMD/Intel cards are never
+/// touched. It only ever writes GPU fan `Control` sensors (SPEC §3.2), like the
+/// manual controls in the Fans panel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FanGuardConfig {
-    /// On by default; disabling leaves every GPU fan to its driver curve.
+    /// Off by default - each GPU manages its own fans. Enable with `n` or
+    /// `"enabled": true`.
     pub enabled: bool,
-    /// Only floor GPUs whose fan curve can stop the fans (zero-RPM / auto-stop):
-    /// detected from the fan control's software range and from observed stopped
-    /// fans. Cards that always turn (most AMD models) are left to their driver.
+    /// Only floor NVIDIA cards whose fan curve can stop the fans (zero-RPM /
+    /// auto-stop): detected from the fan control's software range and from
+    /// observed stopped fans. Cards that always turn are left to their driver.
     pub only_auto_stop: bool,
     /// Duty cycle (%) held while idle (5–100; 0 is rejected so fans never
     /// stop). Defaults to 45 % — clearly spinning audible airflow, while the
@@ -81,10 +83,10 @@ pub struct FanGuardConfig {
 impl Default for FanGuardConfig {
     fn default() -> Self {
         Self {
-            // On by default: the guard is the reason many NVIDIA cards expose
-            // no way to stop the zero-RPM parking. Disable with `n` or
-            // `fan_guard.enabled: false`.
-            enabled: true,
+            // Off by default: let every GPU manage its own fans. Enable with
+            // `n` or `fan_guard.enabled: true` when an NVIDIA zero-RPM curve
+            // parks the fans while idle.
+            enabled: false,
             only_auto_stop: true,
             floor_percent: 45.0,
             idle_load_percent: 10.0,
@@ -1362,7 +1364,10 @@ mod tests {
         assert_eq!(config.keys["fan_control_auto"], vec!["0"]);
         assert_eq!(config.keys["help"], vec!["?", "h"]);
         assert_eq!(config.keys.len(), 22);
-        assert!(config.fan_guard.enabled, "fan anti-stop on by default");
+        assert!(
+            !config.fan_guard.enabled,
+            "fan anti-stop off by default - GPUs manage their own fans"
+        );
         assert_eq!(config.fan_guard.floor_percent, 45.0);
         assert_eq!(config.fan_guard.idle_load_percent, 10.0);
         assert_eq!(config.fan_guard.idle_temp_c, 65.0);

@@ -5,8 +5,8 @@
 # Requirements: VHS + ttyd + ffmpeg on PATH (see CONTRIBUTING.md), a running
 # LibreHardwareMonitor on http://127.0.0.1:8085, and `lhm-tui` on PATH.
 # Outputs: docs/demo.gif (animated demo) and docs/preview.png (hero shot).
-# The demo floors an idle zero-RPM-capable GPU for a few seconds — that is the
-# anti-stop feature doing its job; it is released again when the app quits.
+# The anti-stop guard is off by default, so the demo leaves fan control to each
+# GPU's driver.
 
 Output docs/demo.gif
 

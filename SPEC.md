@@ -527,7 +527,7 @@ Responsive rules:
 | `v`                      | Toggle the voltages table visibility                             |
 | `f`                      | Toggle the fans & controls table visibility                      |
 | `c`                      | Toggle charts (metric graphs ↔ gauges/bars)                      |
-| `n`                      | Toggle the GPU fan anti-stop floor (§7.5); on by default         |
+| `n`                      | Toggle the GPU fan anti-stop floor (§7.5); off by default        |
 | `←`, `-`                 | Fans panel: lower the selected control by 5 %                    |
 | `→`, `+`                 | Fans panel: raise the selected control by 5 %                    |
 | `0`                      | Fans panel: hand the selected control back to Auto/Default       |
@@ -620,35 +620,38 @@ separately and labeled "LHM min/max" (since-boot or since-reset values).
   license notice. Verify the license of any external reference before reusing anything from it;
   the default is an original implementation from this spec.
 
-### 7.5 GPU fan anti-stop floor (on by default)
+### 7.5 GPU fan anti-stop floor (off by default, NVIDIA only)
 
 Stock NVIDIA fan curves stop the fans entirely below a driver-defined temperature (zero-RPM /
-silent mode) and expose no switch to disable it. `fan_guard` works around that by holding every
-controllable GPU fan at a software floor while the GPU is idle and handing control back to the
-driver as soon as real work starts. It only ever touches `Control` sensors (LHM
-`Sensor.Control.SetSoftware` / `SetDefault`) — never tachometers, voltages or anything else — and is
-**enabled by default** (disable with `n` at runtime or `fan_guard.enabled: false`). The Fans panel
-(§6.3) uses the same write path for manual fan/pump control.
+silent mode) and expose no switch to disable it. `fan_guard` works around that by holding NVIDIA
+fans at a software floor while the GPU is idle and handing control back to the driver as soon as
+real work starts. It only ever touches `Control` sensors (LHM
+`Sensor.Control.SetSoftware` / `SetDefault`) — never tachometers, voltages or anything else. It is
+**off by default** — each GPU manages its own fans — and is enabled with `n` at runtime or
+`fan_guard.enabled: true`. **AMD and Intel cards are never touched**, even when the guard is
+enabled. The Fans panel (§6.3) uses the same write path for manual fan/pump control.
 
-**Only auto-stop capable cards are touched** (`fan_guard.only_auto_stop`, default `true`). Most AMD
-cards keep their fans turning no matter what — the driver curve never reaches 0 % and software
-control bottoms out above 0 % — so flooring them would be wrong:
+**Only auto-stop capable NVIDIA cards are touched** (`fan_guard.only_auto_stop`, default `true`).
+Non-NVIDIA hardware is excluded unconditionally; among NVIDIA cards, those whose fan curve can
+never reach 0 % are also left to their driver:
 
 | Signal (per GPU) | Meaning | Guard behaviour |
 | ---------------- | ------- | --------------- |
+| hardware kind is not `GpuNvidia` (AMD/Intel) | outside the guard's scope | never written to, even if enabled |
 | every bound fan control's software range reaches 0 % (`Control` `Min` ≤ 0.5) | the driver *can* park the fans (zero-RPM / auto-stop) | floor applies |
 | a control bottoms out above 0 % (e.g. AMD's usual 15 %) | the driver can never stop the fans | card skipped, never written to |
 | no control-range data, but a fan was seen at standstill (≤ 50 RPM) | auto-stop observed | floor applies, and the observation is sticky |
 | no range data and never seen parked | unknown | skipped (fail-safe) |
 
-A skipped card gets a one-time status note (`… left to its driver curve (fans cannot stop)`), the
-`d` overlay reports `N skipped`, and `only_auto_stop: false` restores the blanket behaviour (floor
-every controllable GPU). The `n` toggle message counts only eligible controls.
+A skipped card gets a one-time status note (`… left to its driver curve (NVIDIA only)` or
+`… left to its driver curve (fans cannot stop)`), the `d` overlay reports `N skipped`, and
+`only_auto_stop: false` restores the blanket behaviour for controllable **NVIDIA** GPUs. The `n`
+toggle message counts only eligible controls.
 
 **Manual controls vs the guard.** The Fans panel writes the same `Control` sensors. If a manual
 percentage is set on a GPU fan while the anti-stop floor is active, the guard switches itself off
 for the session (the status message says `anti-stop off`) so the two writers cannot fight; `n`
-re-enables it and may re-floor an idle GPU. Setting a control back to `Auto`/`Default` does not
+re-enables it and may re-floor an idle NVIDIA GPU. Setting a control back to `Auto`/`Default` does not
 disable the guard.
 
 Decision per GPU, evaluated on every applied snapshot (load = bound GPU load; temp = hottest of
@@ -656,11 +659,11 @@ core / hot spot / memory junction; eligible cards only):
 
 | GPU state | Guard off | Guard on |
 | --------- | --------- | -------- |
-| idle: load ≤ `idle_load_percent` and temp ≤ `idle_temp_c` | no write | set every bound fan `Control` to `floor_percent` |
+| idle: load ≤ `idle_load_percent` and temp ≤ `idle_temp_c` | no write | set every NVIDIA fan `Control` to `floor_percent` |
 | busy: load > idle + `release_load_margin_percent` or temp > idle + `release_temp_margin_c` | no write | `value=null` → `SetDefault()` (driver curve) |
 | in between | no write | hold current mode (hysteresis, no flapping) |
 | load/temp unknown (sensor missing, stale payload) | no write | release to driver control (fail-safe) |
-| ineligible (`can_park == Some(false)`) | no write | never touched; an engaged floor is released |
+| ineligible (non-NVIDIA, or `can_park == Some(false)`) | no write | never touched; an engaged floor is released |
 
 - Only transitions write HTTP; steady state stays silent. A failed write surfaces on the status
   line and leaves the GPU tracked as released, so the next idle snapshot retries.
@@ -800,7 +803,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   },
 
   "fan_guard": {
-    "enabled": true,                  // on by default; n or false disables (writes Control sensors, §7.5)
+    "enabled": false,                 // off by default; n or true enables (NVIDIA-only Control writes, §7.5)
     "only_auto_stop": true,           // skip cards whose fans can never stop (most AMD); false floors all
     "floor_percent": 45.0,            // duty held while idle; 5..=100 (0 would stop the fans)
     "idle_load_percent": 10.0,        // floor engages when load ≤ this …
@@ -846,7 +849,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `panels.fans`                     | toggle          | `true`           | Fans & controls table; hidden until `f` or added to `ui.layout` |
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
 | `panels.custom[]`                 | array           | `[]`             | See widget kinds in §6.2                     |
-| `fan_guard.enabled`               | bool            | `true`           | GPU fan floor; writes fan `Control` sensors like the Fans panel (§7.5) |
+| `fan_guard.enabled`               | bool            | `false`          | NVIDIA-only fan floor; opt in with n (writes fan `Control` sensors, §7.5) |
 | `fan_guard.only_auto_stop`        | bool            | `true`           | Only cards whose fan curve can stop (zero-RPM); spinners are skipped |
 | `fan_guard.floor_percent`         | float           | `45.0`           | 5–100 (0 rejected)                           |
 | `fan_guard.idle_load_percent` / `idle_temp_c` | float | `10.0` / `65.0` | Engage thresholds; unknown data never engages |
@@ -978,7 +981,7 @@ Each milestone ships green CI and is independently reviewable.
 - Windows 11 + Windows Terminal (truecolor + conhost fallback), WSL2, tmux over SSH, kitty, wezterm.
 - Real hardware: AMD CPU + Nvidia GPU; Intel CPU + iGPU; AMD GPU; 2 GPUs (mixed vendor); no GPU;
   memory-only machine; LHM 0.9.5 and 0.9.6; with and without Basic auth.
-- Fan anti-stop floor (§7.5), on real hardware at idle: `n` drops every fan control to the floor
+- Fan anti-stop floor (§7.5, enable it first), on real hardware at idle: `n` drops every NVIDIA fan control to the floor
   (zero-RPM stops, fans spin again), a load spike returns them to the driver curve, and quitting
   the TUI (or `n` off) leaves LHM back in automatic control — verify in LHM's own UI.
 - 24 h soak: memory flat (±2 MB), no fd leak, reconnect after LHM restart and network flicker.
@@ -1030,7 +1033,7 @@ Each milestone ships green CI and is independently reviewable.
 | R6  | Basic auth password in config file                                                                        | `password_env`/`password_file` first in docs; redaction in `--print-config`; refuse world-readable config file on Unix with a warning |
 | R7  | Windows conhost default 9001 scrollback / alt-screen semantics in old builds                              | Require Windows Terminal in docs; graceful VT capability check                                              |
 | R8  | `Sensor`-endpoint polling as optimization for pinned-only configs — needed in v0.1?                       | No; keep one `/data.json` fetch (simpler, atomic). Revisit if payload > 500 KB                              |
-| R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | On by default (disable with `n` or `fan_guard.enabled: false`); only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
+| R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | Off by default (enable with `n` or `fan_guard.enabled: true`); only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
 
 ---
 

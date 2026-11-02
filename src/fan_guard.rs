@@ -7,13 +7,16 @@
 
 use crate::bindings::Bindings;
 use crate::config::FanGuardConfig;
-use crate::lhm::model::Snapshot;
+use crate::lhm::model::{HardwareKind, Snapshot};
 
 /// Everything the guard needs about one GPU.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GpuFanView {
     pub hardware_id: String,
     pub name: String,
+    /// Only NVIDIA cards are eligible for the anti-stop floor; AMD/Intel fan
+    /// curves are always left alone.
+    pub nvidia: bool,
     /// `None` when load is unknown — treated fail-safe (not idle).
     pub load: Option<f64>,
     /// Hottest of core / hot spot / memory-junction temperatures.
@@ -73,6 +76,9 @@ pub fn views(snapshot: &Snapshot, bindings: &Bindings) -> Vec<GpuFanView> {
                     .and_then(|slot| crate::bindings::slot_sensor(snapshot, slot))
                     .and_then(|sensor| sensor.value)
             };
+            let nvidia = snapshot
+                .hardware(&gpu.hardware_id)
+                .is_some_and(|hardware| hardware.kind == HardwareKind::GpuNvidia);
             let temps = [&gpu.temp, &gpu.hotspot, &gpu.mem_temp]
                 .into_iter()
                 .filter_map(value)
@@ -117,6 +123,7 @@ pub fn views(snapshot: &Snapshot, bindings: &Bindings) -> Vec<GpuFanView> {
             GpuFanView {
                 hardware_id: gpu.hardware_id.clone(),
                 name: gpu.name.clone(),
+                nvidia,
                 load: value(&gpu.load),
                 max_temp: temps,
                 control_ids,
@@ -139,6 +146,15 @@ pub fn decide(
 ) -> GuardAction {
     if view.control_ids.is_empty() {
         return GuardAction::Hold;
+    }
+    // The guard exists for NVIDIA's zero-RPM behaviour; AMD/Intel fan curves
+    // (and vendor tools driving them) are never touched.
+    if !view.nvidia {
+        return if engaged {
+            GuardAction::Release
+        } else {
+            GuardAction::Hold
+        };
     }
     if cfg.only_auto_stop && !eligible {
         return if engaged {
@@ -190,6 +206,7 @@ mod tests {
         GpuFanView {
             hardware_id: "/gpu-nvidia/0".to_string(),
             name: "Dev GPU".to_string(),
+            nvidia: true,
             load,
             max_temp: temp,
             control_ids: vec!["/gpu-nvidia/0/control/0".to_string()],
@@ -310,5 +327,15 @@ mod tests {
             ..FanGuardConfig::default()
         };
         assert_eq!(decide(&idle, false, &all, false), GuardAction::Engage);
+    }
+
+    #[test]
+    fn non_nvidia_cards_are_never_touched() {
+        let cfg = FanGuardConfig::default();
+        let mut amd = view(Some(0.0), Some(40.0));
+        amd.nvidia = false;
+        amd.can_park = Some(true); // even if it looks auto-stop capable
+        assert_eq!(decide(&amd, false, &cfg, true), GuardAction::Hold);
+        assert_eq!(decide(&amd, true, &cfg, true), GuardAction::Release);
     }
 }
