@@ -3,7 +3,7 @@
 |              |                                                                                    |
 | ------------ | ---------------------------------------------------------------------------------- |
 | Derived from | [SPEC.md](SPEC.md) v1.0                                                             |
-| Goal         | Ship **v0.4.0** - terminal dashboard for LibreHardwareMonitor (monitoring, fan controls, anti-stop floor, grouped tables) |
+| Goal         | Ship **v0.4.1** - terminal dashboard for LibreHardwareMonitor (monitoring, fan controls, anti-stop floor, grouped tables, CPU/PCH fan readouts) |
 | Phases       | P0-P8, mapped to SPEC §11 milestones M0-M9                        |
 | Effort       | ≈ 10–14 ideal days for one focused developer (see §2)                               |
 | Tracking     | Each task `T<phase>.<n>` becomes a GitHub issue labeled `phase-<n>`, closed by its PR |
@@ -474,6 +474,12 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 **Files:** `src/bindings.rs` (cross-hardware fan lookup), `src/ui/presets.rs`, `src/config.rs`, `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, tests/snapshots, SPEC §5.2/§6.3/§8.2/§8.3, README, CHANGELOG.
 **Done when:** Both fans bind from the LPC node on the live fixture and are visible at 160/120 columns; missing fans are skipped; example config validates.
 **Shipped:** cross-hardware named fan lookup + override slots, `fan` show slot, live fixture LPC fan node, CPU strip readouts and snapshots.
+
+#### T8.10 - Release v0.4.1
+**Goal:** Bump `0.4.0` → `0.4.1`; promote the unreleased CPU/PCH fan readouts, opt-in NVIDIA-only guard and schema fixes; regenerate captures; publish the GitHub release and verify the Windows artifact.
+**Files:** `Cargo.toml`/`Cargo.lock`, `CHANGELOG.md`, `README.md`, `docs/release-notes-v0.4.1.md`, `docs/preview.png`, `docs/demo.gif`, `dist-workspace.toml`.
+**Done when:** tag `v0.4.1` builds all six archives, every asset is uploaded, `sha256.sum` verifies and the Windows binary runs `--version` 0.4.1.
+**Shipped:** v0.4.1 released 2026-11-09 (tag `c0786a0`); macOS arm64 moved to the `macos-15` runner after the `macos-14` retirement, all six archives built, Windows artifact checksum-verified and smoke-tested.
 
 ---
 

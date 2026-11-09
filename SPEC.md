@@ -5,7 +5,7 @@
 |                  |                                                                          |
 | ---------------- | ------------------------------------------------------------------------ |
 | Status           | Draft v1.0                                                               |
-| Target release   | v0.4.0 - monitoring + fan controls                                       |
+| Target release   | v0.4.1 - monitoring + fan controls + CPU/PCH fan readouts                |
 | Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`      |
 | Data source      | LHM built-in **Remote Web Server** (`GET /data.json`), polling-based      |
 | Platforms        | TUI runs on Windows / Linux / macOS; the LHM host is Windows by definition |

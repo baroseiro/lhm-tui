@@ -4,7 +4,7 @@
 
 - **Rust crate + docs.** `src/` holds the ratatui TUI, `tests/` the fixture/snapshot contract;
   `SPEC.md` (frozen design, v1.0), `PLAN.md` (execution plan), `README.md` (public) and
-  `CHANGELOG.md` document it. v0.4.0 is released (2026-10-19); v0.5 (recording/alerts and
+  `CHANGELOG.md` document it. v0.4.1 is released (2026-11-09); v0.5 (recording/alerts and
   control hardening) is next. Verify with `git ls-files` before assuming a file or feature is
   missing.
 - **Git history is live and intentional:** one `initial commit` on `main`, tracking
