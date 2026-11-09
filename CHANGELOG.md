@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The anti-stop floor is NVIDIA-only**: AMD/Intel fan controls are never written to, even when
   the guard is enabled, so swapping GPU cards or PCIe slots cannot arm the floor on an AMD card.
+- Release builds for Apple silicon now use the `macos-15` runner; the retired `macos-14` label
+  broke the v0.4.1 release plan.
 
 ## [0.4.0] - 2026-10-19
 
