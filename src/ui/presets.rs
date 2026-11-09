@@ -454,6 +454,18 @@ fn cpu_strip(cpu: &CpuBindings, snapshot: &Snapshot, cfg: &Config) -> CpuStrip {
             slot_display(snapshot, &cpu.voltage),
         ));
     }
+    if show("fan") {
+        if cpu.fan_cpu.is_some() {
+            strip
+                .first_left
+                .push(("CPU Fan".to_string(), slot_display(snapshot, &cpu.fan_cpu)));
+        }
+        if cpu.fan_pch.is_some() {
+            strip
+                .first_left
+                .push(("PCH Fan".to_string(), slot_display(snapshot, &cpu.fan_pch)));
+        }
+    }
     if show("clock") {
         if cpu.clock.is_some() {
             strip

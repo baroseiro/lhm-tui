@@ -24,8 +24,8 @@ failures and list deferrals in the release notes.
 ## Checklist per row
 
 1. `lhm-tui --probe` prints version, counts and no errors.
-2. `lhm-tui` renders CPU, GPUs, memory; values match the LHM web UI within
-   one poll interval.
+2. `lhm-tui` renders CPU, GPUs, memory; the CPU strip shows `CPU Fan`/`PCH Fan` after
+   `Volt Core`; values match the LHM web UI within one poll interval.
 3. Press `c` (or run with `--charts`): charts fill over ~5 minutes; `g` cycles the window; `c`
    switches back to gauges.
 4. `t` shows/hides the grouped temperatures table; rows sit under a device heading; `s` sorts

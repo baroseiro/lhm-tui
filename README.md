@@ -17,9 +17,10 @@
 live, color-thresholded panels in your terminal:
 
 - **CPU** — temperature & total load gauges, `Per-Core`-labelled utilization bars, and a fixed
-  two-row metrics strip (`Pwr · TDC · Volt Core` with `Clk Avg · Clk Eff` right-aligned; `Bus Speed ·
-  Clk Fabric · Clk Uncore · Clk Memory · Speed`, where `Speed` is the DDR transfer rate in MHz,
-  twice the memory clock: `Speed 3600 MHz`) (`c` or `--charts` adds live graphs)
+  two-row metrics strip (`Pwr · TDC · Volt Core · CPU Fan · PCH Fan` with `Clk Avg · Clk Eff`
+  right-aligned; `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory · Speed`, where `Speed` is the
+  DDR transfer rate in MHz, twice the memory clock: `Speed 3600 MHz`) (`c` or `--charts` adds live
+  graphs)
 - **GPU** — one panel per GPU (NVIDIA/AMD/Intel, multi-GPU supported): core load, **VRAM usage**
   (`599 / 24576 MB (2%)`) with **shared GPU memory** (`Shared`) right below it (estimated from RAM
   minus VRAM when the card reports no total), hotspot temperature, power draw, clock & voltage, and
@@ -45,9 +46,9 @@ live, color-thresholded panels in your terminal:
 It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
 Windows machine on your network / over SSH — through a small JSON config file.
 
-> **Project status:** v0.4.0 — fan and pump control from the Fans & Controls panel, grouped
-> temperature/voltage tables, mouse navigation and a CPU memory-speed readout. The full design —
-> architecture, config schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
+> **Project status:** v0.4.1 — CPU/PCH fan readouts on the CPU strip, an NVIDIA-only opt-in fan
+> guard, grouped temperature/voltage tables, mouse navigation and a CPU memory-speed readout. The
+> full design — architecture, config schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
 
 ## Demo
 
@@ -258,7 +259,8 @@ Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itse
   memory readouts, better voltage names
 - **v0.4.0** — fan/pump control from the Fans panel (flat, device in parentheses, speed + setting,
   Auto/Default), grouped temperature/voltage tables, mouse navigation and a CPU `Speed` readout
-  *(current)*
+- **v0.4.1** — CPU/PCH fan readouts on the CPU strip, NVIDIA-only opt-in fan guard, schema and
+  Windows config-path documentation fixes *(current)*
 - **v0.4.x** — winget + scoop manifests, crates.io publish
 - **v0.5.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
 - **v0.6.0** — multi-host tabs, user theme files

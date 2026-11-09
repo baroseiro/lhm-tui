@@ -170,8 +170,20 @@ fn live_fixture_dual_gpu_machine() {
     // Thermal: 6 CPU + 3 + 3 GPU sensors; DIMM timings don't leak in.
     assert_eq!(bindings.thermal.len(), 12);
 
-    // Fans: both NVIDIA fans paired with their controls; AMD fan too.
-    assert_eq!(bindings.fans.len(), 3);
+    // CPU/PCH fans come from the SuperIO/LPC hardware, not the CPU node.
+    assert_eq!(
+        slot_id(&cpu.fan_cpu),
+        Some("/lpc/it8688e/0/fan/0"),
+        "CPU Fan binds from the LPC hardware"
+    );
+    assert_eq!(
+        slot_id(&cpu.fan_pch),
+        Some("/lpc/it8688e/0/fan/3"),
+        "PCH Fan binds from the LPC hardware"
+    );
+
+    // Fans: both NVIDIA fans paired with their controls; AMD and LPC fans too.
+    assert_eq!(bindings.fans.len(), 5);
     assert!(bindings.fans.iter().all(|row| row.control.is_some()));
 
     // Power: many sensors, CPU package and GPU packages included.

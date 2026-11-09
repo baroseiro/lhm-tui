@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.1] - 2026-11-09
+
+### Added
+
+- **CPU fan readouts**: the CPU strip row 1 now shows `CPU Fan` and `PCH Fan` after `Volt Core`.
+  Both bind from LPC/SuperIO hardware even though they are not attached to the CPU node; new
+  `cpu.fan_cpu` / `cpu.fan_pch` override slots and a `fan` slot in `panels.cpu.show`.
 
 ### Changed
 
 - **Fan anti-stop guard is opt-in**: `fan_guard.enabled` now defaults to `false`, so each GPU
   manages its own fans out of the box. Enable it with `n` or `"fan_guard": { "enabled": true }`.
+- The JSON Schema now reflects the actual `fan_guard.enabled` default (`false`).
 
 ### Fixed
 

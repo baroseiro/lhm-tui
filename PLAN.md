@@ -469,6 +469,12 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 **Done when:** Default config leaves fans alone; enabling floors only NVIDIA auto-stop cards; a non-NVIDIA view returns `Hold`/`Release`; example config and captures updated.
 **Shipped:** vendor gate and opt-in default, NVIDIA-only skip note, updated toggle messages, example config and docs.
 
+#### T8.9 — CPU/PCH fan readouts
+**Goal:** Bind `CPU Fan` and `PCH Fan` from SuperIO/LPC hardware and show them in CPU strip row 1 after `Volt Core`; add `fan` to `panels.cpu.show` and `cpu.fan_cpu` / `cpu.fan_pch` override slots.
+**Files:** `src/bindings.rs` (cross-hardware fan lookup), `src/ui/presets.rs`, `src/config.rs`, `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, tests/snapshots, SPEC §5.2/§6.3/§8.2/§8.3, README, CHANGELOG.
+**Done when:** Both fans bind from the LPC node on the live fixture and are visible at 160/120 columns; missing fans are skipped; example config validates.
+**Shipped:** cross-hardware named fan lookup + override slots, `fan` show slot, live fixture LPC fan node, CPU strip readouts and snapshots.
+
 ---
 
 ## 4. Critical path & parallelization

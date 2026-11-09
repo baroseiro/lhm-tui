@@ -57,7 +57,7 @@ fn pause_key_toggles_pause_and_shared_flag() {
 #[test]
 fn tab_cycles_focus_over_panel_list() {
     let (mut app, cfg) = live_app();
-    // Default layout with thermal hidden: cpu:0, gpu:0, gpu:1, memory → 4 panels.
+    // Default layout with thermal/fans hidden: cpu:0, gpu:0, gpu:1, memory.
     assert_eq!(app.focus, 0);
 
     handle_event(&mut app, key(KeyCode::Tab), &cfg);
@@ -84,7 +84,7 @@ fn tab_cycles_focus_over_panel_list() {
 fn scroll_applies_to_focused_scrollable_panel_only() {
     let (mut app, cfg) = live_app();
     // Reveal the temperatures table with the `t` override, then focus it
-    // (cpu:0, gpu:0, gpu:1, memory, thermal → index 4).
+    // (cpu:0, gpu:0, gpu:1, memory, thermal -> index 4).
     app.thermal_override = Some(true);
     app.focus = 4;
     handle_event(&mut app, key(KeyCode::Char('j')), &cfg);
@@ -244,12 +244,14 @@ fn fans_panel_toggle_and_control_keys() {
         .as_ref()
         .is_some_and(|status| status.text.contains("fans:")));
 
-    // Default panels: cpu:0, gpu:0, gpu:1, memory, fans → focus index 4.
+    // Default panels: cpu:0, gpu:0, gpu:1, memory, fans -> index 4.
     app.focus = 4;
-    // Default sort is RPM descending: AMD (534) is first, then the two
-    // NVIDIA fans (0 RPM). Down must move to the next *visible* row.
-    handle_event(&mut app, key(KeyCode::Down), &cfg);
-    assert_eq!(app.fan_selected, 1, "down moves the fan-control cursor");
+    // Default sort is RPM descending: PCH (2258), CPU (1331), AMD (534), then
+    // the two NVIDIA fans (0 RPM). Walk to the first NVIDIA row.
+    for _ in 0..3 {
+        handle_event(&mut app, key(KeyCode::Down), &cfg);
+    }
+    assert_eq!(app.fan_selected, 3, "down moves one visible row at a time");
 
     // The live fixture's NVIDIA Fan 1 sits at 0 %, so +5 % writes 5 %.
     handle_event(&mut app, key(KeyCode::Right), &cfg);

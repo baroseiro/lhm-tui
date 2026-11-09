@@ -92,7 +92,8 @@
         "clock",
         "power",
         "voltage",
-        "current"
+        "current",
+        "fan"
       ]
     },
     "gpu": {

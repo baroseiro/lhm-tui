@@ -355,8 +355,8 @@ Heuristics are documented, deterministic, and overridable per panel in config (F
 candidate lists; first match wins. `(name)` match is case-insensitive exact, then regex fallback.
 
 **CPU panel** — hardware candidates: `HardwareKind::Cpu` (first; extra CPUs get their own panel;
-common case is 1). The bottom **metrics strip** renders these in exactly this order, wrapping onto
-as many rows as the panel width needs (missing slots are skipped; see §6.3):
+common case is 1). The bottom **metrics strip** uses the fixed two-row template (see §6.3;
+missing slots are skipped):
 
 | Slot              | SensorType    | Candidate names (in order)                                   |
 | ----------------- | ------------- | ------------------------------------------------------------ |
@@ -372,6 +372,8 @@ as many rows as the panel width needs (missing slots are skipped; see §6.3):
 | `clock_memory`    | Clock         | `Memory` (package memory clock)                               |
 | `voltage`         | Voltage       | `Core (SVI2 TFN)`, `CPU Core`, `Core Voltage`; core voltage — never a per-core VID |
 | `current`         | Current       | `TDC`, `Core TDC`, first `Current`                            |
+| `fan_cpu`         | Fan           | `CPU Fan`, `CPU Fan 1`, `CPU_FAN`, `CPU FAN`, `CPU Fan Speed` (searched across LPC/SuperIO hardware) |
+| `fan_pch`         | Fan           | `PCH Fan`, `PCH_FAN`, `Chipset Fan`, `PCH Fan Speed` (searched across LPC/SuperIO hardware) |
 
 **GPU panel** — one panel per hardware whose kind is `Gpu*`; panel title `GPU {n} · {name}` using
 hardware order in the tree (stable within a session). Slots:
@@ -496,7 +498,7 @@ Responsive rules:
 
 | Key           | Contents                                                                        |
 | ------------- | ------------------------------------------------------------------------------- |
-| `cpu`         | temp graph + total-load graph (dual series), `Per-Core`-labelled bars (one column between cores), and a fixed two-row metrics strip — row 1 `Pwr · TDC · Volt Core` with `Clk Avg · Clk Eff` right-aligned, row 2 `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory · Speed` (`Speed` = 2 × memory clock, in MHz: `Clk Memory 1.80 GHz · Speed 3600 MHz`; disabled or missing slots are skipped) |
+| `cpu`         | temp graph + total-load graph (dual series), `Per-Core`-labelled bars (one column between cores), and a fixed two-row metrics strip — row 1 `Pwr · TDC · Volt Core · CPU Fan · PCH Fan` with `Clk Avg · Clk Eff` right-aligned, row 2 `Bus Speed · Clk Fabric · Clk Uncore · Clk Memory · Speed` (`Speed` = 2 × memory clock, in MHz: `Clk Memory 1.80 GHz · Speed 3600 MHz`; disabled or missing slots are skipped) |
 | `gpu`         | one panel per GPU; load graph + VRAM gauge (`599 / 24576 MB (2%)`) + a `Shared` gauge under it (same `used / total (pct %)` template; when the card reports no total, system RAM total minus this card's VRAM is used) + temp graph (core / hot spot / memory junction) + a metrics row `Pwr · Clk · Volt` and a dedicated fan row (`Fan 1`, `Fan 2`, …) underneath |
 | `memory`      | used-memory gauge, virtual-memory gauge (`42.7 / 140.9 GB (30%)`) and the used-load graph; both gauges show `used / total (pct %)` |
 | `thermal`     | all temperature sensors grouped per hardware device, sorted within each group (hidden by default; `t` or list it in `ui.layout`) |
@@ -774,7 +776,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   },
 
   "panels": {
-    "cpu":  { "enabled": true, "show": ["temp", "load", "core_loads", "clock", "power", "voltage", "current"] },
+    "cpu":  { "enabled": true, "show": ["temp", "load", "core_loads", "clock", "power", "voltage", "current", "fan"] },
     "gpu":  { "enabled": true, "include": ["GpuNvidia", "GpuAmd", "GpuIntel"], "per_row": 2,
               "show": ["load", "memory", "temp", "power", "voltage", "fan", "clock"] },
     "memory": { "enabled": true, "show": ["used", "load", "virtual"] },
@@ -844,7 +846,7 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 | `charts.marker`                   | enum            | `braille`        | Fallback automatically if glyph unsupported  |
 | `charts.window(_cycle)`           | duration/string | `"5m"`/`[1m,5m,15m]` | Window > `history.window_s` clamps       |
 | `theme.*`                         | color/float     | see example      | Names or `#RRGGBB`; downgraded for 256/16 colors |
-| `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors. CPU slots: `temp`, `load`, `core_loads`, `clock`, `power`, `voltage`, `current`; GPU slots: `load`, `memory`, `temp`, `power`, `voltage`, `fan`, `clock` |
+| `panels.*.show` / `enabled`       | per preset      | all/true         | Honored by CPU/GPU/memory panels; invalid slots are errors. CPU slots: `temp`, `load`, `core_loads`, `clock`, `power`, `voltage`, `current`, `fan`; GPU slots: `load`, `memory`, `temp`, `power`, `voltage`, `fan`, `clock` |
 | `panels.voltage`                  | toggle          | `true`           | Voltages table; hidden until `v` or added to `ui.layout` |
 | `panels.fans`                     | toggle          | `true`           | Fans & controls table; hidden until `f` or added to `ui.layout` |
 | `panels.sensor_overrides`         | map             | `{}`             | Key = `panel.slot` (e.g. `cpu.temp`, `gpu.2.load`) |
@@ -1235,7 +1237,7 @@ both covered in fixtures):
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
+        "enabled": { "type": "boolean", "default": false },
         "only_auto_stop": { "type": "boolean", "default": true },
         "floor_percent": { "type": "number", "minimum": 5, "maximum": 100, "default": 45 },
         "idle_load_percent": { "type": "number", "minimum": 0, "maximum": 100, "default": 10 },

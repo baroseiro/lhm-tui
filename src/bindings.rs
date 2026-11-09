@@ -41,6 +41,10 @@ pub struct CpuBindings {
     pub voltage: Option<Slot>,
     /// Package current (`TDC`, `Core TDC`, …).
     pub current: Option<Slot>,
+    /// SuperIO/LPC chassis fan (`CPU Fan`) shown on the CPU strip.
+    pub fan_cpu: Option<Slot>,
+    /// SuperIO/LPC chipset fan (`PCH Fan`) shown on the CPU strip.
+    pub fan_pch: Option<Slot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -330,6 +334,24 @@ fn cpu_bindings(
                 .find(|sensor| sensor.kind == SensorKind::Current)
         })
     });
+    let fan_cpu = find_slot_anywhere(
+        snapshot,
+        overrides,
+        "cpu.fan_cpu",
+        &[
+            "CPU Fan",
+            "CPU Fan 1",
+            "CPU_FAN",
+            "CPU FAN",
+            "CPU Fan Speed",
+        ],
+    );
+    let fan_pch = find_slot_anywhere(
+        snapshot,
+        overrides,
+        "cpu.fan_pch",
+        &["PCH Fan", "PCH_FAN", "Chipset Fan", "PCH Fan Speed"],
+    );
 
     let core_loads = if let Some(rule) = overrides.get("cpu.core_loads") {
         resolve_override(snapshot, rule)
@@ -369,6 +391,8 @@ fn cpu_bindings(
         power,
         voltage,
         current,
+        fan_cpu,
+        fan_pch,
     }
 }
 
@@ -724,6 +748,34 @@ where
         return resolve_override(snapshot, rule).map(|(hw, sensor)| slot_of(hw, sensor));
     }
     default().map(|sensor| slot_of(hardware, sensor))
+}
+
+/// Fan sensor anywhere in the tree (SuperIO/LPC hardware is not the CPU node).
+fn find_fan_anywhere(snapshot: &Snapshot, names: &[&str]) -> Option<Slot> {
+    for name in names {
+        for hardware in snapshot.all_hardware() {
+            if let Some(sensor) = hardware
+                .sensors()
+                .find(|sensor| sensor.kind == SensorKind::Fan && sensor.name == *name)
+            {
+                return Some(slot_of(hardware, sensor));
+            }
+        }
+    }
+    None
+}
+
+/// Slot override or a named fan from any hardware node (CPU/PCH fans).
+fn find_slot_anywhere(
+    snapshot: &Snapshot,
+    overrides: &BTreeMap<String, SensorOverride>,
+    key: &str,
+    names: &[&str],
+) -> Option<Slot> {
+    if let Some(rule) = overrides.get(key) {
+        return resolve_override(snapshot, rule).map(|(hw, sensor)| slot_of(hw, sensor));
+    }
+    find_fan_anywhere(snapshot, names)
 }
 
 fn resolve_override<'a>(

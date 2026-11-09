@@ -376,6 +376,7 @@ impl Default for CpuPanel {
                 "power",
                 "voltage",
                 "current",
+                "fan",
             ]
             .map(String::from)
             .to_vec(),
@@ -962,6 +963,7 @@ pub fn validate(config: &Config) -> Vec<String> {
         "power",
         "voltage",
         "current",
+        "fan",
     ];
     const GPU_SLOTS: &[&str] = &["load", "memory", "temp", "power", "voltage", "fan", "clock"];
     const MEMORY_SLOTS: &[&str] = &["used", "load", "virtual"];
@@ -1180,6 +1182,8 @@ const CPU_OVERRIDE_SLOTS: &[&str] = &[
     "power",
     "voltage",
     "current",
+    "fan_cpu",
+    "fan_pch",
     "core_loads",
 ];
 const GPU_OVERRIDE_SLOTS: &[&str] = &[
@@ -1336,7 +1340,8 @@ mod tests {
                 "clock",
                 "power",
                 "voltage",
-                "current"
+                "current",
+                "fan"
             ]
         );
         assert!(config.panels.gpu.enabled);
