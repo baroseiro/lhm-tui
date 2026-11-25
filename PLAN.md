@@ -513,6 +513,10 @@ all six archives, installers and checksums like v0.4.1.
 `docs/release-notes-v0.5.0.md`, `docs/preview.png`, `docs/demo.gif`.
 **Done when:** Release published with all assets; Windows artifact checksum-verified and
 smoke-tested (`--version` 0.5.0, live `--probe` in DLL mode); release body set.
+**Shipped:** v0.5.0 released 2026-11-25 (tag `8b8e8f4`); all six archives, installers and
+checksums published. The Windows x64 artifact verified against `sha256.sum` and smoke-tested
+(`--version` 0.5.0, `--probe` with both the .NET Framework and .NET 10 LHM DLLs while LHM was
+closed); release body set from `docs/release-notes-v0.5.0.md`.
 
 **Exit checklist P9:** DLL mode runs with LHM closed on Windows (elevated and not), HTTP remains the default, `cargo fmt`/`clippy -D warnings`/`test` green on Windows/Linux/macOS, and no `unsafe`/FFI entered the Rust tree.
 
