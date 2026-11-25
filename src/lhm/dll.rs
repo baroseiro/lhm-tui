@@ -116,11 +116,11 @@ impl DllClient {
         #[cfg(not(windows))]
         {
             let _ = server;
-            return Err(
+            Err(
                 "server.source = \"dll\" is Windows-only; use server.source = \"http\" on this \
                  platform"
                     .to_string(),
-            );
+            )
         }
 
         #[cfg(windows)]

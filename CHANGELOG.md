@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Non-Windows builds pass `cargo clippy -D warnings` again: the DLL source's
+  Windows-only early return tripped `clippy::needless_return` on Linux/macOS.
+
 ## [0.5.0] - 2026-11-25
 
 ### Added
