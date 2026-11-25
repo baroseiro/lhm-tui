@@ -1,12 +1,14 @@
-//! HTTP client for LHM's built-in web server (SPEC §3.2, §3.5).
+//! Sensor source client (SPEC §3.2, §3.5, §3.6).
 //!
-//! One request per poll: `GET {base}/data.json`, gzip enabled per config,
-//! optional HTTP Basic auth, then sanitize + parse into a [`Snapshot`]
-//! (SPEC Q1/Q2 in [`crate::lhm::raw`]).
+//! [`LhmClient`] selects between LHM's built-in web server and the direct
+//! `LibreHardwareMonitorLib.dll` bridge. Both return the same [`Fetched`]
+//! snapshot, so the poller, fan controls and one-shot modes are source
+//! agnostic. HTTP remains the default and keeps its retry/auth behavior.
 
 use std::time::{Duration, Instant};
 
-use crate::config::ServerConfig;
+use crate::config::{DataSource, ServerConfig};
+use crate::lhm::dll::DllClient;
 use crate::lhm::model::Snapshot;
 
 /// Typed failures; the variants drive the UI failure matrix (SPEC §10.1)
@@ -21,6 +23,8 @@ pub enum LhmError {
     Http { url: String, status: u16 },
     #[error("invalid payload from {url}: {message}")]
     BadPayload { url: String, message: String },
+    #[error("LibreHardwareMonitor DLL bridge error ({path}): {message}")]
+    Dll { path: String, message: String },
 }
 
 /// One successful poll.
@@ -31,15 +35,116 @@ pub struct Fetched {
     pub bytes: usize,
 }
 
+/// Source-agnostic client handed to the poller, fan-control task and
+/// one-shot modes. Cheap to clone: HTTP clients share their pool and DLL
+/// clients share one bridge process per library path.
+#[derive(Clone)]
 pub struct LhmClient {
+    inner: ClientInner,
+    endpoint: String,
+}
+
+#[derive(Clone)]
+enum ClientInner {
+    Http(HttpClient),
+    Dll(DllClient),
+}
+
+impl LhmClient {
+    pub fn new(server: &ServerConfig) -> anyhow::Result<Self> {
+        match server.source {
+            DataSource::Http => {
+                let http = HttpClient::new(server)?;
+                Ok(Self {
+                    endpoint: http.base_url.clone(),
+                    inner: ClientInner::Http(http),
+                })
+            }
+            DataSource::Dll => {
+                let dll = DllClient::connect(server).map_err(anyhow::Error::msg)?;
+                Ok(Self {
+                    endpoint: dll.endpoint().to_string(),
+                    inner: ClientInner::Dll(dll),
+                })
+            }
+        }
+    }
+
+    /// HTTP base URL, or `dll:<path>` in DLL mode.
+    pub fn base_url(&self) -> &str {
+        &self.endpoint
+    }
+
+    /// `GET /ResetAllMinMax` (SPEC §3.2; the `m` key) or the bridge
+    /// equivalent.
+    pub async fn reset_min_max(&self) -> Result<(), LhmError> {
+        match &self.inner {
+            ClientInner::Http(http) => http.reset_min_max().await,
+            ClientInner::Dll(dll) => {
+                let dll = dll.clone();
+                let path = self.endpoint.clone();
+                tokio::task::spawn_blocking(move || dll.reset_min_max())
+                    .await
+                    .map_err(|err| LhmError::Dll {
+                        path,
+                        message: format!("bridge task failed: {err}"),
+                    })?
+            }
+        }
+    }
+
+    /// Set a control sensor's software duty (`POST /Sensor?action=Set`,
+    /// SPEC §3.2). `None` hands the fan back to automatic/driver control
+    /// (`value=null` → `SetDefault`).
+    pub async fn set_sensor_control(
+        &self,
+        sensor_id: &str,
+        value: Option<f32>,
+    ) -> Result<(), LhmError> {
+        match &self.inner {
+            ClientInner::Http(http) => http.set_sensor_control(sensor_id, value).await,
+            ClientInner::Dll(dll) => {
+                let dll = dll.clone();
+                let sensor_id = sensor_id.to_string();
+                let path = self.endpoint.clone();
+                tokio::task::spawn_blocking(move || dll.set_sensor_control(&sensor_id, value))
+                    .await
+                    .map_err(|err| LhmError::Dll {
+                        path,
+                        message: format!("bridge task failed: {err}"),
+                    })?
+            }
+        }
+    }
+
+    /// Fetch and normalize one snapshot.
+    pub async fn fetch_data_json(&self) -> Result<Fetched, LhmError> {
+        match &self.inner {
+            ClientInner::Http(http) => http.fetch_data_json().await,
+            ClientInner::Dll(dll) => {
+                let dll = dll.clone();
+                let path = self.endpoint.clone();
+                tokio::task::spawn_blocking(move || dll.fetch_snapshot())
+                    .await
+                    .map_err(|err| LhmError::Dll {
+                        path,
+                        message: format!("bridge task failed: {err}"),
+                    })?
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct HttpClient {
     http: reqwest::Client,
     base_url: String,
     username: Option<String>,
     password: Option<String>,
 }
 
-impl LhmClient {
-    pub fn new(server: &ServerConfig) -> anyhow::Result<Self> {
+impl HttpClient {
+    fn new(server: &ServerConfig) -> anyhow::Result<Self> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_millis(server.request_timeout_ms))
             .gzip(server.gzip)
@@ -53,13 +158,8 @@ impl LhmClient {
         })
     }
 
-    /// Base URL without a trailing slash.
-    pub fn base_url(&self) -> &str {
-        &self.base_url
-    }
-
     /// `GET /ResetAllMinMax` (SPEC §3.2; the `m` key).
-    pub async fn reset_min_max(&self) -> Result<(), LhmError> {
+    async fn reset_min_max(&self) -> Result<(), LhmError> {
         let url = format!("{}/ResetAllMinMax", self.base_url);
         let mut request = self.http.get(&url);
         if let Some(username) = &self.username {
@@ -90,7 +190,7 @@ impl LhmClient {
     /// exceptions escape the listener (the request hangs with no reply, and
     /// success carries no `result` marker), while POST always answers
     /// `{"result":"ok"}` or `{"result":"fail","message":…}`.
-    pub async fn set_sensor_control(
+    async fn set_sensor_control(
         &self,
         sensor_id: &str,
         value: Option<f32>,
@@ -155,7 +255,7 @@ impl LhmClient {
     }
 
     /// Fetch and normalize `/data.json` (one poll).
-    pub async fn fetch_data_json(&self) -> Result<Fetched, LhmError> {
+    async fn fetch_data_json(&self) -> Result<Fetched, LhmError> {
         let url = format!("{}/data.json", self.base_url);
         let started = Instant::now();
 
@@ -237,5 +337,20 @@ mod tests {
 
         server.password = Some("inline".to_string());
         assert_eq!(resolve_password(&server).as_deref(), Some("inline"));
+    }
+
+    #[test]
+    fn endpoint_label_tracks_the_selected_source() {
+        let mut server = ServerConfig::default();
+        assert_eq!(server.endpoint_label(), "http://127.0.0.1:8085");
+
+        server.source = DataSource::Dll;
+        assert_eq!(server.endpoint_label(), "dll:auto");
+
+        server.dll_path = Some(r"C:\LHM\LibreHardwareMonitorLib.dll".to_string());
+        assert_eq!(
+            server.endpoint_label(),
+            r"dll:C:\LHM\LibreHardwareMonitorLib.dll"
+        );
     }
 }

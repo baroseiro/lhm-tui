@@ -2,8 +2,11 @@
 #
 #   vhs docs/demo.tape
 #
-# Requirements: VHS + ttyd + ffmpeg on PATH (see CONTRIBUTING.md), a running
-# LibreHardwareMonitor on http://127.0.0.1:8085, and `lhm-tui` on PATH.
+# Requirements: VHS + ttyd + ffmpeg on PATH (see CONTRIBUTING.md) and
+# `lhm-tui` on PATH. The capture can use either source:
+#   - HTTP: run LibreHardwareMonitor on http://127.0.0.1:8085;
+#   - DLL:  set LHM_TUI_SOURCE=dll and LHM_TUI_DLL=<LibreHardwareMonitorLib.dll>
+#           (the library path may be relative to the shell's working directory).
 # Outputs: docs/demo.gif (animated demo) and docs/preview.png (hero shot).
 # The anti-stop guard is off by default, so the demo leaves fan control to each
 # GPU's driver.

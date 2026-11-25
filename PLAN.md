@@ -2,9 +2,9 @@
 
 |              |                                                                                    |
 | ------------ | ---------------------------------------------------------------------------------- |
-| Derived from | [SPEC.md](SPEC.md) v1.0                                                             |
-| Goal         | Ship **v0.4.1** - terminal dashboard for LibreHardwareMonitor (monitoring, fan controls, anti-stop floor, grouped tables, CPU/PCH fan readouts) |
-| Phases       | P0-P8, mapped to SPEC §11 milestones M0-M9                        |
+| Derived from | [SPEC.md](SPEC.md) v1.1                                                             |
+| Goal         | Ship **v0.5.0** - direct DLL data source (no LHM process); recording/alerts in v0.5.x |
+| Phases       | P0-P9, mapped to SPEC §11 milestones M0-M10                       |
 | Effort       | ≈ 10–14 ideal days for one focused developer (see §2)                               |
 | Tracking     | Each task `T<phase>.<n>` becomes a GitHub issue labeled `phase-<n>`, closed by its PR |
 
@@ -49,6 +49,9 @@
 | P4    | M4       | Config depth: overrides, custom panels, themes, schema     | P3         | 1.5–2               |
 | P5    | M5       | Polish: overlays, zoom, reload, ascii, `--once`/`--dump`   | P4         | 1.5–2               |
 | P6    | M6       | Release: packaging, manifests, docs, v0.1.0 tag            | P5         | ~1                  |
+| P7    | M7/M8    | v0.2-v0.3 indicators, CPU strip, GPU refinements          | P6         | shipped              |
+| P8    | M9       | v0.4 fan controls, grouped tables, CPU/PCH fans            | P7         | shipped              |
+| P9    | M10      | v0.5 direct DLL source (Windows bridge, no LHM process)    | P8         | 1.5-2               |
 
 Estimates assume a working LHM instance with auth-optional localhost access for smoke tests, and
 assume SPEC is frozen. Spec changes go through a SPEC PR first, then adjust tasks here.
@@ -483,10 +486,42 @@ winget/scoop/crates.io explicitly deferred to v0.1.x.
 
 ---
 
+### Phase P9 — Direct DLL source (v0.5, SPEC §11 M10 / §3.6)
+
+#### T9.1 — Source selection config + CLI
+**Goal:** Add `server.source` (`http`/`dll`) and `server.dll_path`, CLI `--source`/`--dll`, env `LHM_TUI_SOURCE`/`LHM_TUI_DLL`, validation (empty DLL path in DLL mode), endpoint labels, and config/schema/example coverage. HTTP stays the default.
+**Files:** `src/config.rs`, `src/cli.rs`, `schema/lhm-tui.schema.json`, `lhm-tui.example.json`, `tests/schema.rs`, SPEC §8/§9.
+**Notes:** `--source dll` on Linux/macOS is accepted by config validation but fails clearly at client construction; do not make the config file OS-specific.
+**Done when:** Precedence tests cover file → env → CLI; `--print-config` round-trips the new fields; schema rejects an unknown source.
+
+#### T9.2 — Embedded Windows bridges + Rust client
+**Goal:** `bridge/LhmBridge.cs` (C# 5) loads `LibreHardwareMonitorLib.dll`, enables every hardware category, emits `/data.json`-shaped JSON lines and implements `SET`/`RESET`/`QUIT`; `build.rs` compiles it with .NET Framework `csc.exe` **and** (when SDK 8+ is available) with `dotnet build` against `bridge/LhmBridgeDotNet.csproj` (net8.0, roll-forward), embedding both; `src/lhm/dll.rs` resolves/extracts the bridges, tries Framework then .NET for newer-runtime assemblies, owns one child process per DLL path, maps errors and reuses the existing parser; `LhmClient` becomes a source-agnostic facade.
+**Files:** `bridge/LhmBridge.cs`, `bridge/LhmBridgeDotNet.csproj`, `build.rs`, `src/lhm/dll.rs`, `src/lhm/client.rs`, `src/main.rs`, `Cargo.toml` (auto build script).
+**Notes:** No CLR hosting, no `unsafe`, no new Rust crate. Blocking pipe I/O via `spawn_blocking`; graceful `QUIT`/`Close()` so fans return to driver control. Both LHM releases must work: classic `.NET Framework` and `.NET 10`; if the SDK is absent the framework bridge still works and the .NET error names the fix.
+**Done when:** `--probe`/`--once`/`--dump` work against both real LHM builds with LHM closed; missing DLL/runtime errors are actionable; HTTP mock/fixture tests unchanged.
+
+#### T9.3 — UI, docs, captures and QA
+**Goal:** Header/status/debug/probe show `http URL` vs `dll:<path>`; README documents both sources and the elevation/.NET Framework caveats; SPEC/PLAN/AGENTS/CHANGELOG/QA matrix updated.
+**Files:** `src/ui/mod.rs`, `src/app.rs` (control cache key + reload), `README.md`, `AGENTS.md`, `CHANGELOG.md`, `docs/qa-matrix.md`, tests/snapshots.
+**Done when:** Debug overlay shows source + endpoint; snapshot updated; README quick-start has a tested DLL command; `CHANGELOG.md` has an `[Unreleased]` entry.
+
+#### T9.4 — Release v0.5.0
+**Goal:** Version bump `0.4.1` → `0.5.0`; promote `CHANGELOG.md` `[Unreleased]`; add
+`docs/release-notes-v0.5.0.md`; regenerate README captures in DLL mode; tag `v0.5.0` and verify
+all six archives, installers and checksums like v0.4.1.
+**Files:** `Cargo.toml`/`Cargo.lock`, `CHANGELOG.md`, README, SPEC/PLAN release state,
+`docs/release-notes-v0.5.0.md`, `docs/preview.png`, `docs/demo.gif`.
+**Done when:** Release published with all assets; Windows artifact checksum-verified and
+smoke-tested (`--version` 0.5.0, live `--probe` in DLL mode); release body set.
+
+**Exit checklist P9:** DLL mode runs with LHM closed on Windows (elevated and not), HTTP remains the default, `cargo fmt`/`clippy -D warnings`/`test` green on Windows/Linux/macOS, and no `unsafe`/FFI entered the Rust tree.
+
+---
+
 ## 4. Critical path & parallelization
 
 ```text
-P0 ─▶ P1 ─▶ P2 ─▶ P3 ─▶ P4 ─▶ P5 ─▶ P6 ─▶ P7 ─▶ P8
+P0 ─▶ P1 ─▶ P2 ─▶ P3 ─▶ P4 ─▶ P5 ─▶ P6 ─▶ P7 ─▶ P8 ─▶ P9
         │         ↑
         └─ T1.6 fixture corpus feeds T2.2 binding tests (keep fixtures current from P2 on)
 
@@ -525,6 +560,7 @@ Parallel tracks once the boundary task below exists:
 | P4    | every config field tested; example config drives app; schema in CI                                   |
 | P5    | QA matrix done; 1 h soak passed (RSS flat); overlays/zoom/reload/once/dump shipped                   |
 | P6    | 4 install channels + clean-VM README test pass; v0.1.0 tagged with notes                             |
+| P9    | DLL mode works with LHM closed; HTTP default unchanged; source config/CLI/schema/docs green           |
 
 ## 7. v0.1.0 Definition of Done (release checklist)
 
@@ -545,6 +581,7 @@ Parallel tracks once the boundary task below exists:
 | R4 braille on legacy conhost          | T3.5 fallback + snapshot modes         | end of P3        |
 | R6 password handling                  | T0.3 (sources) + T4.6 (redaction)      | end of P4        |
 | R7 conhost general                    | T5.4 + T5.7 manual matrix              | end of P5        |
+| R10/R11 DLL build/elevation            | T9.2 + T9.3 docs/errors + QA matrix     | end of P9        |
 | R5 mDNS discovery                     | intentionally deferred to v0.6         | n/a              |
 
 ## 9. Decisions to settle during implementation (SPEC open points)

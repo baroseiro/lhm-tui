@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.0] - 2026-11-25
+
+### Added
+
+- **Direct DLL data source (Windows)**: `server.source = "dll"` (or `--source dll --dll <path>`,
+  `LHM_TUI_SOURCE`/`LHM_TUI_DLL`) loads `LibreHardwareMonitorLib.dll` through an embedded bridge,
+  so LibreHardwareMonitor does not need to be running. Both the classic .NET Framework LHM zip and
+  the .NET 8/9/10 zip are supported (the client falls back to the .NET bridge when the assembly
+  targets a newer runtime). The bridge emits the same JSON tree as `/data.json`, so panels, charts,
+  history, fan controls, `--probe`, `--once` and `--dump` behave identically; HTTP remains the
+  default. Run the TUI elevated for full sensor coverage (T9.1-T9.3).
+- New config fields `server.source` and `server.dll_path`, plus CLI/env flags and JSON Schema
+  coverage; unknown sources and an empty DLL path are config errors (T9.1).
+
+### Changed
+
+- The header, debug overlay and `--probe` show the active source (`http` URL or `dll:<path>`);
+  config reload now restarts the poller and releases engaged fan controls when the source changes,
+  not just when the URL changes (T9.3).
+
 ## [0.4.1] - 2026-11-09
 
 ### Added

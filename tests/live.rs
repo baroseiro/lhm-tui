@@ -11,7 +11,7 @@ use ratatui::Terminal;
 
 use lhm_tui::app::{handle_event, AppState, PollEvent};
 use lhm_tui::bindings;
-use lhm_tui::config::Config;
+use lhm_tui::config::{Config, DataSource};
 use lhm_tui::lhm::client::{Fetched, LhmClient};
 
 async fn live_fetch(cfg: &Config) -> Fetched {
@@ -203,4 +203,42 @@ async fn live_set_control_rejects_unknown_sensor() {
         .sum();
     println!("live: {controls} controllable GPU fans");
     assert!(controls >= 1, "at least one GPU fan control bound");
+}
+
+#[tokio::test]
+#[ignore = "requires LHM_TUI_TEST_DLL=<LibreHardwareMonitorLib.dll>; LHM itself may stay closed"]
+async fn live_dll_source() {
+    let Ok(dll) = std::env::var("LHM_TUI_TEST_DLL") else {
+        println!("LHM_TUI_TEST_DLL not set; skipping");
+        return;
+    };
+    let mut cfg = Config::default();
+    cfg.server.source = DataSource::Dll;
+    cfg.server.dll_path = Some(dll.clone());
+
+    let fetched = live_fetch(&cfg).await;
+    let snapshot = &fetched.snapshot;
+    println!(
+        "dll: {} hardware, {} sensors, version {:?}, payload {} B",
+        snapshot.hardware_count(),
+        snapshot.sensor_count(),
+        snapshot.lhm_version,
+        fetched.bytes
+    );
+    assert!(snapshot.hardware_count() >= 1, "DLL returned no hardware");
+    assert!(snapshot.sensor_count() >= 1, "DLL returned no sensors");
+
+    let client = LhmClient::new(&cfg.server).expect("reused client");
+    // Safe control-path checks: an unknown id must be rejected by the bridge,
+    // and min/max reset must round-trip without touching hardware state.
+    let err = client
+        .set_sensor_control("/does/not/exist", Some(20.0))
+        .await
+        .expect_err("unknown id must fail");
+    assert!(err.to_string().contains("unknown sensor"), "{err}");
+    client.reset_min_max().await.expect("reset min/max");
+
+    assert!(client.base_url().starts_with("dll:"));
+    assert!(client.base_url().ends_with("LibreHardwareMonitorLib.dll"));
+    let _ = bindings::resolve(snapshot, &cfg.panels);
 }

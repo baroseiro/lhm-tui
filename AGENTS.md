@@ -2,11 +2,11 @@
 
 ## What this repo is
 
-- **Rust crate + docs.** `src/` holds the ratatui TUI, `tests/` the fixture/snapshot contract;
-  `SPEC.md` (frozen design, v1.0), `PLAN.md` (execution plan), `README.md` (public) and
-  `CHANGELOG.md` document it. v0.4.1 is released (2026-11-09); v0.5 (recording/alerts and
-  control hardening) is next. Verify with `git ls-files` before assuming a file or feature is
-  missing.
+- **Rust crate + docs.** `src/` holds the ratatui TUI, `tests/` the fixture/snapshot contract,
+  `bridge/LhmBridge.cs` + `build.rs` the embedded Windows DLL bridge; `SPEC.md` (design, v1.1),
+  `PLAN.md` (execution plan), `README.md` (public) and `CHANGELOG.md` document it. v0.4.1 is
+  released (2026-11-09); v0.5 (direct DLL source, recording/alerts and control hardening) is next.
+  Verify with `git ls-files` before assuming a file or feature is missing.
 - **Git history is live and intentional:** one `initial commit` on `main`, tracking
   `origin` = `https://github.com/baroseiro/lhm-tui.git`. Commit forward; don't re-init, rewrite or
   orphan that history. PR/commit expectations are in PLAN §0 (one PR per task, CHANGELOG updates).
@@ -53,6 +53,11 @@ Precedence when things conflict: **executable config/scripts > `SPEC.md` > `PLAN
 - **LHM parsing leniency is intentional — do not "fix" it.** `Raw*` fields may be JSON numbers
   *or* unit-suffixed strings (changed after LHM 0.9.6), and bare `NaN`/`Infinity` break strict
   parsers: see SPEC §3.4 quirks Q1–Q4 and keep the sanitizer + dual deserializer as specified.
+- **DLL mode stays a child process.** `bridge/LhmBridge.cs` is compiled by `build.rs` with the
+  .NET Framework `csc.exe` and (when available) `dotnet build` for .NET 8/9/10; the two bridges
+  talk JSON lines over stdio and are selected by assembly compatibility. Never replace them with
+  in-process CLR hosting, P/Invoke or another `unsafe` path. Keep the source C# 5-compatible, keep
+  HTTP as the default source, and keep the framework bridge buildable without a .NET SDK.
 - **Never parse node `id` as identity** — it is request-scoped; use `SensorId`/`HardwareId` (Q3).
 - Hard rules from PLAN §1: `#![forbid(unsafe_code)]`, MSRV 1.89 / edition 2021, no `unwrap()`
   outside tests, config validation collects all errors and exits 2 — never panics.

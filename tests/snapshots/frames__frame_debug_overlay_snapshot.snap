@@ -2,7 +2,7 @@
 source: tests/frames.rs
 expression: "frame_text(&mut app, &cfg, 100, 34)"
 ---
- lhm-tui v0.4.1  ● live   100×34   http://127.0.0.1:8085
+ lhm-tui v0.5.0  ● live   100×34   http://127.0.0.1:8085
 ╭ CPU · AMD Ryzen 9 5900XT ────────────────────────────────────────────────────────────────────────╮
 │ Temp     ███████████████████████████████████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░ 69.6 °C │
 │ Load     ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 7.5 % │
@@ -11,22 +11,22 @@ expression: "frame_text(&mut app, &cfg, 100, 34)"
 │                                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭ GPU 0 · NVID╭ Debug — d closes ────────────────────────────────────────────────────╮─────────────╮
-│ Temp     ███│  version        0.4.1                                                │░░░░ 50.0 °C │
+│ Temp     ███│  version        0.5.0                                                │░░░░ 50.0 °C │
 │ Hot Spot ███│  link           Live                                                 │░░░░ 60.5 °C │
 │ Mem Temp ███│  flags          paused=false charts=false ascii=false zoom=false help│░░░░ 54.0 °C │
-│ Load     █░░│  url            http://127.0.0.1:8085                                │░░░░░░ 0.0 % │
-│ VRAM     ██░│  poll interval  1000 ms                                              │4576 MB (2%) │
-│ Shared   █░░│  window         5m                                                   │6394 MB (0%) │
-│ Pwr   33 W  │  uptime         0 s                                                  │             │
-│ Fan 1 0 RPM │  last poll      6 ms                                                 │             │
-╰─────────────│  payload        72.3 KB                                              │─────────────╯
-╭ GPU 1 · AMD │  lhm version    unknown                                              │─────────────╮
-│ Temp     ███│  hardware       10 items · 280 sensors · 0 skipped                   │░░░░ 60.0 °C │
-│ Hot Spot ███│  history        279 series · cap 900 pts                             │░░░░ 68.0 °C │
-│ Mem Temp ███│  chart axes     0 tracked                                            │░░░░ 83.0 °C │
-│ Load     ███│  fan guard      off                                                  │░░░░░░ 7.0 % │
-│ VRAM     ███│  failed polls   0                                                    │4560 MB (9%) │
-│ Shared   █░░│                                                                      │4796 MB (1%) │
+│ Load     █░░│  endpoint       http://127.0.0.1:8085                                │░░░░░░ 0.0 % │
+│ VRAM     ██░│  source         http                                                 │4576 MB (2%) │
+│ Shared   █░░│  poll interval  1000 ms                                              │6394 MB (0%) │
+│ Pwr   33 W  │  window         5m                                                   │             │
+│ Fan 1 0 RPM │  uptime         0 s                                                  │             │
+╰─────────────│  last poll      6 ms                                                 │─────────────╯
+╭ GPU 1 · AMD │  payload        72.3 KB                                              │─────────────╮
+│ Temp     ███│  lhm version    unknown                                              │░░░░ 60.0 °C │
+│ Hot Spot ███│  hardware       10 items · 280 sensors · 0 skipped                   │░░░░ 68.0 °C │
+│ Mem Temp ███│  history        279 series · cap 900 pts                             │░░░░ 83.0 °C │
+│ Load     ███│  chart axes     0 tracked                                            │░░░░░░ 7.0 % │
+│ VRAM     ███│  fan guard      off                                                  │4560 MB (9%) │
+│ Shared   █░░│  failed polls   0                                                    │4796 MB (1%) │
 │ Pwr   105 W ╰──────────────────────────────────────────────────────────────────────╯             │
 │ Fan   534 RPM                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

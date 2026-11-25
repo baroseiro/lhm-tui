@@ -302,7 +302,8 @@ fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, the
             app.help_visible
         ),
     );
-    push("url", cfg.server.url.clone());
+    push("endpoint", cfg.server.endpoint_label());
+    push("source", cfg.server.source.to_string());
     push(
         "poll interval",
         format!("{} ms", cfg.server.poll_interval_ms),
@@ -498,7 +499,7 @@ fn header_line(app: &AppState, cfg: &Config, size: Rect, theme: &Theme) -> Parag
             Style::new().fg(theme.muted),
         ),
         Span::styled("   ", Style::new()),
-        Span::styled(cfg.server.url.clone(), Style::new().fg(theme.muted)),
+        Span::styled(cfg.server.endpoint_label(), Style::new().fg(theme.muted)),
     ];
     // The window label used to live in the key bar; it moved to the header
     // (only when it still fits — narrow terminals keep the URL instead).
@@ -530,7 +531,8 @@ fn status_line(app: &AppState, theme: &Theme) -> Paragraph<'static> {
 
 /// Status screen shown before the first snapshot (or without bindings).
 fn status_paragraph(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'static> {
-    let url = cfg.server.url.trim_end_matches('/').to_string();
+    let endpoint = cfg.server.endpoint_label();
+    let dll = cfg.server.source == crate::config::DataSource::Dll;
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .title(" LibreHardwareMonitor ");
@@ -539,7 +541,11 @@ fn status_paragraph(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'s
     match app.link {
         LinkStatus::Connecting => {
             lines.push(Line::from(Span::styled(
-                "Connecting to LibreHardwareMonitor…",
+                if dll {
+                    "Loading LibreHardwareMonitorLib.dll…"
+                } else {
+                    "Connecting to LibreHardwareMonitor…"
+                },
                 Style::new().bold(),
             )));
         }
@@ -614,7 +620,11 @@ fn status_paragraph(app: &AppState, cfg: &Config, theme: &Theme) -> Paragraph<'s
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        format!("GET {url}/data.json"),
+        if dll {
+            endpoint
+        } else {
+            format!("GET {endpoint}/data.json")
+        },
         Style::new().fg(theme.muted),
     )));
     lines.push(Line::from(""));

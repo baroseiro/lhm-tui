@@ -40,7 +40,8 @@ fn full_config_with_custom_panels_matches_schema() {
     // The documented shape for every major section, exercised in one instance.
     let instance = serde_json::json!({
         "$schema": "./schema/lhm-tui.schema.json",
-        "server": { "url": "http://127.0.0.1:8085", "username": "admin", "password": null,
+        "server": { "source": "dll", "dll_path": "C:\\LHM\\LibreHardwareMonitorLib.dll",
+                    "url": "http://127.0.0.1:8085", "username": "admin", "password": null,
                     "poll_interval_ms": 1000, "retry": { "factor": 2.0 } },
         "history": { "window_s": 900 },
         "ui": { "layout": ["cpu", "gpu", "memory", "custom:nvme"], "auto_height": true },
@@ -95,6 +96,12 @@ fn schema_rejects_broken_configs() {
     assert!(
         !errors(&validator, &bad_enum).is_empty(),
         "unknown marker rejected"
+    );
+
+    let bad_source = serde_json::json!({ "server": { "source": "usb" } });
+    assert!(
+        !errors(&validator, &bad_source).is_empty(),
+        "unknown data source rejected"
     );
 
     let bad_slot = serde_json::json!({ "panels": { "cpu": { "show": ["temperatures"] } } });

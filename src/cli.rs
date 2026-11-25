@@ -17,6 +17,14 @@ pub struct Cli {
     #[arg(short = 'c', long, value_name = "PATH")]
     pub config: Option<PathBuf>,
 
+    /// Data source: http (LHM web server) or dll (LibreHardwareMonitorLib.dll). [env: LHM_TUI_SOURCE]
+    #[arg(long, value_name = "http|dll", value_parser = ["http", "dll"])]
+    pub source: Option<String>,
+
+    /// LibreHardwareMonitorLib.dll (or its folder) for --source dll. [env: LHM_TUI_DLL]
+    #[arg(long, value_name = "PATH")]
+    pub dll: Option<String>,
+
     /// LibreHardwareMonitor base URL, e.g. http://127.0.0.1:8085. [env: LHM_TUI_URL]
     #[arg(long, value_name = "URL")]
     pub url: Option<String>,

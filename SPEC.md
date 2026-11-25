@@ -4,11 +4,11 @@
 
 |                  |                                                                          |
 | ---------------- | ------------------------------------------------------------------------ |
-| Status           | Draft v1.0                                                               |
-| Target release   | v0.4.1 - monitoring + fan controls + CPU/PCH fan readouts                |
-| Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`      |
-| Data source      | LHM built-in **Remote Web Server** (`GET /data.json`), polling-based      |
-| Platforms        | TUI runs on Windows / Linux / macOS; the LHM host is Windows by definition |
+| Status           | Released v1.1 (v0.5.0, 2026-11-25)                                      |
+| Target release   | v0.5.0 - direct DLL source; recording/alerts follow in v0.5.x            |
+| Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`     |
+| Data source      | LHM **Remote Web Server** (`GET /data.json`) **or** `LibreHardwareMonitorLib.dll` via a bundled Windows bridge (selectable) |
+| Platforms        | TUI runs on Windows / Linux / macOS; HTTP can target any Windows LHM host; DLL mode is Windows-local |
 | Config format    | JSON file + CLI flags + environment variables                             |
 
 ---
@@ -17,7 +17,7 @@
 
 1. [Overview](#1-overview)
 2. [Requirements](#2-requirements)
-3. [LibreHardwareMonitor Web API (as consumed)](#3-librehardwaremonitor-web-api-as-consumed)
+3. [LibreHardwareMonitor data sources (as consumed)](#3-librehardwaremonitor-data-sources-as-consumed)
 4. [Architecture](#4-architecture)
 5. [Domain Model & Sensor Binding Heuristics](#5-domain-model--sensor-binding-heuristics)
 6. [TUI Design](#6-tui-design)
@@ -48,9 +48,12 @@ no good way to watch live sensor data and history.
 
 ### 1.2 Solution
 
-`lhm-tui` is a single-binary terminal dashboard that polls LHM's built-in **Remote Web Server**
-(`http://host:8085/data.json` by default) at a fixed interval, keeps a rolling history per sensor,
-and renders btop-style panels and live charts:
+`lhm-tui` is a single-binary terminal dashboard with two selectable data sources:
+it polls LHM's built-in **Remote Web Server** (`http://host:8085/data.json` by
+default), or — on Windows — loads `LibreHardwareMonitorLib.dll` directly through
+a bundled bridge, so the LHM GUI/web server does not need to be running. Both
+sources feed the same rolling history, bindings and btop-style panels and live
+charts:
 
 - CPU total load graph with per-core bars, package temperature, clocks and power
 - One panel per GPU (multi-GPU aware): load, VRAM + shared-memory usage, core/hotspot temperature,
@@ -61,14 +64,15 @@ and renders btop-style panels and live charts:
 - Plus power and storage/network presets
 - Behavior controlled by a JSON config file, CLI flags and environment variables
 
-Because the data source is HTTP, the dashboard can monitor this machine or any reachable Windows
-box running LHM — e.g. from a Linux workstation or over SSH.
+Because the HTTP data source is remote, the dashboard can monitor this machine or any reachable
+Windows box running LHM — e.g. from a Linux workstation or over SSH. The DLL source is local to
+Windows and exists for users who want live data without running the LHM application at all.
 
 ### 1.3 Goals
 
 | #   | Goal                                                                                          |
 | --- | --------------------------------------------------------------------------------------------- |
-| G1  | Zero-configuration start: `lhm-tui` works against `http://127.0.0.1:8085` with no config file |
+| G1  | Zero-configuration start: `lhm-tui` works against `http://127.0.0.1:8085` with no config file; `--source dll --dll <path>` needs only the LHM library |
 | G2  | Live charts (≥ 15 min history) for CPU, every GPU, memory, temperatures and load              |
 | G3  | Everything meaningful is configurable via a single JSON file                                  |
 | G4  | Robust against LHM version differences, malformed values, dropped connections                 |
@@ -80,8 +84,8 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 | #   | Non-goal                                                                    |
 | --- | --------------------------------------------------------------------------- |
 | N1  | Arbitrary sensor writes beyond fan/pump `Control` sensors (any other `Sensor?action=Set`). The Fans panel writes fan/pump controls (`§6.3`, `§7.5`) and the anti-stop floor only ever writes GPU fan controls; nothing else is writable |
-| N2  | Direct hardware access; `lhm-tui` never needs admin rights, LHM does         |
-| N3  | Bundling/installing/running LHM itself                                      |
+| N2  | Direct hardware access from Rust; `lhm-tui` itself never needs admin rights for the HTTP source. In DLL mode the bridge inherits the TUI's privileges — run the TUI elevated for the same sensor coverage as LHM |
+| N3  | Bundling/installing/running LHM itself. DLL mode loads an existing `LibreHardwareMonitorLib.dll`; the LHM application does not need to be launched |
 | N4  | Persisting history to disk (in-memory ring buffers only; CSV recording is v0.5) |
 | N5  | Alerting/notifications (desktop toast, webhook)                              |
 | N6  | Windows service / daemon mode                                                |
@@ -94,7 +98,7 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 
 | ID  | Requirement                                                                                              | Priority |
 | --- | -------------------------------------------------------------------------------------------------------- | -------- |
-| F1  | Poll `GET {base}/data.json` on an interval (default 1000 ms, configurable 250–60000 ms)                   | must     |
+| F1  | Poll `GET {base}/data.json` (HTTP) or the DLL bridge (`POLL`) on an interval (default 1000 ms, configurable 250–60000 ms) | must     |
 | F2  | Tolerate HTTP Basic auth (username/password from config/env), gzip responses, and transient failures      | must     |
 | F3  | Parse the full LHM tree: hardware → sensor-type groups → sensors, with `SensorId`, `Type`, min/max/values | must     |
 | F4  | Maintain in-memory rolling history per sensor (≥ 15 min at default interval)                              | must     |
@@ -110,6 +114,7 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 | F14 | ASCII fallback mode and `NO_COLOR` compliance                                                              | should   |
 | F15 | Config hot-reload via keybinding (`r`)                                                                     | should   |
 | F16 | Zoom a panel to fullscreen (`Enter`) and a full-screen sensor browser (`b`)                                | could    |
+| F17 | Select the data source (`server.source = "http" | "dll"`, `--source`, `LHM_TUI_SOURCE`); DLL mode loads an existing `LibreHardwareMonitorLib.dll` on Windows without LHM running | must |
 
 ### 2.2 Non-Functional
 
@@ -124,12 +129,16 @@ box running LHM — e.g. from a Linux workstation or over SSH.
 | N7  | Works in Windows Terminal, conhost (VT), WezTerm, Alacritty, kitty, iTerm2, GNOME Terminal, tmux/SSH  |
 | N8  | Minimum terminal size 60×20; below that render a friendly "too small" screen                        |
 | N9  | All timings/units rendered with correct SI/binary handling (`GB` vs `GiB` per config)                |
+| N10 | DLL mode never hosts the CLR in-process and adds no `unsafe`/FFI to the Rust crate; the bridge is a separate child process and its failures follow the normal stale/backoff path |
 
 ---
 
-## 3. LibreHardwareMonitor Web API (as consumed)
+## 3. LibreHardwareMonitor data sources (as consumed)
 
 ### 3.1 Enabling the server
+
+> DLL mode (`server.source = "dll"`) skips this section entirely: it loads the library directly
+> and needs no running LHM or network port (§3.6).
 
 1. Run LHM **as administrator** (required for most sensors).
 2. `Options → Remote Web Server → Run` ✓, default port **8085**.
@@ -222,6 +231,71 @@ Nodes without either id are **containers**: group `TypeNode`s (whose children ar
 - On HTTP 401 → distinct `AuthError`; on 2xx parse errors → `BadPayload` with the first 200 bytes
   logged at debug level.
 
+### 3.6 Direct DLL source (Windows)
+
+`server.source = "dll"` reads the same sensor model through
+`LibreHardwareMonitorLib.dll` instead of the web server. LHM does not need to be running and no
+port is opened. The integration is deliberately a **separate process**, not in-process CLR
+hosting, so the Rust crate keeps `#![forbid(unsafe_code)]` and still builds on Linux/macOS (where
+DLL mode reports a clear Windows-only error).
+
+**Requirements**
+
+- Windows 10/11 and **either** LHM distribution:
+  - the **.NET Framework** build (`LibreHardwareMonitor.zip`), loaded by a bridge compiled with the
+    built-in .NET Framework 4.8 `csc.exe`; or
+  - the **.NET 8/9/10** build (`LibreHardwareMonitor.NET.10.zip`), loaded by a .NET 8+ bridge that
+    rolls forward to the installed runtime. This requires a matching .NET runtime (which the
+    framework-dependent LHM build already needs).
+  The client tries the Framework bridge first and automatically falls back to the .NET bridge when
+  the assembly targets a newer runtime. `--probe` names both failures when neither can load the DLL.
+- `server.dll_path` / `--dll` points at `LibreHardwareMonitorLib.dll` or the folder containing it.
+  When omitted, the client tries next to the TUI executable, `%ProgramFiles%` /
+  `%ProgramFiles(x86)%` / `%LOCALAPPDATA%\LibreHardwareMonitor`, then the current directory.
+- The bridge inherits the TUI's elevation. Run `lhm-tui` as administrator for the same sensor
+  coverage as LHM; otherwise some MSR/SuperIO sensors are absent or zero.
+
+**Bridge protocol**
+
+A tiny C# 5-compatible source file (`bridge/LhmBridge.cs`) is compiled twice at build time and both
+executables are embedded in the Rust binary:
+
+- `csc.exe` (ships with Windows) produces the .NET Framework bridge;
+- `dotnet build` against `bridge/LhmBridgeDotNet.csproj` (net8.0, `RollForward=LatestMajor`)
+  produces the .NET 8+ bridge. The .NET build is optional at compile time: if the SDK is missing,
+  the binary still works with the .NET Framework LHM build.
+
+Both are extracted to a content-hashed temp directory on first use and speak one request per
+stdout/stdin line:
+
+| Request                    | Response                                                                 |
+| -------------------------- | ------------------------------------------------------------------------ |
+| `POLL`                     | one JSON line shaped like `/data.json` (numeric `Raw*`, `HardwareId`, `SensorId`, `Type`, `Children`) |
+| `SET<TAB><id><TAB><value>` | `{"result":"ok"}` or `{"result":"fail","message":"…"}`; `value` is `0..100` or `null` (`SetDefault`) |
+| `RESET`                    | `{"result":"ok"}` after resetting every sensor's min/max              |
+| `QUIT`                     | `{"result":"ok"}` then `Close()` and exit                              |
+| any failure                | one `error <message>` line; the client maps it to `LhmError::Dll`      |
+
+The bridge enables every hardware category (`IsCpuEnabled`, `IsGpuEnabled`, `IsMemoryEnabled`,
+`IsMotherboardEnabled`, `IsControllerEnabled`, `IsNetworkEnabled`, `IsStorageEnabled`,
+`IsPsuEnabled`, `IsBatteryEnabled`, `IsPowerMonitorEnabled`), calls `Open()` lazily on the first
+`POLL`, and calls `Update()` on each hardware/sub-hardware before serializing. Writes use the
+same `Control.SetSoftware` / `SetDefault` calls as LHM's own `/Sensor?action=Set`, and `Close()`
+on shutdown restores driver defaults.
+
+**Semantics**
+
+- `server.poll_interval_ms`, `retry.*`, stale/backoff, history, bindings, fan guard and all UI
+  behavior are identical; only the fetch/write transport changes.
+- `server.url`, Basic auth, gzip and `server.request_timeout_ms` are ignored in DLL mode (kept in
+  the config for switching back without editing); the bridge is local and expected to answer fast.
+- One bridge process is shared per DLL path by the poller, fan-control task and `m` reset, so
+  concurrent requests are serialized and hardware is opened once.
+- `--probe`, `--once` and `--dump` work in DLL mode; `--probe` prints `source dll` and the resolved
+  DLL path.
+- A missing/incompatible bridge or DLL is a normal failure: the status dot turns red, the last
+  snapshot stays stale, and the error names the fix.
+
 ---
 
 ## 4. Architecture
@@ -231,6 +305,9 @@ Nodes without either id are **containers**: group `TypeNode`s (whose children ar
 ```
 lhm-tui/
 ├─ Cargo.toml               # workspace root = the binary crate
+├─ build.rs                 # compiles/embeds both bridges (csc + dotnet build)
+├─ bridge/LhmBridge.cs      # Windows-only C# bridge: LibreHardwareMonitorLib -> JSON lines
+├─ bridge/LhmBridgeDotNet.csproj # net8.0 build of the same source
 ├─ SPEC.md / README.md / LICENSE
 ├─ lhm-tui.example.json     # copy of default config
 ├─ schema/lhm-tui.schema.json
@@ -240,7 +317,8 @@ lhm-tui/
 │  ├─ cli.rs                # clap definitions, env merging, effective-config build
 │  ├─ config.rs             # serde structs, defaults, discovery, validation, hot-reload
 │  ├─ lhm/
-│  │  ├─ client.rs          # reqwest client, fetch_data_json(), probe()
+│  │  ├─ client.rs          # source selector: HTTP reqwest client or DLL bridge
+│  │  ├─ dll.rs             # Windows bridge lifecycle, path resolution, protocol
 │  │  ├─ raw.rs             # wire types (RawNodeDoc) incl. dual numeric deserializer + NaN sanitizer
 │  │  ├─ parse.rs           # RawNodeDoc -> Snapshot (normalization, classification)
 │  │  └─ model.rs           # Snapshot, Hardware, Sensor, SensorKind, HardwareKind
@@ -263,10 +341,14 @@ lhm-tui/
 ### 4.2 Runtime model
 
 ```
-┌──────────────┐  every poll_interval_ms   ┌───────────────┐
-│  poll task   │ ──── GET /data.json ────▶ │  LHM server   │
-│ (tokio task) │ ◀─── JSON / 401 / err ─── │  :8085        │
-└──────┬───────┘                           └───────────────┘
+┌──────────────┐  every poll_interval_ms   ┌───────────────────────────┐
+│  poll task   │ ── HTTP /data.json ─────▶ │ LHM web server :8085      │
+│ (tokio task) │ ◀── JSON / 401 / err ──── │                           │
+│              │                           └───────────────────────────┘
+│              │  or (Windows, source=dll) ┌───────────────────────────┐
+│              │ ── POLL / SET / RESET ──▶ │ embedded C# bridge        │
+│              │ ◀── JSON lines ────────── │   ↳ LibreHardwareMonitorLib │
+└──────┬───────┘                           └───────────────────────────┘
        │ watch::Sender<PollEvent>
        ▼
 ┌──────────────────────────── AppState (UI thread) ────────────────────────────┐
@@ -286,7 +368,8 @@ lhm-tui/
 | Item          | Choice                                                                                            |
 | ------------- | ------------------------------------------------------------------------------------------------- |
 | Runtime       | `tokio` (multi-thread, 2 workers), `ratatui::init()/restore()` helpers                             |
-| Poller        | Dedicated task owning the `reqwest::Client`; loop `interval.tick()` → fetch → sanitize/parse → `watch::Sender<PollEvent>` (latest-value-wins; UI never blocks on the network) |
+| Poller        | Dedicated task owning the `LhmClient` (HTTP or DLL); loop `interval.tick()` → fetch → sanitize/parse → `watch::Sender<PollEvent>` (latest-value-wins; UI never blocks on the network) |
+| DLL bridge    | One child process per DLL path, spawned lazily at client construction; blocking pipe I/O runs on `spawn_blocking` and is serialized by a mutex shared with fan writes. No CLR/FFI in the Rust process |
 | UI loop       | `tokio::select!` over: render tick (`ui.fps`, default 30), key/resize events from the crossterm input thread (`mpsc`), `watch::Receiver` change → update `AppState` |
 | History       | Lives on the UI side; on each applied snapshot append raw values to ring buffers. Paused (`p`) suspends polling, not time |
 | Backoff       | On error: retry after `initial_ms * factor^n` capped at `max_ms` + ±10 % jitter; success resets, status back to Live; UI keeps rendering last snapshot as `Stale{age}` |
@@ -312,6 +395,12 @@ lhm-tui/
 | `unicode-width`             | 0.2     | Table column alignment (CJK/units)                          |
 
 No unsafe crates in the tree other than what transitive deps require; no `unsafe` in our code.
+
+DLL mode adds **no Rust dependency**: `build.rs` invokes the .NET Framework `csc.exe` that ships
+with Windows and, when available, `dotnet build` (SDK 8+) for the net8.0 bridge, then embeds both
+executables plus the .NET runtime config. On non-Windows hosts the build writes empty placeholders
+(DLL mode is unavailable at runtime, HTTP is unaffected). If the .NET SDK is absent, the framework
+bridge is still built and .NET 8/9/10 LHM assemblies report an actionable error.
 
 ---
 
@@ -533,7 +622,7 @@ Responsive rules:
 | `←`, `-`                 | Fans panel: lower the selected control by 5 %                    |
 | `→`, `+`                 | Fans panel: raise the selected control by 5 %                    |
 | `0`                      | Fans panel: hand the selected control back to Auto/Default       |
-| `d`                      | Debug overlay: poll latency, payload size, sensor/hw counts, last error, LHM version |
+| `d`                      | Debug overlay: poll latency, payload size, sensor/hw counts, last error, LHM version, source/endpoint |
 | `y`                      | Copy current snapshot summary to clipboard (OSC 52) — optional v0.1.1 |
 
 Key conflicts after remapping → config validation error listing offending actions.
@@ -693,7 +782,8 @@ core / hot spot / memory junction; eligible cards only):
 5. Built-in defaults (no file needed — F1)
 
 Merge order (later wins): **defaults → config file → env vars (`LHM_TUI_*`) → CLI flags.**
-Env overrides: `LHM_TUI_URL`, `LHM_TUI_USERNAME`, `LHM_TUI_PASSWORD`, `LHM_TUI_CONFIG`, `LHM_TUI_THEME`.
+Env overrides: `LHM_TUI_URL`, `LHM_TUI_SOURCE`, `LHM_TUI_DLL`, `LHM_TUI_USERNAME`,
+`LHM_TUI_PASSWORD`, `LHM_TUI_CONFIG`, `LHM_TUI_THEME`.
 `--print-config` prints the fully merged config with secrets redacted as `***`.
 
 Format rules: strict JSON (RFC 8259 — **no comments, no trailing commas**). A `$schema` key pointing
@@ -715,6 +805,8 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
   "$schema": "./schema/lhm-tui.schema.json",
 
   "server": {
+    "source": "http",            // http (web server) | dll (LibreHardwareMonitorLib.dll, Windows)
+    "dll_path": null,            // DLL file or its folder; null = auto-detect
     "url": "http://127.0.0.1:8085",
     "username": null,            // HTTP Basic auth; null = anonymous
     "password": null,            // prefer password_env / password_file over inline passwords
@@ -835,9 +927,11 @@ with a `serde_path_to_error` path (e.g. `charts.window: invalid duration "5x"`).
 
 | Path                              | Type            | Default          | Notes                                        |
 | --------------------------------- | --------------- | ---------------- | -------------------------------------------- |
-| `server.url`                      | string (url)    | `http://127.0.0.1:8085` | Without trailing slash                |
+| `server.source`                   | enum            | `http`           | `http` = LHM web server; `dll` = direct `LibreHardwareMonitorLib.dll` (Windows) |
+| `server.dll_path`                 | string/null     | `null`           | DLL file or containing folder; null = auto-detect (DLL mode) |
+| `server.url`                      | string (url)    | `http://127.0.0.1:8085` | Without trailing slash (HTTP mode)    |
 | `server.poll_interval_ms`         | int             | `1000`           | 250–60000                                    |
-| `server.request_timeout_ms`       | int             | `2000`           | Per request                                  |
+| `server.request_timeout_ms`       | int             | `2000`           | Per HTTP request (ignored in DLL mode)       |
 | `server.username`/`password*`     | string/null     | `null`           | Exactly one password source may be set       |
 | `history.window_s`                | int             | `900`            | 60–86400                                     |
 | `ui.layout`                       | string[]        | `["cpu","gpu","memory"]` | Valid panel keys enforced; thermal/voltage/fans hidden by default |
@@ -873,6 +967,8 @@ enforced by `tests/schema.rs` — which also proves the schema rejects broken co
 lhm-tui [OPTIONS]
 
   -c, --config <PATH>         Config file (see §8.1 discovery)
+      --source <http|dll>     Data source (default http)          [env: LHM_TUI_SOURCE]
+      --dll <PATH>            LibreHardwareMonitorLib.dll or its folder (DLL mode) [env: LHM_TUI_DLL]
       --url <URL>             LHM base URL                     [env: LHM_TUI_URL]
       --username <USER>       Basic auth user                  [env: LHM_TUI_USERNAME]
       --password <PASS>       Basic auth password              [env: LHM_TUI_PASSWORD]
@@ -886,7 +982,7 @@ lhm-tui [OPTIONS]
       --no-charts             Disable charts; gauges and bars only
       --log <PATH>            Debug log file (never written to the TUI)
   -v, --verbose               Raise log level (repeatable)
-      --probe                 Check connectivity/auth, print URL, LHM version, hardware/sensor
+      --probe                 Check the selected source/auth, print endpoint, LHM version, hardware/sensor
                               counts and a binding report, then exit
       --once                  Fetch one snapshot, render once to stdout (no alt-screen), exit
       --dump <PATH|->         Write normalized snapshot JSON to a file or stdout, exit
@@ -900,7 +996,8 @@ lhm-tui [OPTIONS]
 Exit codes: `0` success · `1` runtime failure · `2` config error · `3` connection failure
 (`--probe`/`--once`/`--dump`) · `4` auth failure (`--probe`/`--once`/`--dump`).
 
-`--once`/`--dump` are CI-friendly: `--probe` doubles as a health check for the LHM server.
+`--once`/`--dump` are CI-friendly: `--probe` doubles as a health check for the selected source
+(HTTP server or DLL bridge).
 `--dump` writes the normalized snapshot (stable field order; `fetched_at` as Unix seconds) —
 treat it as a public machine surface. `--once` renders a single frame without entering the
 alternate screen, restoring the cursor, and disables colours when stdout is not a TTY
@@ -915,6 +1012,8 @@ alternate screen, restoring the cursor, and disables colours when stdout is not 
 | Condition                  | UI behavior                                                                 | Recovery                          |
 | -------------------------- | --------------------------------------------------------------------------- | --------------------------------- |
 | Connection refused/timeout | Status dot red; banner "Cannot reach LHM at {url} — is Options → Remote Web Server running?"; last snapshot rendered dimmed `stale {age}`; retry countdown shown | Auto (backoff, §4.2)              |
+| DLL not found / bridge cannot load | Banner names the missing path or load error; hint names the required .NET runtime/build and `server.dll_path`; last snapshot stays stale | Auto (retry), fix path/config |
+| DLL mode on non-Windows | Startup/client error "server.source = \"dll\" is Windows-only"; HTTP mode is unaffected | Switch source |
 | HTTP 401                   | Banner "Authentication failed — check server.username/password"              | Auto, but banner persists until success |
 | HTTP 5xx / malformed JSON  | Banner "Unexpected response (HTTP {code})"; debug log captures payload head  | Auto                              |
 | Schema drift (unknown node layouts) | Parser skips unknown nodes, counts them; `d` overlay lists skipped count  | Next release, tolerant by design  |
@@ -947,6 +1046,7 @@ Each milestone ships green CI and is independently reviewable.
 | M7  | v0.2.0 indicators        | Voltages table (`v`), GPU `Voltage` in the metrics row, CPU metrics strip (`Power · Clock Average · Clock Effective · Bus Speed · Clock Fabric · Clock Uncore · Clock Memory · Voltage Core · Current TDC`) | Voltage/clock values match LHM's own UI within one poll; strip wraps without clipping; `v` toggles the table; release tagged |
 | M8  | v0.3.0 refinements       | Shared GPU-memory gauge (total estimated from RAM minus VRAM when the card reports none), dedicated GPU fan row, `Per-Core` bars with spacing, short metric labels (`Pwr`/`Clk`/`Volt`), fixed two-row CPU template, percentage memory readouts, named GPU voltage rails | Frames/snapshots show every new row; NVIDIA uses the estimate while AMD keeps its reported shared total; zoomed voltages include per-core rails; release tagged |
 | M9  | v0.4.0 controls & grouping | Fans & controls panel with the device in parentheses (`Speed` + `Setting`, LHM `Default` shown as `Auto`, `←`/`→` ±5 %, `0` = Auto), temperature/voltage tables grouped per device, `f` opens fans and `n` toggles the guard, manual GPU control hands the guard off | Writes reach only fan/pump `Control` sensors (mock-server tests); frames show device names in parentheses and `Auto`; `f`/`n` toggles and control keys covered by interaction tests; release tagged |
+| M10 | v0.5 direct DLL source | `server.source = "dll"` + `--source`/`--dll`: embedded Windows bridge loads `LibreHardwareMonitorLib.dll`, no LHM process/port; same parser, UI, history, fan writes and one-shot modes | `--probe`/`--once`/`--dump` work with LHM closed; missing/incompatible DLL errors are actionable; HTTP default unchanged; no unsafe/FFI added |
 
 ---
 
@@ -965,11 +1065,16 @@ Each milestone ships green CI and is independently reviewable.
   hysteresis transitions, percent/fixed modes.
 - `fan_guard`: idle engage, hysteresis hold, load/temp release, unknown-data fail-safe (§7.5),
   no-controllable-fans no-op, validation bounds.
+- `lhm::dll`: source/DLL path resolution (file, folder, missing), bridge error mapping, protocol
+  formatting (`SET` tab fields, `null` auto), endpoint labels, and the no-unsafe/no-FFI invariant.
 
 ### 12.2 Integration
 
 - Mock LHM server (`wiremock` or a 40-line `axum` server) replaying fixtures with injectable
   latency/failures: assert backoff schedule, stale transitions, recovery, 401 handling.
+- DLL bridge: `--dump` on a real LHM library parses with the same fixtures/expectations; a
+  deliberately missing DLL produces the documented `LhmError::Dll` message and exit code 3 for
+  one-shot modes.
 - `--dump -` snapshot stability test (golden JSON via `insta`).
 
 ### 12.3 TUI
@@ -983,6 +1088,9 @@ Each milestone ships green CI and is independently reviewable.
 - Windows 11 + Windows Terminal (truecolor + conhost fallback), WSL2, tmux over SSH, kitty, wezterm.
 - Real hardware: AMD CPU + Nvidia GPU; Intel CPU + iGPU; AMD GPU; 2 GPUs (mixed vendor); no GPU;
   memory-only machine; LHM 0.9.5 and 0.9.6; with and without Basic auth.
+- DLL mode (`--source dll --dll <LibreHardwareMonitorLib.dll>`) with LHM **closed**, once as a
+  normal user and once elevated: `--probe`/`--dump`/live TUI, fan write + `0` auto, quit restores
+  driver control; repeat with both the .NET Framework and the .NET 10 LHM builds.
 - Fan anti-stop floor (§7.5, enable it first), on real hardware at idle: `n` drops every NVIDIA fan control to the floor
   (zero-RPM stops, fans spin again), a load spike returns them to the driver curve, and quitting
   the TUI (or `n` off) leaves LHM back in automatic control — verify in LHM's own UI.
@@ -997,6 +1105,8 @@ Each milestone ships green CI and is independently reviewable.
 | UI CPU (defaults, 128×40)       | < 1 % core   | `perf` / Task Manager, 15 min steady     |
 | RSS (500 sensors, 15 m history) | < 40 MB      | `--dump`-loaded synthetic harness        |
 | Poll latency (`/data.json` localhost) | < 30 ms | debug logs                              |
+| DLL first poll (cold `Open()`)   | < 2 s        | `--probe` on reference rig               |
+| DLL steady-state poll            | < 50 ms      | debug logs / bridge loop                 |
 | Frame time (redraw)             | < 5 ms       | criterion bench on `charts::decimate`    |
 | Idle redraws                    | ≤ 1/s        | redraw policy (§4.2)                     |
 
@@ -1011,6 +1121,9 @@ Each milestone ships green CI and is independently reviewable.
   `aarch64-pc-windows-msvc`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`,
   `x86_64-apple-darwin`, `aarch64-apple-darwin`; `sha256.sum` + per-artifact checksums; GitHub
   Release with the `CHANGELOG.md` section as its body.
+  Windows artifacts embed both C# bridges (compiled by `build.rs` on the Windows runner; the .NET
+  one is skipped with a warning if SDK 8+ is absent); non-Windows artifacts contain empty
+  placeholders and run HTTP mode only.
 - **Channels (v0.1.0)**: direct GitHub Releases archives (zip/tar.xz) and the generated
   shell/PowerShell installers, plus `cargo install --git https://github.com/baroseiro/lhm-tui`.
 - **Channels (v0.1.x, deferred)**: crates.io (`cargo install lhm-tui`), winget manifest
@@ -1036,6 +1149,8 @@ Each milestone ships green CI and is independently reviewable.
 | R7  | Windows conhost default 9001 scrollback / alt-screen semantics in old builds                              | Require Windows Terminal in docs; graceful VT capability check                                              |
 | R8  | `Sensor`-endpoint polling as optimization for pinned-only configs — needed in v0.1?                       | No; keep one `/data.json` fetch (simpler, atomic). Revisit if payload > 500 KB                              |
 | R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | Off by default (enable with `n` or `fan_guard.enabled: true`); only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
+| R10 | DLL mode loads a .NET assembly whose build/runtime differs from the machine's runtime              | Ship both bridges (Framework + net8.0 with roll-forward); try Framework first, fall back on newer-runtime errors, and name the fix when neither runtime is available; HTTP remains the default |
+| R11 | Elevation: non-admin DLL mode silently loses MSR/SuperIO sensors                                          | Document "run elevated for parity"; `--probe` shows the resolved DLL and sensor counts; no hidden elevation prompt |
 
 ---
 
@@ -1048,11 +1163,13 @@ Ordered backlog beyond v0.4.0:
    `--read-only` lock flag (basic fan/pump controls shipped in v0.4.0).
 3. **v0.5 - Recording & alerts**: CSV/JSONL logging per interval; threshold triggers
    (terminal bell, OSC 9 desktop notification, webhook).
-4. **v0.5 - History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
+4. **v0.5 - Direct DLL polish**: elevated helper service/named pipe so DLL mode can run unelevated
+   with full sensor coverage, and configurable hardware-category gating.
+5. **v0.5 - History backfill** via the Prometheus `/metrics?archive=<s>` endpoint to pre-fill
    charts at startup.
-5. **v0.6 - Multi-host**: tabs/sidebar monitoring several LHM hosts concurrently.
-6. **v0.6 - Theme editor** + user theme file drop-in directory.
-7. **v0.7 - Plugins/scripting**: template-based custom panels in config (no code), later Lua/WASM.
+6. **v0.6 - Multi-host**: tabs/sidebar monitoring several LHM hosts concurrently.
+7. **v0.6 - Theme editor** + user theme file drop-in directory.
+8. **v0.7 - Plugins/scripting**: template-based custom panels in config (no code), later Lua/WASM.
 
 ---
 
@@ -1168,6 +1285,8 @@ both covered in fixtures):
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "source": { "enum": ["http", "dll"], "default": "http" },
+        "dll_path": { "type": ["string", "null"] },
         "url": { "type": "string", "format": "uri", "default": "http://127.0.0.1:8085" },
         "username": { "type": ["string", "null"] },
         "password": { "type": ["string", "null"] },

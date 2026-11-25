@@ -97,9 +97,41 @@ impl Default for FanGuardConfig {
     }
 }
 
+/// Where sensor data comes from (SPEC §3.6).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DataSource {
+    /// LHM's built-in remote web server (`GET /data.json`).
+    #[default]
+    Http,
+    /// Load `LibreHardwareMonitorLib.dll` directly through the bundled
+    /// Windows bridge; LHM itself does not need to be running.
+    Dll,
+}
+
+impl DataSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DataSource::Http => "http",
+            DataSource::Dll => "dll",
+        }
+    }
+}
+
+impl std::fmt::Display for DataSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServerConfig {
+    /// Data source selector; `http` preserves the historical behavior.
+    pub source: DataSource,
+    /// `LibreHardwareMonitorLib.dll` or the folder containing it. `None`
+    /// auto-detects common LHM install locations (SPEC §3.6).
+    pub dll_path: Option<String>,
     pub url: String,
     pub username: Option<String>,
     pub password: Option<String>,
@@ -112,9 +144,29 @@ pub struct ServerConfig {
     pub retry: RetryConfig,
 }
 
+impl ServerConfig {
+    /// Human-readable endpoint for the header, status screen and probe.
+    pub fn endpoint_label(&self) -> String {
+        match self.source {
+            DataSource::Http => self.url.trim_end_matches('/').to_string(),
+            DataSource::Dll => match self
+                .dll_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+            {
+                Some(path) => format!("dll:{path}"),
+                None => "dll:auto".to_string(),
+            },
+        }
+    }
+}
+
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
+            source: DataSource::Http,
+            dll_path: None,
             url: "http://127.0.0.1:8085".to_string(),
             username: None,
             password: None,
@@ -664,9 +716,9 @@ pub fn load(cli: &Cli) -> Result<LoadedConfig, ConfigLoadError> {
         None => (Config::default(), ConfigSource::Defaults, Vec::new()),
     };
 
-    apply_env_overrides(&mut config, |name| std::env::var(name).ok());
-
     let mut errors = Vec::new();
+    apply_env_overrides(&mut config, |name| std::env::var(name).ok(), &mut errors);
+
     apply_cli_overrides(&mut config, cli, &mut errors);
     errors.extend(validate(&config));
 
@@ -728,7 +780,23 @@ fn parse_config_str(text: &str) -> (Result<Config, serde_json::Error>, Vec<Strin
 }
 
 /// Environment overrides (`LHM_TUI_*`), applied after the config file.
-fn apply_env_overrides(config: &mut Config, lookup: impl Fn(&str) -> Option<String>) {
+fn apply_env_overrides(
+    config: &mut Config,
+    lookup: impl Fn(&str) -> Option<String>,
+    errors: &mut Vec<String>,
+) {
+    if let Some(source) = lookup("LHM_TUI_SOURCE") {
+        match source.trim().to_ascii_lowercase().as_str() {
+            "http" => config.server.source = DataSource::Http,
+            "dll" => config.server.source = DataSource::Dll,
+            other => errors.push(format!(
+                "LHM_TUI_SOURCE: expected `http` or `dll` (got `{other}`)"
+            )),
+        }
+    }
+    if let Some(path) = lookup("LHM_TUI_DLL") {
+        config.server.dll_path = Some(path);
+    }
     if let Some(url) = lookup("LHM_TUI_URL") {
         config.server.url = url;
     }
@@ -748,6 +816,21 @@ fn apply_env_overrides(config: &mut Config, lookup: impl Fn(&str) -> Option<Stri
 
 /// CLI overrides, applied last (highest precedence).
 fn apply_cli_overrides(config: &mut Config, cli: &Cli, errors: &mut Vec<String>) {
+    if let Some(source) = &cli.source {
+        config.server.source = match source.as_str() {
+            "http" => DataSource::Http,
+            "dll" => DataSource::Dll,
+            other => {
+                errors.push(format!(
+                    "--source: expected `http` or `dll` (got `{other}`)"
+                ));
+                config.server.source
+            }
+        };
+    }
+    if let Some(path) = &cli.dll {
+        config.server.dll_path = Some(path.clone());
+    }
     if let Some(url) = &cli.url {
         config.server.url = url.clone();
     }
@@ -842,6 +925,16 @@ pub fn validate(config: &Config) -> Vec<String> {
             "server.request_timeout_ms: must be at least 100 ms (got {})",
             server.request_timeout_ms
         ));
+    }
+    if server.source == DataSource::Dll {
+        if let Some(path) = &server.dll_path {
+            if path.trim().is_empty() {
+                errors.push(
+                    "server.dll_path: must be a file or folder when server.source = \"dll\""
+                        .to_string(),
+                );
+            }
+        }
     }
     let retry = &server.retry;
     if retry.initial_ms < 50 {
@@ -1296,6 +1389,8 @@ mod tests {
     fn defaults_match_spec() {
         let config = Config::default();
         assert_eq!(config.server.url, "http://127.0.0.1:8085");
+        assert_eq!(config.server.source, DataSource::Http);
+        assert_eq!(config.server.dll_path, None);
         assert_eq!(config.server.poll_interval_ms, 1000);
         assert_eq!(config.server.request_timeout_ms, 2000);
         assert!(config.server.gzip);
@@ -1383,6 +1478,79 @@ mod tests {
     #[test]
     fn default_config_validates() {
         assert_eq!(validate(&Config::default()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn dll_source_is_parsed_and_validated() {
+        let (parsed, _) = parse_config_str(
+            r#"{
+                "server": {
+                    "source": "dll",
+                    "dll_path": "C:\\LibreHardwareMonitor\\LibreHardwareMonitorLib.dll"
+                }
+            }"#,
+        );
+        let config = parsed.expect("dll source config");
+        assert_eq!(config.server.source, DataSource::Dll);
+        assert_eq!(
+            config.server.dll_path.as_deref(),
+            Some(r"C:\LibreHardwareMonitor\LibreHardwareMonitorLib.dll")
+        );
+        assert!(validate(&config).is_empty());
+
+        let (parsed, _) = parse_config_str(r#"{ "server": { "source": "nonsense" } }"#);
+        assert!(parsed.is_err(), "unknown source must fail deserialization");
+
+        let mut empty = Config::default();
+        empty.server.source = DataSource::Dll;
+        empty.server.dll_path = Some("   ".to_string());
+        assert!(validate(&empty)
+            .iter()
+            .any(|error| error.contains("server.dll_path")));
+    }
+
+    #[test]
+    fn source_cli_and_env_override_the_file() {
+        let mut config = Config::default();
+        apply_env_overrides(
+            &mut config,
+            |name| match name {
+                "LHM_TUI_SOURCE" => Some("dll".to_string()),
+                "LHM_TUI_DLL" => Some(r"C:\LHM\LibreHardwareMonitorLib.dll".to_string()),
+                _ => None,
+            },
+            &mut Vec::new(),
+        );
+        assert_eq!(config.server.source, DataSource::Dll);
+        assert_eq!(
+            config.server.dll_path.as_deref(),
+            Some(r"C:\LHM\LibreHardwareMonitorLib.dll")
+        );
+
+        let cli = cli_from(&[
+            "lhm-tui",
+            "--source",
+            "http",
+            "--dll",
+            r"D:\LHM\LibreHardwareMonitorLib.dll",
+        ]);
+        let mut errors = Vec::new();
+        apply_cli_overrides(&mut config, &cli, &mut errors);
+        assert!(errors.is_empty());
+        assert_eq!(config.server.source, DataSource::Http);
+        assert_eq!(
+            config.server.dll_path.as_deref(),
+            Some(r"D:\LHM\LibreHardwareMonitorLib.dll")
+        );
+
+        let mut errors = Vec::new();
+        apply_env_overrides(
+            &mut config,
+            |name| (name == "LHM_TUI_SOURCE").then(|| "bogus".to_string()),
+            &mut errors,
+        );
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("LHM_TUI_SOURCE"));
     }
 
     #[test]
@@ -1474,9 +1642,11 @@ mod tests {
         // As if loaded from a file.
         config.server.url = "http://file:8085".to_string();
         // Environment beats the file.
-        apply_env_overrides(&mut config, |name| {
-            (name == "LHM_TUI_URL").then(|| "http://env:8085".to_string())
-        });
+        apply_env_overrides(
+            &mut config,
+            |name| (name == "LHM_TUI_URL").then(|| "http://env:8085".to_string()),
+            &mut Vec::new(),
+        );
         assert_eq!(config.server.url, "http://env:8085");
         // CLI beats the environment.
         let cli = cli_from(&["lhm-tui", "--url", "http://cli:8085"]);
@@ -1490,9 +1660,11 @@ mod tests {
     fn env_password_overrides_file_sources() {
         let mut config = Config::default();
         config.server.password_env = Some("LHM_PW".to_string());
-        apply_env_overrides(&mut config, |name| {
-            (name == "LHM_TUI_PASSWORD").then(|| "s3cret".to_string())
-        });
+        apply_env_overrides(
+            &mut config,
+            |name| (name == "LHM_TUI_PASSWORD").then(|| "s3cret".to_string()),
+            &mut Vec::new(),
+        );
         assert_eq!(config.server.password.as_deref(), Some("s3cret"));
         assert!(config.server.password_env.is_none());
         assert!(validate(&config).is_empty());

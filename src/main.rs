@@ -91,8 +91,8 @@ async fn main() -> ExitCode {
 /// `--probe`: connectivity/auth check with a report (SPEC §9). Exit codes:
 /// 0 ok · 1 other failures · 3 connection failure · 4 auth failure.
 async fn run_probe(config: &Config) -> ExitCode {
-    let fetched = match fetch_snapshot(config).await {
-        Ok(fetched) => fetched,
+    let (client, fetched) = match fetch_snapshot(config).await {
+        Ok(result) => result,
         Err(code) => return code,
     };
     let snapshot = &fetched.snapshot;
@@ -102,7 +102,15 @@ async fn run_probe(config: &Config) -> ExitCode {
         .unwrap_or_else(|| "unknown".to_string());
 
     println!("lhm-tui probe");
-    println!("  url        {}", config.server.url.trim_end_matches('/'));
+    println!("  source     {}", config.server.source);
+    if config.server.source == lhm_tui::config::DataSource::Dll {
+        println!(
+            "  dll        {}",
+            client.base_url().trim_start_matches("dll:")
+        );
+    } else {
+        println!("  url        {}", client.base_url());
+    }
     println!("  lhm        {version}");
     println!(
         "  payload    {} in {} ms",
@@ -132,22 +140,33 @@ async fn run_probe(config: &Config) -> ExitCode {
 }
 
 /// Shared fetch for one-shot modes with SPEC §9 exit-code mapping.
-async fn fetch_snapshot(config: &Config) -> Result<lhm_tui::lhm::client::Fetched, ExitCode> {
+async fn fetch_snapshot(
+    config: &Config,
+) -> Result<(LhmClient, lhm_tui::lhm::client::Fetched), ExitCode> {
     let client = match LhmClient::new(&config.server) {
         Ok(client) => client,
         Err(err) => {
             eprintln!("error: {err:#}");
-            return Err(ExitCode::FAILURE);
+            // A missing/incompatible DLL or a non-Windows host is a data-source
+            // connection failure, not a malformed config file.
+            return Err(
+                if config.server.source == lhm_tui::config::DataSource::Dll {
+                    ExitCode::from(3)
+                } else {
+                    ExitCode::FAILURE
+                },
+            );
         }
     };
-    client.fetch_data_json().await.map_err(|err| {
+    let fetched = client.fetch_data_json().await.map_err(|err| {
         eprintln!("error: {err}");
         match err {
-            LhmError::Connect { .. } => ExitCode::from(3),
+            LhmError::Connect { .. } | LhmError::Dll { .. } => ExitCode::from(3),
             LhmError::Auth { .. } => ExitCode::from(4),
             LhmError::Http { .. } | LhmError::BadPayload { .. } => ExitCode::FAILURE,
         }
-    })
+    })?;
+    Ok((client, fetched))
 }
 
 /// `--once`: render one frame to stdout without entering the alternate screen
@@ -155,8 +174,8 @@ async fn fetch_snapshot(config: &Config) -> Result<lhm_tui::lhm::client::Fetched
 async fn run_once(config: &Config) -> ExitCode {
     use std::io::IsTerminal;
 
-    let fetched = match fetch_snapshot(config).await {
-        Ok(fetched) => fetched,
+    let (_, fetched) = match fetch_snapshot(config).await {
+        Ok(result) => result,
         Err(code) => return code,
     };
     let mut cfg = config.clone();
@@ -190,8 +209,8 @@ async fn run_once(config: &Config) -> ExitCode {
 /// `--dump <PATH|->`: write the normalized snapshot JSON (stable shape), exit
 /// (T5.5; SPEC §9).
 async fn run_dump(config: &Config, target: &str) -> ExitCode {
-    let fetched = match fetch_snapshot(config).await {
-        Ok(fetched) => fetched,
+    let (_, fetched) = match fetch_snapshot(config).await {
+        Ok(result) => result,
         Err(code) => return code,
     };
     let json = match model::dump_json(&fetched.snapshot) {

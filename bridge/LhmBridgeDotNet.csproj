@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    .NET 8+ bridge used when LibreHardwareMonitorLib.dll targets .NET 8/9/10
+    (the LibreHardwareMonitor.NET.10.zip release). The same LhmBridge.cs is
+    compiled by the .NET Framework csc for the classic LHM build; build.rs
+    embeds both and the client picks the one that can load the DLL.
+    RollForward=LatestMajor lets the net8.0 build run on newer runtimes.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>LatestMajor</RollForward>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>LhmBridgeDotNet</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="LhmBridge.cs" />
+  </ItemGroup>
+</Project>

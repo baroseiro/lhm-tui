@@ -3,3 +3,5 @@
 *.log
 *.rs.bk
 .DS_Store
+/bridge/bin/
+/bridge/obj/

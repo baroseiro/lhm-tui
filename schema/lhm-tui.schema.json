@@ -11,6 +11,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "source": { "enum": ["http", "dll"], "default": "http" },
+        "dll_path": { "type": ["string", "null"] },
         "url": { "type": "string", "default": "http://127.0.0.1:8085" },
         "username": { "type": ["string", "null"] },
         "password": { "type": ["string", "null"] },

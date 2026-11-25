@@ -13,8 +13,10 @@
 
 </div>
 
-`lhm-tui` talks to LibreHardwareMonitor's built-in **Remote Web Server** over plain HTTP and renders
-live, color-thresholded panels in your terminal:
+`lhm-tui` reads LibreHardwareMonitor through either its built-in **Remote Web Server**
+(plain HTTP) or — on Windows — by loading **`LibreHardwareMonitorLib.dll` directly**, so the LHM
+application does not need to be running. Both sources render the same live, color-thresholded
+panels in your terminal:
 
 - **CPU** — temperature & total load gauges, `Per-Core`-labelled utilization bars, and a fixed
   two-row metrics strip (`Pwr · TDC · Volt Core · CPU Fan · PCH Fan` with `Clk Avg · Clk Eff`
@@ -42,13 +44,19 @@ live, color-thresholded panels in your terminal:
   cards and their vendor curves are never written to. Press `n` (or set
   `"fan_guard": { "enabled": true }`) to enable it
   ([SPEC §7.5](SPEC.md#75-gpu-fan-anti-stop-floor-off-by-default-nvidia-only))
+- **Two data sources** — HTTP (default, local or remote) or the Windows DLL bridge
+  (`--source dll --dll <LibreHardwareMonitorLib.dll>`) with LHM closed; both support fan writes,
+  charts, history and all one-shot modes ([SPEC §3.6](SPEC.md#36-direct-dll-source-windows))
 
-It's a single static binary, needs **no admin rights**, and can monitor `localhost` — or any
-Windows machine on your network / over SSH — through a small JSON config file.
+It's a single static binary and needs **no admin rights** in HTTP mode; it can monitor `localhost`
+— or any Windows machine on your network / over SSH — through a small JSON config file. DLL mode
+runs the hardware library inside the TUI's process tree, so run it elevated if you want LHM-level
+sensor coverage.
 
-> **Project status:** v0.4.1 — CPU/PCH fan readouts on the CPU strip, an NVIDIA-only opt-in fan
-> guard, grouped temperature/voltage tables, mouse navigation and a CPU memory-speed readout. The
-> full design — architecture, config schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
+> **Project status:** v0.5.0 — the direct DLL data source (Windows) is here: both the classic
+> .NET Framework LHM zip and the .NET 8/9/10 zip work without running LHM. Recording and alerts
+> remain the next v0.5.x milestone. The full design — architecture, config schema, chart engine,
+> milestones — lives in [SPEC.md](SPEC.md).
 
 ## Demo
 
@@ -69,15 +77,20 @@ LHM).*
 
 | Component     | Requirement                                                                                   |
 | ------------- | ---------------------------------------------------------------------------------------------- |
-| Data source   | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) **0.9.5+** running as administrator, with **Options → Remote Web Server → Run** enabled |
+| Data source (HTTP) | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) **0.9.5+** running as administrator, with **Options → Remote Web Server → Run** enabled |
+| Data source (DLL) | Windows 10/11 and either LHM build: the **.NET Framework** zip (`LibreHardwareMonitor.zip`) or the **.NET 8/9/10** zip (`LibreHardwareMonitor.NET.10.zip`, needs its runtime). Point at it with `server.dll_path`/`--dll`; LHM does not need to be running. Run `lhm-tui` elevated for full sensor coverage |
 | TUI client    | Windows 10/11, Linux or macOS. Windows Terminal recommended on Windows                          |
 | Terminal size | ≥ 80×24 recommended (minimum 60×20)                                                              |
 
 ## Quick start
 
-1. **Enable the LHM web server** — in LibreHardwareMonitor:
-   `Options → Remote Web Server → Run` ✓ (leave the port at `8085`).
-   Optionally make sure the sensors you want are ticked under `File → Hardware`.
+1. **Choose a data source.**
+   - **HTTP (default, works remotely):** in LibreHardwareMonitor enable
+     `Options → Remote Web Server → Run` ✓ (leave the port at `8085`), and tick the sensors you
+     want under `File → Hardware`.
+   - **DLL (Windows, LHM closed):** no server to enable. Point at either LHM build's library, e.g.
+     `--dll "C:\Tools\LibreHardwareMonitor\LibreHardwareMonitorLib.dll"`; the .NET 10 build works
+     through the bundled .NET bridge.
 2. **Install `lhm-tui`** (pick one):
 
    ```powershell
@@ -95,13 +108,17 @@ LHM).*
 3. **Run it:**
 
    ```console
+   # HTTP
    $ lhm-tui
+
+   # Direct DLL (Windows; LHM may stay closed)
+   $ lhm-tui --source dll --dll "C:\Tools\LibreHardwareMonitor\LibreHardwareMonitorLib.dll"
    ```
 
-That's it — with no config file, `lhm-tui` polls `http://127.0.0.1:8085/data.json` every second.
+With no config file, `lhm-tui` polls `http://127.0.0.1:8085/data.json` every second.
 
 > Monitoring a different machine? `lhm-tui --url http://192.168.1.42:8085` or set it once in the
-> config file (see below).
+> config file (see below). DLL mode is local to Windows by nature.
 
 ## Usage
 
@@ -109,6 +126,8 @@ That's it — with no config file, `lhm-tui` polls `http://127.0.0.1:8085/data.j
 lhm-tui --help
 
   -c, --config <PATH>     Config file (JSON)
+      --source <http|dll> Data source (default http)      [env: LHM_TUI_SOURCE]
+      --dll <PATH>        LibreHardwareMonitorLib.dll or folder (DLL mode) [env: LHM_TUI_DLL]
       --url <URL>         LibreHardwareMonitor base URL   [env: LHM_TUI_URL]
       --username <USER>   Basic auth user                 [env: LHM_TUI_USERNAME]
       --password <PASS>   Basic auth password             [env: LHM_TUI_PASSWORD]
@@ -169,6 +188,8 @@ the scroll wheel scrolls the focused table or moves the fan selection, exactly l
 {
   "$schema": "./schema/lhm-tui.schema.json",
   "server": {
+    "source": "http",
+    "dll_path": null,
     "url": "http://127.0.0.1:8085",
     "poll_interval_ms": 1000
   },
@@ -198,6 +219,7 @@ Common things people change:
 | I want to…                          | Config                                                                 |
 | ----------------------------------- | ---------------------------------------------------------------------- |
 | Monitor another machine             | `server.url` or `--url`                                                |
+| Use the LHM DLL, no server running  | `"source": "dll"` + `server.dll_path`, or `--source dll --dll <path>`  |
 | Use the web server's login          | `server.username` + `server.password_env` (read from an env var)       |
 | Poll faster / slower                | `server.poll_interval_ms` (250–60000)                                  |
 | Reorder / hide panels               | `ui.layout`, `panels.<name>.enabled`                                   |
@@ -230,11 +252,19 @@ LHM's web server binds where you tell it to. To watch a PC from another machine:
 [mirrored networking mode](https://learn.microsoft.com/windows/wsl/networking#mirrored-mode-networking);
 otherwise use the gateway IP (`ip route | grep default`) or the LAN IP.
 
+The DLL source is local to the Windows machine running `lhm-tui`; use HTTP for remote monitoring.
+
 ## Troubleshooting
 
 | Symptom                                  | Fix                                                                                       |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `Cannot reach LHM at http://…:8085`      | Is LHM running **as administrator**? Is `Options → Remote Web Server → Run` checked? Restart the server after changing port/bind/auth. |
+| `server.source = "dll"` on Linux/macOS  | DLL mode is Windows-only; use HTTP or run the TUI on the Windows host                       |
+| `LibreHardwareMonitorLib.dll not found`  | Set `server.dll_path`/`--dll` to the DLL or its folder; null auto-detects next to the exe, Program Files and LocalAppData |
+| `DLL bridge failed to load the library`  | Use an LHM build matching an installed runtime: the .NET Framework zip on a default Windows install, or the .NET 8/9/10 zip with its runtime; keep the dependency DLLs next to `LibreHardwareMonitorLib.dll` |
+| .NET 10 LHM says "the .NET 8+ bridge is not available" | Rebuild with the .NET 8+ SDK available (`dotnet build`), or use the .NET Framework LHM build |
+| DLL mode shows fewer sensors / zeros    | Run `lhm-tui` as administrator; MSR/SuperIO access needs elevation (same as LHM)            |
+| DLL mode can't write fans                | Run elevated; the card exposes a `Controls` group only with the needed privileges            |
 | `Authentication failed`                  | Credentials must match the username/password set in the LHM web server settings           |
 | Panels but values look stale / missing   | Tick the hardware under `File → Hardware` in LHM; some sensors need admin rights           |
 | Nothing but `—` on an NVIDIA laptop GPU   | Some mobile dGPUs only expose sensors while the GPU is active                              |
@@ -262,7 +292,9 @@ Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itse
 - **v0.4.1** — CPU/PCH fan readouts on the CPU strip, NVIDIA-only opt-in fan guard, schema and
   Windows config-path documentation fixes *(current)*
 - **v0.4.x** — winget + scoop manifests, crates.io publish
-- **v0.5.0** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
+- **v0.5.0** — direct DLL source (Windows; no LHM process), both the .NET Framework and .NET 10
+  LHM builds, embedded bridges, same panels/charts/fan controls *(current)*
+- **v0.5.x** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
 - **v0.6.0** — multi-host tabs, user theme files
 - Later — template-based custom panels, plugin scripting
 
@@ -279,6 +311,12 @@ cargo test                   # unit + integration + TUI snapshot tests
 
 Long-run checks: `pwsh scripts/soak.ps1 -Minutes 30` (or `./scripts/soak.sh 30`) samples RSS/CPU
 per minute into a CSV; the pre-release checklist lives in [`docs/qa-matrix.md`](docs/qa-matrix.md).
+
+On Windows, `build.rs` compiles the embedded .NET Framework bridge with the `csc.exe` that ships
+with the OS, and — when the .NET 8+ SDK is on `PATH` — the .NET 8/9/10 bridge with
+`dotnet build`. If `csc.exe` is missing the build fails with an actionable message; set
+`LHM_TUI_SKIP_BRIDGE=1` for an HTTP-only build. A missing .NET SDK only disables the .NET 10 LHM
+build; the classic LHM zip still works. Non-Windows builds never include a bridge.
 
 MSRV: Rust **1.89** (2021 edition, pinned by `rust-toolchain.toml`). Cross-compiles cleanly to
 Linux/macOS for remote monitoring.
@@ -298,4 +336,5 @@ changelog rule. In short:
 [MIT](LICENSE) © baroseiro
 
 *Not affiliated with the LibreHardwareMonitor project. "LibreHardwareMonitor" is the work of its
-respective authors; `lhm-tui` merely consumes its public HTTP API.*
+respective authors; `lhm-tui` consumes its public HTTP API and, in DLL mode, loads its
+MPL-2.0-licensed library at runtime without redistributing or modifying it.*

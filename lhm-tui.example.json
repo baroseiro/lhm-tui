@@ -1,6 +1,8 @@
 {
   "$schema": "./schema/lhm-tui.schema.json",
   "server": {
+    "source": "http",
+    "dll_path": null,
     "url": "http://127.0.0.1:8085",
     "username": null,
     "password": null,

@@ -2,9 +2,10 @@
 
 //! lhm-tui — terminal dashboard for LibreHardwareMonitor.
 //!
-//! Read-only monitoring TUI that polls LHM's built-in web server
-//! (`GET /data.json`). See `SPEC.md` for the design and `PLAN.md` for the
-//! implementation plan.
+//! Read-only monitoring TUI that reads LibreHardwareMonitor through its web
+//! server (`GET /data.json`) or, on Windows, directly through
+//! `LibreHardwareMonitorLib.dll` (SPEC §3.6). See `SPEC.md` for the design and
+//! `PLAN.md` for the implementation plan.
 //!
 //! This library crate exists so integration tests (`tests/`) can exercise the
 //! same code the binary runs; `main.rs` is a thin entrypoint on top of it.

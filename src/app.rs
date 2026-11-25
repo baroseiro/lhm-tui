@@ -154,7 +154,7 @@ pub struct AppState {
     /// Set by the `r` key; `run_loop` performs the reload (it owns the config).
     pub pending_reload: bool,
     /// Set by `reload_config` when `server.*` changed: the poller must be
-    /// respawned for URL/interval/auth changes to take effect.
+    /// respawned for source/endpoint/interval/auth changes to take effect.
     pub pending_poller_restart: bool,
     /// CLI handle for reload; `None` in unit tests.
     pub cli: Option<crate::cli::Cli>,
@@ -496,7 +496,7 @@ async fn run_loop(
                         reload_config(&mut app, &mut cfg, Some(options.cli.clone()));
                         if app.pending_poller_restart {
                             app.pending_poller_restart = false;
-                            // URL/interval/auth changed: swap in a fresh poller.
+                            // Source/endpoint/interval/auth changed: swap in a fresh poller.
                             poll_events = spawn_poller(&cfg.server, Arc::clone(&app.pause_flag));
                             poller_alive = true;
                         }
@@ -1062,22 +1062,22 @@ fn dispatch_control(
 }
 
 /// Background writer for `/Sensor?action=Set` requests (T5.8). One client is
-/// cached per URL; every request reports success/failure through the notice
-/// channel (status messages).
+/// cached per source configuration; every request reports success/failure
+/// through the notice channel (status messages).
 async fn control_loop(
     mut requests: tokio::sync::mpsc::UnboundedReceiver<ControlRequest>,
     notices: tokio::sync::mpsc::UnboundedSender<String>,
 ) {
-    let mut client: Option<(String, LhmClient)> = None;
+    let mut client: Option<(ServerConfig, LhmClient)> = None;
     while let Some(request) = requests.recv().await {
-        let url = request.server.url.clone();
-        if client.as_ref().is_none_or(|(cached, _)| cached != &url) {
+        let key = request.server.clone();
+        if client.as_ref().is_none_or(|(cached, _)| cached != &key) {
             client = LhmClient::new(&request.server)
                 .ok()
-                .map(|client| (url, client));
+                .map(|client| (key, client));
         }
         let Some((_, client)) = client.as_ref() else {
-            let _ = notices.send("fan control: cannot create HTTP client".to_string());
+            let _ = notices.send("fan control: cannot create LHM client".to_string());
             continue;
         };
         match client
@@ -1130,9 +1130,20 @@ pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cl
     match crate::config::load(&cli) {
         Ok(loaded) => {
             let previous_server = cfg.server.clone();
-            // Pointing at a different LHM abandons any engaged fan floor on the
-            // old host: hand those fans back to automatic control first (T5.8).
-            if loaded.config.server.url != previous_server.url {
+            // Pointing at a different LHM (or switching source) abandons any
+            // engaged fan floor on the old source: hand those fans back to
+            // automatic control first (T5.8). Interval/timeout changes keep
+            // the same hardware and must not release the floor.
+            let target_changed = match (loaded.config.server.source, previous_server.source) {
+                (crate::config::DataSource::Http, crate::config::DataSource::Http) => {
+                    loaded.config.server.url != previous_server.url
+                }
+                (crate::config::DataSource::Dll, crate::config::DataSource::Dll) => {
+                    loaded.config.server.dll_path != previous_server.dll_path
+                }
+                _ => true,
+            };
+            if target_changed {
                 release_engaged_fans(app, cfg);
             }
             *cfg = loaded.config;
