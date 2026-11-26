@@ -293,8 +293,10 @@ on shutdown restores driver defaults.
   behavior are identical; only the fetch/write transport changes.
 - `server.url`, Basic auth, gzip and `server.request_timeout_ms` are ignored in DLL mode (kept in
   the config for switching back without editing); the bridge is local and expected to answer fast.
-- One bridge process is shared per DLL path by the poller, fan-control task and `m` reset, so
-  concurrent requests are serialized and hardware is opened once.
+- One bridge session is shared per DLL path by the poller, fan-control task and `m` reset, so
+  concurrent requests are serialized and hardware is opened once. The session is a non-elevated
+  proxy process plus, when UAC elevation is needed, one elevated child connected over a local
+  named pipe.
 - `--probe`, `--once` and `--dump` work in DLL mode; `--probe` prints `source dll` and the resolved
   DLL path, plus a warning when the bridge is `limited` (not elevated).
 - When the bridge is `limited`, the TUI shows a one-time status-line warning and the `d` overlay
@@ -378,7 +380,7 @@ lhm-tui/
 | ------------- | ------------------------------------------------------------------------------------------------- |
 | Runtime       | `tokio` (multi-thread, 2 workers), `ratatui::init()/restore()` helpers                             |
 | Poller        | Dedicated task owning the `LhmClient` (HTTP or DLL); loop `interval.tick()` → fetch → sanitize/parse → `watch::Sender<PollEvent>` (latest-value-wins; UI never blocks on the network) |
-| DLL bridge    | One child process per DLL path, spawned lazily at client construction; blocking pipe I/O runs on `spawn_blocking` and is serialized by a mutex shared with fan writes. No CLR/FFI in the Rust process |
+| DLL bridge    | One bridge session per DLL path, spawned lazily at client construction. A non-elevated proxy owns the stdio protocol; when needed it starts an elevated child through UAC and forwards lines over a local named pipe. Rust serializes blocking pipe I/O with `spawn_blocking` and a mutex; no CLR/FFI in the Rust process |
 | UI loop       | `tokio::select!` over: render tick (`ui.fps`, default 30), key/resize events from the crossterm input thread (`mpsc`), `watch::Receiver` change → update `AppState` |
 | History       | Lives on the UI side; on each applied snapshot append raw values to ring buffers. Paused (`p`) suspends polling, not time |
 | Backoff       | On error: retry after `initial_ms * factor^n` capped at `max_ms` + ±10 % jitter; success resets, status back to Live; UI keeps rendering last snapshot as `Stale{age}` |
