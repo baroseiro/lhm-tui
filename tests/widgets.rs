@@ -820,6 +820,7 @@ fn help_overlay_snapshot() {
             snapshot,
             latency: Duration::from_millis(5),
             bytes: 74_000,
+            elevated: None,
         })),
         &cfg,
     );

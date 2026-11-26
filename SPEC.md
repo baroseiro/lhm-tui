@@ -4,8 +4,8 @@
 
 |                  |                                                                          |
 | ---------------- | ------------------------------------------------------------------------ |
-| Status           | Released v1.1 (v0.5.0, 2026-11-25)                                      |
-| Target release   | v0.5.0 - direct DLL source; recording/alerts follow in v0.5.x            |
+| Status           | Released v1.1 (v0.5.1, 2026-11-26)                                      |
+| Target release   | v0.5.1 - elevation-aware DLL source; recording/alerts follow in v0.5.x   |
 | Implementation   | Rust (edition 2021) · `ratatui` 0.30 · `tokio` · `reqwest` · `serde`     |
 | Data source      | LHM **Remote Web Server** (`GET /data.json`) **or** `LibreHardwareMonitorLib.dll` via a bundled Windows bridge (selectable) |
 | Platforms        | TUI runs on Windows / Linux / macOS; HTTP can target any Windows LHM host; DLL mode is Windows-local |
@@ -252,8 +252,11 @@ DLL mode reports a clear Windows-only error).
 - `server.dll_path` / `--dll` points at `LibreHardwareMonitorLib.dll` or the folder containing it.
   When omitted, the client tries next to the TUI executable, `%ProgramFiles%` /
   `%ProgramFiles(x86)%` / `%LOCALAPPDATA%\LibreHardwareMonitor`, then the current directory.
-- The bridge inherits the TUI's elevation. Run `lhm-tui` as administrator for the same sensor
-  coverage as LHM; otherwise some MSR/SuperIO sensors are absent or zero.
+- The bridge automatically requests **administrator elevation (UAC)** when DLL mode starts without
+  it: the non-elevated parent keeps the stdio protocol and proxies to an elevated child over a
+  named pipe. Approve the prompt for CPU MSR/PawnIO sensors (temperature, power, clocks); without
+  elevation those sensors read 0 while GPU sensors still work. `LHM_TUI_NO_ELEVATE=1` skips the
+  prompt deliberately. Running the TUI itself elevated avoids the prompt entirely.
 
 **Bridge protocol**
 
@@ -270,6 +273,7 @@ stdout/stdin line:
 
 | Request                    | Response                                                                 |
 | -------------------------- | ------------------------------------------------------------------------ |
+| `(startup)`                | `ready <version> elevated` or `ready <version> limited`                   |
 | `POLL`                     | one JSON line shaped like `/data.json` (numeric `Raw*`, `HardwareId`, `SensorId`, `Type`, `Children`) |
 | `SET<TAB><id><TAB><value>` | `{"result":"ok"}` or `{"result":"fail","message":"…"}`; `value` is `0..100` or `null` (`SetDefault`) |
 | `RESET`                    | `{"result":"ok"}` after resetting every sensor's min/max              |
@@ -292,7 +296,12 @@ on shutdown restores driver defaults.
 - One bridge process is shared per DLL path by the poller, fan-control task and `m` reset, so
   concurrent requests are serialized and hardware is opened once.
 - `--probe`, `--once` and `--dump` work in DLL mode; `--probe` prints `source dll` and the resolved
-  DLL path.
+  DLL path, plus a warning when the bridge is `limited` (not elevated).
+- When the bridge is `limited`, the TUI shows a one-time status-line warning and the `d` overlay
+  reports `dll elevation limited`; `--once`/`--dump` write the warning to stderr so stdout stays a
+  clean machine surface.
+- Declining UAC is a normal failure: the error says `elevation required`, the status dot turns red,
+  and the Rust client does not try the other bridge flavor (so it never prompts twice).
 - A missing/incompatible bridge or DLL is a normal failure: the status dot turns red, the last
   snapshot stays stale, and the error names the fix.
 
@@ -783,7 +792,8 @@ core / hot spot / memory junction; eligible cards only):
 
 Merge order (later wins): **defaults → config file → env vars (`LHM_TUI_*`) → CLI flags.**
 Env overrides: `LHM_TUI_URL`, `LHM_TUI_SOURCE`, `LHM_TUI_DLL`, `LHM_TUI_USERNAME`,
-`LHM_TUI_PASSWORD`, `LHM_TUI_CONFIG`, `LHM_TUI_THEME`.
+`LHM_TUI_PASSWORD`, `LHM_TUI_CONFIG`, `LHM_TUI_THEME`. The DLL bridge also honors
+`LHM_TUI_NO_ELEVATE=1` to skip its UAC prompt (diagnostic/GPU-only use).
 `--print-config` prints the fully merged config with secrets redacted as `***`.
 
 Format rules: strict JSON (RFC 8259 — **no comments, no trailing commas**). A `$schema` key pointing
@@ -1013,6 +1023,7 @@ alternate screen, restoring the cursor, and disables colours when stdout is not 
 | -------------------------- | --------------------------------------------------------------------------- | --------------------------------- |
 | Connection refused/timeout | Status dot red; banner "Cannot reach LHM at {url} — is Options → Remote Web Server running?"; last snapshot rendered dimmed `stale {age}`; retry countdown shown | Auto (backoff, §4.2)              |
 | DLL not found / bridge cannot load | Banner names the missing path or load error; hint names the required .NET runtime/build and `server.dll_path`; last snapshot stays stale | Auto (retry), fix path/config |
+| DLL UAC prompt declined | Error says `elevation required`; TUI stays usable but CPU MSR sensors are unavailable | Restart and approve UAC, run elevated, or accept `LHM_TUI_NO_ELEVATE=1` GPU-only mode |
 | DLL mode on non-Windows | Startup/client error "server.source = \"dll\" is Windows-only"; HTTP mode is unaffected | Switch source |
 | HTTP 401                   | Banner "Authentication failed — check server.username/password"              | Auto, but banner persists until success |
 | HTTP 5xx / malformed JSON  | Banner "Unexpected response (HTTP {code})"; debug log captures payload head  | Auto                              |
@@ -1066,7 +1077,8 @@ Each milestone ships green CI and is independently reviewable.
 - `fan_guard`: idle engage, hysteresis hold, load/temp release, unknown-data fail-safe (§7.5),
   no-controllable-fans no-op, validation bounds.
 - `lhm::dll`: source/DLL path resolution (file, folder, missing), bridge error mapping, protocol
-  formatting (`SET` tab fields, `null` auto), endpoint labels, and the no-unsafe/no-FFI invariant.
+  formatting (`SET` tab fields, `null` auto), elevation handshake, endpoint labels, and the
+  no-unsafe/no-FFI invariant.
 
 ### 12.2 Integration
 
@@ -1150,7 +1162,7 @@ Each milestone ships green CI and is independently reviewable.
 | R8  | `Sensor`-endpoint polling as optimization for pinned-only configs — needed in v0.1?                       | No; keep one `/data.json` fetch (simpler, atomic). Revisit if payload > 500 KB                              |
 | R9  | Fan anti-stop floor leaves a software duty cycle on LHM / conflicts with vendor tools (Afterburner)       | Off by default (enable with `n` or `fan_guard.enabled: true`); only transitions write; `SetDefault()` on toggle-off, quit and unknown-data fail-safe; validation forbids floor < 5 %; document conflict caveat (§7.5) |
 | R10 | DLL mode loads a .NET assembly whose build/runtime differs from the machine's runtime              | Ship both bridges (Framework + net8.0 with roll-forward); try Framework first, fall back on newer-runtime errors, and name the fix when neither runtime is available; HTTP remains the default |
-| R11 | Elevation: non-admin DLL mode silently loses MSR/SuperIO sensors                                          | Document "run elevated for parity"; `--probe` shows the resolved DLL and sensor counts; no hidden elevation prompt |
+| R11 | Elevation: non-admin DLL mode loses MSR/SuperIO sensors                                          | Bridge auto-elevates through a named-pipe proxy (UAC); `--probe`, the status line and the debug overlay report `limited` when declined; `LHM_TUI_NO_ELEVATE=1` documents GPU-only mode |
 
 ---
 

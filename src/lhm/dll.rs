@@ -157,6 +157,16 @@ impl DllClient {
         &self.inner.endpoint
     }
 
+    /// `Some(true)` when the bridge runs elevated, `Some(false)` when it is
+    /// limited (CPU MSR sensors may read 0), `None` if no bridge is running.
+    pub fn elevation(&self) -> Option<bool> {
+        self.inner
+            .process
+            .lock()
+            .ok()
+            .and_then(|slot| slot.as_ref().map(|process| process.elevated))
+    }
+
     pub fn dll_path(&self) -> &Path {
         &self.inner.dll_path
     }
@@ -201,6 +211,7 @@ impl DllClient {
             snapshot,
             latency,
             bytes,
+            elevated: self.elevation(),
         })
     }
 
@@ -278,6 +289,7 @@ struct BridgeProcess {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    elevated: bool,
 }
 
 impl BridgeProcess {
@@ -286,6 +298,11 @@ impl BridgeProcess {
         match Self::spawn_flavor(&assets.framework_exe, BridgeFlavor::Framework, dll_path) {
             Ok(process) => Ok(process),
             Err(framework_error) => {
+                // Do not launch a second UAC prompt (and a second bridge) when
+                // the framework bridge already asked for elevation.
+                if framework_error.contains("elevation required") {
+                    return Err(framework_error);
+                }
                 let Some(dotnet_exe) = assets.dotnet_exe.as_ref() else {
                     return Err(format!(
                         "{framework_error} (the .NET 8+ bridge is not available in this build)"
@@ -341,13 +358,18 @@ impl BridgeProcess {
             child,
             stdin,
             stdout: BufReader::new(stdout),
+            elevated: false,
         };
 
         let handshake = process.read_line()?;
-        if let Some(version) = handshake.strip_prefix("ready ") {
+        if let Some(ready) = handshake.strip_prefix("ready ") {
+            let mut parts = ready.split_whitespace();
+            let version = parts.next().unwrap_or("unknown");
+            process.elevated = parts.next() == Some("elevated");
             tracing::info!(
                 version,
                 flavor = flavor.label(),
+                elevated = process.elevated,
                 dll = %dll_path.display(),
                 "DLL bridge ready"
             );

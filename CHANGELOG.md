@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-26
+
+### Added
+
+- **Automatic elevation for DLL mode**: when `lhm-tui` is not elevated, the bridge starts an
+  elevated child through the normal Windows UAC prompt and proxies the sensor protocol over a
+  named pipe. CPU temperature, power and clock sensors therefore work from a regular terminal;
+  approving the prompt once at startup is enough. Existing elevated sessions skip the prompt.
+- `LHM_TUI_NO_ELEVATE=1` deliberately skips the prompt (GPU sensors still work; CPU MSR sensors
+  may read 0).
+
+### Changed
+
+- `--probe` prints the bridge elevation state and warns when it is limited; the TUI shows a
+  one-time status-line warning, and `--once`/`--dump` write the warning to stderr. The debug
+  overlay reports `dll elevation`.
+
 ### Fixed
 
 - Non-Windows builds pass `cargo clippy -D warnings` again: the DLL source's

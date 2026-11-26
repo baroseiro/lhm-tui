@@ -3,7 +3,7 @@
 |              |                                                                                    |
 | ------------ | ---------------------------------------------------------------------------------- |
 | Derived from | [SPEC.md](SPEC.md) v1.1                                                             |
-| Goal         | Ship **v0.5.0** - direct DLL data source (no LHM process); recording/alerts in v0.5.x |
+| Goal         | Ship **v0.5.1** - direct DLL source with automatic UAC elevation; recording/alerts in v0.5.x |
 | Phases       | P0-P9, mapped to SPEC §11 milestones M0-M10                       |
 | Effort       | ≈ 10–14 ideal days for one focused developer (see §2)                               |
 | Tracking     | Each task `T<phase>.<n>` becomes a GitHub issue labeled `phase-<n>`, closed by its PR |
@@ -517,6 +517,21 @@ smoke-tested (`--version` 0.5.0, live `--probe` in DLL mode); release body set.
 checksums published. The Windows x64 artifact verified against `sha256.sum` and smoke-tested
 (`--version` 0.5.0, `--probe` with both the .NET Framework and .NET 10 LHM DLLs while LHM was
 closed); release body set from `docs/release-notes-v0.5.0.md`.
+
+#### T9.5 — Elevation-aware DLL bridge (v0.5.1)
+**Goal:** Fix the CPU-temperature-zero report: the bridge now detects a non-elevated process,
+starts an elevated child through UAC, proxies the stdio protocol over a named pipe, and reports
+`ready <version> elevated|limited`. Surface limited mode in `--probe`, the status line, `--once`/
+`--dump` stderr and the debug overlay; add `LHM_TUI_NO_ELEVATE=1`; fix the non-Windows clippy
+lint; release v0.5.1.
+**Files:** `bridge/LhmBridge.cs`, `src/lhm/dll.rs`, `src/lhm/client.rs`, `src/app.rs`,
+`src/ui/mod.rs`, `src/main.rs`, tests/snapshots, SPEC/README/CHANGELOG/QA matrix, release notes.
+**Notes:** The elevated child is the same bridge flavor (Framework or .NET). Rust must not fall
+back to the other flavor after an elevation error, to avoid a second UAC prompt. The TUI itself
+stays non-elevated; fan writes are proxied to the elevated child.
+**Done when:** Non-elevated `--probe` prompts UAC and returns CPU temperatures after approval;
+declining shows an actionable `elevation required` error; `LHM_TUI_NO_ELEVATE=1` returns the old
+limited behavior with warnings; all checks and the release workflow pass.
 
 **Exit checklist P9:** DLL mode runs with LHM closed on Windows (elevated and not), HTTP remains the default, `cargo fmt`/`clippy -D warnings`/`test` green on Windows/Linux/macOS, and no `unsafe`/FFI entered the Rust tree.
 

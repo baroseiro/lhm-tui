@@ -8,11 +8,17 @@
 // a separate MPL-2.0 assembly loaded at runtime; no LHM source is copied here.
 //
 // Protocol (one request per line on stdin, one response per line on stdout):
+//   (startup)             -> ready <version> elevated|limited
 //   POLL                  -> data.json-shaped JSON object
 //   SET<TAB>id<TAB>value  -> {"result":"ok"} or {"result":"fail",...}
 //   RESET                 -> {"result":"ok"} ...
 //   QUIT                  -> {"result":"ok"}, then exit
 // Errors are reported as a single `error <message>` line.
+//
+// CPU MSR sensors need the PawnIO driver, which only an elevated process can
+// open for write. When the bridge starts non-elevated it launches an elevated
+// copy through UAC and proxies the same protocol over a local named pipe; the
+// TUI stays non-elevated. LHM_TUI_NO_ELEVATE=1 opts out (GPU-only data).
 //
 // Kept C# 5 compatible: the .NET Framework csc.exe that ships with Windows
 // cannot compile newer language features.
@@ -20,10 +26,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.IO.Pipes;
 using System.Reflection;
+using System.Security.Principal;
 using System.Text;
+using System.Threading.Tasks;
 
 internal static class LhmBridge
 {
@@ -31,7 +41,11 @@ internal static class LhmBridge
     private static Type computerType;
     private static object computer;
     private static string dllPath;
+    private static string pipeName;
     private static string version = "unknown";
+    private static bool elevated;
+    private static TextReader input = Console.In;
+    private static TextWriter output = Console.Out;
 
     private static readonly string[] SensorOrder = new string[] {
         "Voltage", "Current", "Power", "Clock", "Temperature", "Load",
@@ -43,11 +57,17 @@ internal static class LhmBridge
     private static int Main(string[] args)
     {
         dllPath = null;
+        pipeName = null;
         for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "--dll" && i + 1 < args.Length)
             {
                 dllPath = args[i + 1];
+                i++;
+            }
+            else if (args[i] == "--pipe" && i + 1 < args.Length)
+            {
+                pipeName = args[i + 1];
                 i++;
             }
         }
@@ -68,24 +88,63 @@ internal static class LhmBridge
             // valid UTF-8 on every supported Windows build.
         }
 
+        if (pipeName != null)
+        {
+            // Elevated child: connect back to the non-elevated proxy before
+            // loading hardware, so load errors can be reported over the pipe.
+            DebugLog("child: connecting to parent pipe");
+            if (!ConnectParentPipe())
+            {
+                return 2;
+            }
+            DebugLog("child: pipe connected");
+            try
+            {
+                LoadLibrary();
+            }
+            catch (Exception ex)
+            {
+                WriteError(LoadError(ex));
+                return 1;
+            }
+            DebugLog("child: library loaded");
+            elevated = IsAdministrator();
+            DebugLog("child: elevation checked: " + ElevationText());
+            WriteLine("ready " + version + " " + ElevationText());
+            DebugLog("child: ready sent");
+            return RunCommandLoop();
+        }
+
         try
         {
             LoadLibrary();
         }
         catch (Exception ex)
         {
-            Console.Out.WriteLine("error " + OneLine(LoadError(ex)));
-            Console.Out.Flush();
+            WriteError(LoadError(ex));
             return 1;
         }
 
-        Console.Out.WriteLine("ready " + version);
-        Console.Out.Flush();
+        elevated = IsAdministrator();
+        if (!elevated && !NoElevateRequested())
+        {
+            return RunElevatedProxy();
+        }
 
+        WriteLine("ready " + version + " " + ElevationText());
+        return RunCommandLoop();
+    }
+
+    /// <summary>
+    /// Runs the stdio protocol. The elevated child uses the same loop over its
+    /// named pipe and the proxy forwards lines between the two.
+    /// </summary>
+    private static int RunCommandLoop()
+    {
         try
         {
             string line;
-            while ((line = Console.In.ReadLine()) != null)
+            while ((line = input.ReadLine()) != null)
             {
                 line = line.Trim();
                 if (line.Length == 0)
@@ -95,8 +154,7 @@ internal static class LhmBridge
                 if (line == "QUIT")
                 {
                     CloseComputer();
-                    Console.Out.WriteLine("{\"result\":\"ok\"}");
-                    Console.Out.Flush();
+                    WriteLine("{\"result\":\"ok\"}");
                     return 0;
                 }
                 if (line == "POLL")
@@ -127,6 +185,220 @@ internal static class LhmBridge
         }
         return 0;
     }
+
+    /// <summary>
+    /// Non-elevated parent: start an elevated copy of this bridge and proxy the
+    /// line protocol over a local named pipe. This is what makes CPU MSR
+    /// sensors (temperature, power, clocks) work without making the TUI run as
+    /// administrator. The user sees the normal Windows UAC prompt.
+    /// </summary>
+    private static int RunElevatedProxy()
+    {
+        string name = "lhm-tui-" + Guid.NewGuid().ToString("N");
+        using (NamedPipeServerStream server = new NamedPipeServerStream(
+            name,
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.None))
+        {
+            Process child = null;
+            try
+            {
+                ProcessStartInfo start = new ProcessStartInfo(Process.GetCurrentProcess().MainModule.FileName);
+                start.Arguments = "--dll " + Quote(dllPath) + " --pipe " + Quote(name);
+                start.UseShellExecute = true;
+                start.Verb = "runas";
+                start.WindowStyle = ProcessWindowStyle.Hidden;
+                child = Process.Start(start);
+                if (child == null)
+                {
+                    WriteError("elevation required to read CPU sensors; the elevated bridge did not start");
+                    return 1;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteError("elevation required to read CPU sensors (UAC: " + OneLine(ex.Message)
+                    + "); run lhm-tui as administrator or set LHM_TUI_NO_ELEVATE=1");
+                return 1;
+            }
+
+            try
+            {
+                Task wait = server.WaitForConnectionAsync();
+                if (!wait.Wait(TimeSpan.FromSeconds(120)))
+                {
+                    WriteError("elevation required to read CPU sensors; the elevated bridge did not connect");
+                    Kill(child);
+                    return 1;
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteError("elevation required to read CPU sensors: " + OneLine(ex.Message));
+                Kill(child);
+                return 1;
+            }
+
+            using (StreamReader reader = new StreamReader(server, new UTF8Encoding(false)))
+            using (StreamWriter writer = new StreamWriter(server, new UTF8Encoding(false)))
+            {
+                writer.AutoFlush = true;
+                string hello = reader.ReadLine();
+                if (hello == null)
+                {
+                    WriteError("elevated bridge exited before reporting readiness");
+                    Kill(child);
+                    return 1;
+                }
+                WriteLine(hello);
+                if (hello.StartsWith("error ", StringComparison.Ordinal))
+                {
+                    Kill(child);
+                    return 1;
+                }
+
+                try
+                {
+                    string line;
+                    while ((line = Console.In.ReadLine()) != null)
+                    {
+                        string command = line.Trim();
+                        if (command.Length == 0)
+                        {
+                            continue;
+                        }
+                        writer.WriteLine(command);
+                        string response = reader.ReadLine();
+                        if (response == null)
+                        {
+                            WriteError("elevated bridge exited unexpectedly");
+                            return 1;
+                        }
+                        WriteLine(response);
+                        if (command == "QUIT")
+                        {
+                            break;
+                        }
+                    }
+                    if (line == null)
+                    {
+                        // The Rust process went away without sending QUIT;
+                        // still hand control back to the driver.
+                        TryQuit(reader, writer);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    TryQuit(reader, writer);
+                    WriteError(OneLine(ex.ToString()));
+                    return 1;
+                }
+            }
+
+            Kill(child);
+            return 0;
+        }
+    }
+
+    private static bool ConnectParentPipe()
+    {
+        try
+        {
+            NamedPipeClientStream pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut);
+            pipe.Connect(120000);
+            input = new StreamReader(pipe, new UTF8Encoding(false));
+            output = new StreamWriter(pipe, new UTF8Encoding(false));
+            ((StreamWriter)output).AutoFlush = true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("cannot connect to parent bridge: " + OneLine(ex.Message));
+            return false;
+        }
+    }
+
+    private static void Kill(Process process)
+    {
+        if (process == null)
+        {
+            return;
+        }
+        try
+        {
+            if (!process.WaitForExit(2000))
+            {
+                process.Kill();
+                process.WaitForExit(2000);
+            }
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static void TryQuit(StreamReader reader, StreamWriter writer)
+    {
+        try
+        {
+            writer.WriteLine("QUIT");
+            reader.ReadLine();
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    private static void DebugLog(string message)
+    {
+        if (Environment.GetEnvironmentVariable("LHM_TUI_BRIDGE_DEBUG") == "1")
+        {
+            Console.Error.WriteLine(message);
+        }
+    }
+
+    private static bool IsAdministrator()
+    {
+        try
+        {
+            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+            {
+                return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+            }
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool NoElevateRequested()
+    {
+        string value = Environment.GetEnvironmentVariable("LHM_TUI_NO_ELEVATE");
+        return value == "1" || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ElevationText()
+    {
+        return elevated ? "elevated" : "limited";
+    }
+
+    private static string Quote(string value)
+    {
+        return "\"" + value.Replace("\"", "\\\"") + "\"";
+    }
+
+    private static void WriteLine(string text)
+    {
+        DebugLog("write: begin");
+        output.WriteLine(text);
+        DebugLog("write: line");
+        output.Flush();
+        DebugLog("write: flushed");
+    }
+
 
     private static void LoadLibrary()
     {
@@ -228,8 +500,7 @@ internal static class LhmBridge
                 AppendHardware(json, hardware, ref id);
             }
             json.Append("]}");
-            Console.Out.WriteLine(json.ToString());
-            Console.Out.Flush();
+            WriteLine(json.ToString());
         }
         catch (Exception ex)
         {
@@ -360,8 +631,7 @@ internal static class LhmBridge
             {
                 ResetSensors(hardware);
             }
-            Console.Out.WriteLine("{\"result\":\"ok\"}");
-            Console.Out.Flush();
+            WriteLine("{\"result\":\"ok\"}");
         }
         catch (Exception ex)
         {
@@ -427,8 +697,7 @@ internal static class LhmBridge
                 control.GetType().GetMethod("SetSoftware", new Type[] { typeof(float) })
                     .Invoke(control, new object[] { value });
             }
-            Console.Out.WriteLine("{\"result\":\"ok\"}");
-            Console.Out.Flush();
+            WriteLine("{\"result\":\"ok\"}");
         }
         catch (Exception ex)
         {
@@ -635,8 +904,7 @@ internal static class LhmBridge
 
     private static void WriteError(string message)
     {
-        Console.Out.WriteLine("error " + OneLine(message));
-        Console.Out.Flush();
+        WriteLine("error " + OneLine(message));
     }
 
     private sealed class SensorItem

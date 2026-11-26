@@ -122,6 +122,12 @@ async fn run_probe(config: &Config) -> ExitCode {
         snapshot.hardware_count(),
         snapshot.sensor_count()
     );
+    if fetched.elevated == Some(false) {
+        println!(
+            "  warning    not elevated — CPU temperature, power and clocks may read 0; \
+             restart lhm-tui as administrator"
+        );
+    }
     for hardware in snapshot.all_hardware() {
         println!(
             "    - {:<22} {:<20} {} sensors",
@@ -178,6 +184,7 @@ async fn run_once(config: &Config) -> ExitCode {
         Ok(result) => result,
         Err(code) => return code,
     };
+    warn_if_dll_limited(&fetched);
     let mut cfg = config.clone();
     if !std::io::stdout().is_terminal() {
         cfg.ui.no_color = true;
@@ -213,6 +220,7 @@ async fn run_dump(config: &Config, target: &str) -> ExitCode {
         Ok(result) => result,
         Err(code) => return code,
     };
+    warn_if_dll_limited(&fetched);
     let json = match model::dump_json(&fetched.snapshot) {
         Ok(json) => format!("{json}\n"),
         Err(err) => {
@@ -236,4 +244,15 @@ async fn run_dump(config: &Config, target: &str) -> ExitCode {
 fn fail(err: &anyhow::Error) -> ExitCode {
     eprintln!("error: {err:#}");
     ExitCode::FAILURE
+}
+
+/// `--once`/`--dump` keep stdout clean but should not silently hide the
+/// non-elevated DLL case.
+fn warn_if_dll_limited(fetched: &lhm_tui::lhm::client::Fetched) {
+    if fetched.elevated == Some(false) {
+        eprintln!(
+            "warning: DLL mode is not elevated — CPU temperature, power and clocks may read 0; \
+             restart lhm-tui as administrator"
+        );
+    }
 }

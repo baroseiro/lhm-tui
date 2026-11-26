@@ -53,10 +53,10 @@ It's a single static binary and needs **no admin rights** in HTTP mode; it can m
 runs the hardware library inside the TUI's process tree, so run it elevated if you want LHM-level
 sensor coverage.
 
-> **Project status:** v0.5.0 — the direct DLL data source (Windows) is here: both the classic
-> .NET Framework LHM zip and the .NET 8/9/10 zip work without running LHM. Recording and alerts
-> remain the next v0.5.x milestone. The full design — architecture, config schema, chart engine,
-> milestones — lives in [SPEC.md](SPEC.md).
+> **Project status:** v0.5.1 — the direct DLL data source (Windows) works with both the classic
+> .NET Framework LHM zip and the .NET 8/9/10 zip without running LHM, with automatic UAC elevation
+> for CPU temperature/power/clocks. Recording and alerts remain the next v0.5.x milestone. The full
+> design — architecture, config schema, chart engine, milestones — lives in [SPEC.md](SPEC.md).
 
 ## Demo
 
@@ -78,7 +78,7 @@ LHM).*
 | Component     | Requirement                                                                                   |
 | ------------- | ---------------------------------------------------------------------------------------------- |
 | Data source (HTTP) | [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) **0.9.5+** running as administrator, with **Options → Remote Web Server → Run** enabled |
-| Data source (DLL) | Windows 10/11 and either LHM build: the **.NET Framework** zip (`LibreHardwareMonitor.zip`) or the **.NET 8/9/10** zip (`LibreHardwareMonitor.NET.10.zip`, needs its runtime). Point at it with `server.dll_path`/`--dll`; LHM does not need to be running. Run `lhm-tui` elevated for full sensor coverage |
+| Data source (DLL) | Windows 10/11 and either LHM build: the **.NET Framework** zip (`LibreHardwareMonitor.zip`) or the **.NET 8/9/10** zip (`LibreHardwareMonitor.NET.10.zip`, needs its runtime). Point at it with `server.dll_path`/`--dll`; LHM does not need to be running. DLL mode asks for administrator elevation (UAC) so CPU temperature/power/clocks can access the MSR/PawnIO driver; set `LHM_TUI_NO_ELEVATE=1` to decline and keep GPU-only data |
 | TUI client    | Windows 10/11, Linux or macOS. Windows Terminal recommended on Windows                          |
 | Terminal size | ≥ 80×24 recommended (minimum 60×20)                                                              |
 
@@ -90,7 +90,8 @@ LHM).*
      want under `File → Hardware`.
    - **DLL (Windows, LHM closed):** no server to enable. Point at either LHM build's library, e.g.
      `--dll "C:\Tools\LibreHardwareMonitor\LibreHardwareMonitorLib.dll"`; the .NET 10 build works
-     through the bundled .NET bridge.
+     through the bundled .NET bridge. Approve the UAC prompt (or start the TUI from an elevated
+     terminal) so CPU temperature/power/clocks can be read.
 2. **Install `lhm-tui`** (pick one):
 
    ```powershell
@@ -220,6 +221,7 @@ Common things people change:
 | ----------------------------------- | ---------------------------------------------------------------------- |
 | Monitor another machine             | `server.url` or `--url`                                                |
 | Use the LHM DLL, no server running  | `"source": "dll"` + `server.dll_path`, or `--source dll --dll <path>`  |
+| Skip the DLL UAC prompt (GPU-only)  | `LHM_TUI_NO_ELEVATE=1 lhm-tui --source dll --dll <path>`               |
 | Use the web server's login          | `server.username` + `server.password_env` (read from an env var)       |
 | Poll faster / slower                | `server.poll_interval_ms` (250–60000)                                  |
 | Reorder / hide panels               | `ui.layout`, `panels.<name>.enabled`                                   |
@@ -263,7 +265,8 @@ The DLL source is local to the Windows machine running `lhm-tui`; use HTTP for r
 | `LibreHardwareMonitorLib.dll not found`  | Set `server.dll_path`/`--dll` to the DLL or its folder; null auto-detects next to the exe, Program Files and LocalAppData |
 | `DLL bridge failed to load the library`  | Use an LHM build matching an installed runtime: the .NET Framework zip on a default Windows install, or the .NET 8/9/10 zip with its runtime; keep the dependency DLLs next to `LibreHardwareMonitorLib.dll` |
 | .NET 10 LHM says "the .NET 8+ bridge is not available" | Rebuild with the .NET 8+ SDK available (`dotnet build`), or use the .NET Framework LHM build |
-| DLL mode shows fewer sensors / zeros    | Run `lhm-tui` as administrator; MSR/SuperIO access needs elevation (same as LHM)            |
+| DLL mode shows fewer sensors / zeros    | Approve the UAC elevation prompt (or start from an administrator terminal). Without elevation Windows blocks the PawnIO/MSR access used by CPU temperature, power and clock sensors; GPU sensors still work. `LHM_TUI_NO_ELEVATE=1` intentionally skips the prompt |
+| UAC prompt rejected / unavailable        | Restart `lhm-tui` with administrator rights, or set `LHM_TUI_NO_ELEVATE=1` for GPU-only DLL monitoring |
 | DLL mode can't write fans                | Run elevated; the card exposes a `Controls` group only with the needed privileges            |
 | `Authentication failed`                  | Credentials must match the username/password set in the LHM web server settings           |
 | Panels but values look stale / missing   | Tick the hardware under `File → Hardware` in LHM; some sensors need admin rights           |
@@ -293,7 +296,9 @@ Debug logging: `lhm-tui --log lhm-tui.log -v -v` (never writes into the TUI itse
   Windows config-path documentation fixes *(current)*
 - **v0.4.x** — winget + scoop manifests, crates.io publish
 - **v0.5.0** — direct DLL source (Windows; no LHM process), both the .NET Framework and .NET 10
-  LHM builds, embedded bridges, same panels/charts/fan controls *(current)*
+  LHM builds, embedded bridges, same panels/charts/fan controls
+- **v0.5.1** — automatic UAC elevation for CPU MSR sensors, elevation diagnostics, non-Windows
+  clippy fix *(current)*
 - **v0.5.x** — CSV/JSONL recording, threshold alerts, chart history backfill via LHM's `/metrics`
 - **v0.6.0** — multi-host tabs, user theme files
 - Later — template-based custom panels, plugin scripting

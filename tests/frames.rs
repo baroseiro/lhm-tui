@@ -40,6 +40,7 @@ fn live_app(cfg: &Config) -> AppState {
             snapshot,
             latency: Duration::from_millis(6),
             bytes: 74_000,
+            elevated: None,
         })),
         cfg,
     );

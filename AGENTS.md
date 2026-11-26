@@ -55,7 +55,8 @@ Precedence when things conflict: **executable config/scripts > `SPEC.md` > `PLAN
   parsers: see SPEC §3.4 quirks Q1–Q4 and keep the sanitizer + dual deserializer as specified.
 - **DLL mode stays a child process.** `bridge/LhmBridge.cs` is compiled by `build.rs` with the
   .NET Framework `csc.exe` and (when available) `dotnet build` for .NET 8/9/10; the two bridges
-  talk JSON lines over stdio and are selected by assembly compatibility. Never replace them with
+  talk JSON lines over stdio and are selected by assembly compatibility. When non-elevated, the
+  bridge may request UAC and proxy to an elevated child over a named pipe; never replace this with
   in-process CLR hosting, P/Invoke or another `unsafe` path. Keep the source C# 5-compatible, keep
   HTTP as the default source, and keep the framework bridge buildable without a .NET SDK.
 - **Never parse node `id` as identity** — it is request-scoped; use `SensorId`/`HardwareId` (Q3).

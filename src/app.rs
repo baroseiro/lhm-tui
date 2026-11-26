@@ -98,6 +98,8 @@ pub struct AppState {
     pub started_at: Instant,
     pub link: LinkStatus,
     pub last_fetch: Option<Arc<Fetched>>,
+    /// One-time warning that DLL mode is running without administrator rights.
+    pub elevation_warned: bool,
     pub last_live_at: Option<Instant>,
     pub last_error: Option<String>,
     pub last_retry_in: Option<Duration>,
@@ -180,6 +182,7 @@ impl AppState {
             started_at: Instant::now(),
             link: LinkStatus::Connecting,
             last_fetch: None,
+            elevation_warned: false,
             last_live_at: None,
             last_error: None,
             last_retry_in: None,
@@ -357,6 +360,7 @@ impl AppState {
         match event {
             PollEvent::Starting => self.link = LinkStatus::Connecting,
             PollEvent::Snapshot(fetched) => {
+                let limited = fetched.elevated == Some(false);
                 let fingerprint = bindings::fingerprint(&fetched.snapshot);
                 if self.bindings.is_none() || fingerprint != self.bindings_fingerprint {
                     self.bindings = Some(bindings::resolve(&fetched.snapshot, &cfg.panels));
@@ -377,6 +381,14 @@ impl AppState {
                 self.failed_attempts = 0;
                 self.last_retry_in = None;
                 self.link = LinkStatus::Live;
+                if limited && !self.elevation_warned {
+                    self.elevation_warned = true;
+                    self.set_status(
+                        "DLL mode is not elevated — CPU temperature, power and clocks may read 0; \
+                         restart lhm-tui as administrator"
+                            .to_string(),
+                    );
+                }
                 update_fan_guard(self, cfg);
             }
             PollEvent::Failure {
@@ -1144,6 +1156,7 @@ pub fn reload_config(app: &mut AppState, cfg: &mut Config, cli: Option<crate::cl
                 _ => true,
             };
             if target_changed {
+                app.elevation_warned = false;
                 release_engaged_fans(app, cfg);
             }
             *cfg = loaded.config;
@@ -1556,7 +1569,21 @@ mod tests {
             },
             latency: Duration::from_millis(12),
             bytes: 1024,
+            elevated: None,
         })
+    }
+
+    #[test]
+    fn limited_dll_poll_warns_once() {
+        let cfg = Config::default();
+        let mut app = AppState::new();
+        let mut fetched = (*empty_fetched()).clone();
+        fetched.elevated = Some(false);
+        app.apply_poll_event(PollEvent::Snapshot(Arc::new(fetched)), &cfg);
+        assert!(app.elevation_warned);
+        let status = app.status.as_ref().expect("warning status").text.clone();
+        assert!(status.contains("not elevated"), "{status}");
+        assert!(status.contains("administrator"), "{status}");
     }
 
     #[test]

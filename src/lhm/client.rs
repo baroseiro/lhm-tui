@@ -33,6 +33,9 @@ pub struct Fetched {
     pub snapshot: Snapshot,
     pub latency: Duration,
     pub bytes: usize,
+    /// DLL source only: whether the bridge has administrator privileges.
+    /// `None` for HTTP (the LHM server's elevation is not observable).
+    pub elevated: Option<bool>,
 }
 
 /// Source-agnostic client handed to the poller, fan-control task and
@@ -296,6 +299,7 @@ impl HttpClient {
             snapshot,
             latency,
             bytes,
+            elevated: None,
         })
     }
 }

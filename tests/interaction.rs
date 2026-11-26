@@ -30,6 +30,7 @@ fn live_app() -> (AppState, Config) {
             snapshot,
             latency: Duration::from_millis(5),
             bytes: 74_000,
+            elevated: None,
         })),
         &cfg,
     );
@@ -164,6 +165,7 @@ fn fan_guard_toggle_engages_when_idle_and_releases_when_busy() {
                 snapshot: snapshot.clone(),
                 latency: Duration::from_millis(5),
                 bytes: 74_000,
+                elevated: None,
             })),
             cfg,
         );

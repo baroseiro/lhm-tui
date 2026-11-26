@@ -21,8 +21,9 @@ failures and list deferrals in the release notes.
 | 13 | `NO_COLOR=1` / `--no-color` | — | ☐ | plain rendering |
 | 14 | Fan anti-stop floor, NVIDIA at idle | 0.9.6, LHM as admin | ☐ | §7.5: enable with `n`; spins stopped fans; load spike → auto; quit → auto |
 | 15 | Windows 11 + Windows Terminal, **DLL mode**, LHM closed | .NET Framework 0.9.6 DLL | ☐ | `--source dll --dll <path>`; `--probe`/`--dump`; sensor parity with row 7 |
-| 16 | DLL mode, not elevated | .NET Framework 0.9.6 DLL | ☐ | reduced coverage is explained; no crash |
-| 17 | DLL mode with `LibreHardwareMonitor.NET.10.zip` | .NET 10 runtime | ☐ | `.NET 8+` bridge fallback; parity with row 15 |
+| 16 | DLL mode, not elevated, **UAC approved** | .NET Framework / .NET 10 DLL | ☐ | CPU temp/power/clocks non-zero after the prompt |
+| 17 | DLL mode, not elevated, **UAC declined** | .NET Framework / .NET 10 DLL | ☐ | actionable elevation error / `LHM_TUI_NO_ELEVATE=1` limited warning |
+| 18 | DLL mode with `LibreHardwareMonitor.NET.10.zip` | .NET 10 runtime | ☐ | `.NET 8+` bridge fallback; parity with row 15 |
 
 ## Checklist per row
 
@@ -57,7 +58,9 @@ failures and list deferrals in the release notes.
     takes over; stop the load → floor returns; `n` off / quit → LHM shows automatic control again.
     A manual GPU fan percentage must switch the guard off (`anti-stop off` on the status line) and
     `n` must re-enable it.
-14. DLL mode (rows 15-17 only): with LHM fully closed, `--probe` reports `source dll`, the resolved
+14. DLL mode (rows 15-18 only): with LHM fully closed, `--probe` reports `source dll`, the resolved
     DLL path, LHM version and sensor counts; `--dump -` parses; live panels match the HTTP run.
     Fan writes (`←`/`→`, `0`) reach the card and quitting restores driver control. The debug overlay
     shows `source dll`; switching back with `"source": "http"` + `r` restarts the poller cleanly.
+    From a non-elevated terminal, approve UAC and verify CPU temperature/power/clocks are non-zero;
+    decline (or set `LHM_TUI_NO_ELEVATE=1`) and verify the limited-mode warnings.

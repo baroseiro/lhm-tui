@@ -304,6 +304,16 @@ fn render_debug(frame: &mut Frame, area: Rect, app: &AppState, cfg: &Config, the
     );
     push("endpoint", cfg.server.endpoint_label());
     push("source", cfg.server.source.to_string());
+    if let Some(elevated) = app.last_fetch.as_ref().and_then(|fetched| fetched.elevated) {
+        push(
+            "dll elevation",
+            if elevated {
+                "administrator".to_string()
+            } else {
+                "limited (restart as administrator for CPU MSR sensors)".to_string()
+            },
+        );
+    }
     push(
         "poll interval",
         format!("{} ms", cfg.server.poll_interval_ms),
