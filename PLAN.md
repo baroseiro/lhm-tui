@@ -532,6 +532,11 @@ stays non-elevated; fan writes are proxied to the elevated child.
 **Done when:** Non-elevated `--probe` prompts UAC and returns CPU temperatures after approval;
 declining shows an actionable `elevation required` error; `LHM_TUI_NO_ELEVATE=1` returns the old
 limited behavior with warnings; all checks and the release workflow pass.
+**Shipped:** v0.5.1 released 2026-11-26 (tag `ea70310`); all six archives, installers and
+checksums published. Windows x64 artifact verified against `sha256.sum`; limited/no-elevate mode
+and the named-pipe proxy were exercised locally, CPU sensors depend on approving the standard UAC
+prompt; release body set from `docs/release-notes-v0.5.1.md`. macOS CI rerun was still queued on
+GitHub capacity after the release; the macOS release archive built successfully.
 
 **Exit checklist P9:** DLL mode runs with LHM closed on Windows (elevated and not), HTTP remains the default, `cargo fmt`/`clippy -D warnings`/`test` green on Windows/Linux/macOS, and no `unsafe`/FFI entered the Rust tree.
 
